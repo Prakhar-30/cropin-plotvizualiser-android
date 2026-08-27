@@ -1,0 +1,18 @@
+# Gradle / build output
+.gradle/
+build/
+.kotlin/
+
+# Machine-specific: points at whatever SDK this checkout was built against.
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Built artefacts. A debug APK is ~13 MB and changes on every build; git would
+# keep a full copy of each one forever. Ship builds through GitHub Releases
+# instead, where the download link stays stable and the history stays small.
+*.apk
+*.aab

@@ -1,0 +1,1075 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plot Finder v0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+
+<style>
+:root {
+  --paper: #eceff0;
+  --raised: #f7f9f9;
+  --ink: #10161a;
+  --ink-soft: #46565d;
+  --ink-faint: #6d7d84;
+  --rule: #d2dadd;
+  --rule-firm: #b3bfc4;
+
+  --lock: #10664a;
+  --signal: #9c4413;
+  --survey: #1f5f8b;
+  --dim: #6d7d84;
+
+  --measure: 68ch;
+  --wide: 1180px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0b1013;
+    --raised: #141b1f;
+    --ink: #e3eaec;
+    --ink-soft: #a3b1b6;
+    --ink-faint: #78888e;
+    --rule: #212c31;
+    --rule-firm: #32424a;
+
+    --lock: #4fce9d;
+    --signal: #e5854a;
+    --survey: #62b3e0;
+    --dim: #8b9aa0;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #0b1013;
+  --raised: #141b1f;
+  --ink: #e3eaec;
+  --ink-soft: #a3b1b6;
+  --ink-faint: #78888e;
+  --rule: #212c31;
+  --rule-firm: #32424a;
+
+  --lock: #4fce9d;
+  --signal: #e5854a;
+  --survey: #62b3e0;
+  --dim: #8b9aa0;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Source Serif 4", Georgia, serif;
+  font-size: 17.5px;
+  line-height: 1.66;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: var(--wide);
+  margin: 0 auto;
+  padding: 0 30px 120px;
+}
+
+/* Prose sits on a comfortable measure; figures and tables break out wider. */
+p, ul, ol, .lede, .callout { max-width: var(--measure); }
+
+h1, h2, h3, .eyebrow, .num, table, .chip, figcaption, .meta {
+  font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ----------------------------------------------------------------- header */
+
+header {
+  padding: 90px 0 34px;
+  border-bottom: 3px solid var(--ink);
+}
+
+.eyebrow {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 20px;
+}
+
+h1 {
+  font-size: clamp(2.5rem, 6.5vw, 4.1rem);
+  font-weight: 700;
+  line-height: 1.0;
+  letter-spacing: -.03em;
+  margin: 0 0 18px;
+  text-wrap: balance;
+}
+
+.lede {
+  font-size: 1.2rem;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  margin-top: 30px;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  max-width: none;
+}
+
+.meta b {
+  display: block;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 3px;
+}
+
+.meta span { color: var(--ink); font-size: 14px; }
+
+/* --------------------------------------------------------------- sections */
+
+section { margin-top: 68px; }
+
+.head {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  border-top: 1px solid var(--rule-firm);
+  padding-top: 16px;
+  margin-bottom: 22px;
+}
+
+.num {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--ink-faint);
+  padding-top: 6px;
+}
+
+h2 {
+  font-size: clamp(1.6rem, 3.2vw, 2.15rem);
+  font-weight: 600;
+  letter-spacing: -.022em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+h3 {
+  font-size: 1.12rem;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  margin: 38px 0 10px;
+}
+
+p { margin: 0 0 18px; }
+
+ul, ol { margin: 0 0 18px; padding-left: 22px; }
+li { margin-bottom: 8px; }
+
+strong { font-weight: 600; }
+
+code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: .87em;
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+/* ---------------------------------------------------------------- accents */
+
+.callout {
+  border-left: 3px solid var(--signal);
+  background: var(--raised);
+  padding: 16px 20px;
+  margin: 26px 0;
+}
+
+.callout p:last-child { margin-bottom: 0; }
+
+.callout.good { border-left-color: var(--lock); }
+
+.callout .tag {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--signal);
+  display: block;
+  margin-bottom: 7px;
+}
+
+.callout.good .tag { color: var(--lock); }
+
+/* ----------------------------------------------------------------- tables */
+
+.scroll { overflow-x: auto; margin: 24px 0 30px; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  min-width: 640px;
+}
+
+th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 11.5px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border-bottom: 2px solid var(--rule-firm);
+  padding: 0 14px 9px 0;
+  vertical-align: bottom;
+}
+
+td {
+  border-bottom: 1px solid var(--rule);
+  padding: 12px 14px 12px 0;
+  vertical-align: top;
+  color: var(--ink-soft);
+}
+
+td:first-child { color: var(--ink); font-weight: 500; }
+
+td.num-col, th.num-col {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.chip.met { color: var(--lock); }
+.chip.part { color: var(--signal); }
+.chip.open { color: var(--dim); }
+.chip.hi { color: var(--signal); }
+.chip.lo { color: var(--lock); }
+.chip.med { color: var(--survey); }
+
+/* ---------------------------------------------------------------- figures */
+
+figure {
+  margin: 34px 0;
+  max-width: var(--wide);
+}
+
+figure svg {
+  display: block;
+  width: 100%;
+  max-width: 760px;
+  height: auto;
+  color: var(--ink-soft);
+}
+
+figcaption {
+  font-size: 13px;
+  color: var(--ink-faint);
+  margin-top: 12px;
+  max-width: var(--measure);
+  line-height: 1.5;
+}
+
+svg text {
+  font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  fill: var(--ink);
+}
+
+svg text.small { font-size: 11px; fill: var(--ink-faint); }
+svg text.mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; }
+
+footer {
+  margin-top: 80px;
+  border-top: 1px solid var(--rule);
+  padding-top: 22px;
+  font-size: 13.5px;
+  color: var(--ink-faint);
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <p class="eyebrow">Product brief · v0 · 22 August 2026</p>
+  <h1>Plot Finder</h1>
+  <p class="lede">
+    A field agent stands at a roadside in front of six identical fields and has to
+    know which one is the plot on their worksheet. Plot Finder draws that plot's
+    boundary on the phone's camera view — offline, on ordinary hardware, and
+    without pretending to be more accurate than it is.
+  </p>
+
+  <div class="meta">
+    <div><b>Status</b><span>v0 built and field-tested</span></div>
+    <div><b>Platform</b><span>Android 8.0+ · web tool</span></div>
+    <div><b>Hardware</b><span>Phone only</span></div>
+    <div><b>Tested on</b><span>Galaxy S23 Ultra, Android 16</span></div>
+  </div>
+</header>
+
+<!-- ============================================================ 01 -->
+<section>
+  <div class="head"><span class="num">01</span><h2>Problem statement</h2></div>
+
+  <p>
+    Organisations that lend against farmland, insure crops, or buy produce need
+    someone to physically visit a specific plot. The plot exists as a polygon in a
+    database. On the ground it is one of several adjacent fields that look
+    identical — same crop, same colour, no fences, no signs, no addresses.
+  </p>
+
+  <p>
+    Today the agent arrives at the nearest road with a set of coordinates and a
+    blue dot on a map app. That dot tells them roughly where <em>they</em> are. It
+    does not tell them where the <em>boundary</em> is, and at 80 m it does not
+    resolve which of two neighbouring fields the polygon belongs to. So the agent
+    guesses, asks a passer-by, or calls the office.
+  </p>
+
+  <p>The costs of that guess are real:</p>
+  <ul>
+    <li><strong>Wrong-plot visits.</strong> An assessment recorded against the neighbour's field is worse than no assessment, because nobody knows it is wrong.</li>
+    <li><strong>Time.</strong> Minutes per visit spent orienting, multiplied across a route of eight to twelve plots a day.</li>
+    <li><strong>Disputes.</strong> When a farmer challenges a boundary reading, there is no record of how confident the reading was.</li>
+  </ul>
+
+  <p>
+    The obvious fix — survey-grade GNSS — costs more per unit than the phone, needs
+    training, needs charging, and gets left in the office. Any solution that
+    requires hardware in the field will not be used.
+  </p>
+</section>
+
+<!-- ============================================================ 02 -->
+<section>
+  <div class="head"><span class="num">02</span><h2>User story</h2></div>
+
+  <div class="callout good">
+    <span class="tag">Primary story</span>
+    <p style="margin:0">
+      <strong>As a</strong> field agent dispatched to a farm plot,<br>
+      <strong>I want</strong> to see the plot's boundary through my phone's camera
+      when I arrive at the road,<br>
+      <strong>so that</strong> I can walk to the right field with confidence, without
+      calling the office or asking a neighbour.
+    </p>
+  </div>
+
+  <h3>Supporting stories</h3>
+  <ul>
+    <li><strong>As a field agent</strong> working where there is no mobile data, I want the plots I was assigned to already be on my phone, so that losing signal does not end my day.</li>
+    <li><strong>As a field agent</strong>, I want to be told when the app is <em>not</em> confident about direction, so that I do not trust an overlay that is pointing at the wrong field.</li>
+    <li><strong>As a surveyor in the back office</strong>, I want to draw plot boundaries on satellite imagery and have the area computed for me, so that what the agent sees matches what the record says.</li>
+    <li><strong>As an operations manager</strong>, I want to know how accurate this actually is across our real device fleet, so that I can decide whether to invest further.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ 03 -->
+<section>
+  <div class="head"><span class="num">03</span><h2>Customer segment</h2></div>
+
+  <p>
+    Anyone who sends people to stand on a specific piece of farmland they did not
+    draw themselves.
+  </p>
+
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Segment</th><th>Who goes to the field</th><th>Why they need the boundary</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Agri-lending &amp; rural credit</td>
+          <td>Loan officers, verification agents</td>
+          <td>Confirm the collateral plot exists and matches the application</td>
+        </tr>
+        <tr>
+          <td>Crop insurance</td>
+          <td>Loss assessors</td>
+          <td>Assess damage on the insured plot, not the one beside it</td>
+        </tr>
+        <tr>
+          <td>Agri-input &amp; procurement</td>
+          <td>Field officers, agronomists</td>
+          <td>Advisory and yield estimation tied to a known area</td>
+        </tr>
+        <tr>
+          <td>Land records &amp; survey</td>
+          <td>Survey assistants</td>
+          <td>Ground-truth a cadastral polygon before it is certified</td>
+        </tr>
+        <tr>
+          <td>Farmer producer organisations</td>
+          <td>Cluster coordinators</td>
+          <td>Aggregate plots across many smallholders</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>
+    The common shape: <strong>a low-paid, high-volume field role, on a mid-range
+    Android phone, in places with poor or no data coverage.</strong> That profile is
+    what rules out extra hardware and rules out anything that needs a live network.
+  </p>
+</section>
+
+<!-- ============================================================ 04 -->
+<section>
+  <div class="head"><span class="num">04</span><h2>Business value and impact</h2></div>
+
+  <p>
+    The value is not "AR on a phone". It is <em>removing the guess</em> at the moment
+    the agent stands at the roadside, and doing it with equipment already in their
+    pocket.
+  </p>
+
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Lever</th><th>Today</th><th>With Plot Finder</th><th>Why it matters</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Plot identification</td>
+          <td>Blue dot on a map, then judgement</td>
+          <td>Boundary drawn on the camera view</td>
+          <td>Removes the single largest source of wrong-plot assessments</td>
+        </tr>
+        <tr>
+          <td>Time per visit</td>
+          <td>Several minutes orienting</td>
+          <td>Point the phone, walk</td>
+          <td>Compounds across a full route each day</td>
+        </tr>
+        <tr>
+          <td>Connectivity</td>
+          <td>Map app needs data</td>
+          <td>Works fully offline once synced</td>
+          <td>Rural sites are exactly where coverage fails</td>
+        </tr>
+        <tr>
+          <td>Capital cost</td>
+          <td>Survey GNSS unit per agent</td>
+          <td>No new hardware</td>
+          <td>Deployable to an entire fleet at software cost</td>
+        </tr>
+        <tr>
+          <td>Defensibility</td>
+          <td>A reading with no stated confidence</td>
+          <td>Accuracy shown on screen and logged</td>
+          <td>A disputed boundary can be answered with a record</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="tag">The commercial argument in one line</span>
+    <p style="margin:0">
+      Every agent already carries the hardware. The cost of rollout is the cost of an
+      install, and the thing it removes — an assessment recorded against the wrong
+      field, discovered months later — is the expensive failure in this workflow.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================ 05 -->
+<section>
+  <div class="head"><span class="num">05</span><h2>Solution overview</h2></div>
+
+  <p>
+    Two pieces. A <strong>web tool</strong> where a surveyor draws plot boundaries on
+    satellite imagery, and an <strong>Android app</strong> that shows one of those
+    boundaries through the camera when the agent is standing near it.
+  </p>
+
+  <h3>5.1 How the two halves connect</h3>
+
+  <figure>
+    <svg viewBox="0 0 760 290" role="img" aria-label="Data flows from the web drawing tool through an API to the phone's offline cache, after which the AR overlay runs with no network.">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- offline boundary -->
+      <line x1="420" y1="26" x2="420" y2="264" stroke="var(--signal)" stroke-width="1.5" stroke-dasharray="6 5"/>
+      <text x="430" y="42" class="mono" style="fill:var(--signal)">no network past here</text>
+
+      <!-- web tool -->
+      <rect x="20" y="86" width="150" height="72" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <text x="95" y="114" text-anchor="middle" font-size="13" font-weight="600">Web tool</text>
+      <text x="95" y="134" text-anchor="middle" class="small">draw on satellite</text>
+
+      <!-- api -->
+      <rect x="230" y="86" width="150" height="72" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <text x="305" y="114" text-anchor="middle" font-size="13" font-weight="600">API + SQLite</text>
+      <text x="305" y="134" text-anchor="middle" class="small">area computed here</text>
+
+      <!-- phone cache -->
+      <rect x="470" y="86" width="150" height="72" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <text x="545" y="114" text-anchor="middle" font-size="13" font-weight="600">Phone cache</text>
+      <text x="545" y="134" text-anchor="middle" class="small">Room database</text>
+
+      <!-- ar overlay -->
+      <rect x="470" y="196" width="150" height="66" rx="4" fill="none" stroke="var(--lock)" stroke-width="2"/>
+      <text x="545" y="223" text-anchor="middle" font-size="13" font-weight="600" style="fill:var(--lock)">AR overlay</text>
+      <text x="545" y="242" text-anchor="middle" class="small">camera + boundary</text>
+
+      <!-- sensors -->
+      <rect x="660" y="86" width="86" height="72" rx="4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <text x="703" y="112" text-anchor="middle" class="small">GNSS</text>
+      <text x="703" y="131" text-anchor="middle" class="small">rotation</text>
+      <text x="703" y="148" text-anchor="middle" class="small">vector</text>
+
+      <!-- arrows -->
+      <line x1="170" y1="122" x2="224" y2="122" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+      <text x="197" y="110" text-anchor="middle" class="mono">save</text>
+
+      <line x1="380" y1="122" x2="464" y2="122" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+      <text x="422" y="167" text-anchor="middle" class="mono">sync once</text>
+
+      <line x1="545" y1="158" x2="545" y2="190" stroke="var(--lock)" stroke-width="2" marker-end="url(#ar)"/>
+      <text x="556" y="180" class="mono" style="fill:var(--lock)">reads cache</text>
+
+      <line x1="660" y1="140" x2="624" y2="196" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar)"/>
+    </svg>
+    <figcaption>
+      Plots cross the network once, when there is signal. Everything to the right of
+      the dashed line runs with the radio off — which is where the agent actually is.
+    </figcaption>
+  </figure>
+
+  <h3>5.2 Marking a plot (web tool)</h3>
+  <p>
+    The surveyor clicks corners on Esri satellite imagery, double-clicks to close,
+    and drags vertices to adjust. Area in hectares and acres updates live as they
+    draw. They then place a second, separate pin — the <strong>access point</strong>,
+    where someone would walk or drive in from the road — and add a landmark note
+    such as <em>"transformer pole at NE corner"</em>.
+  </p>
+  <p>
+    On save, the server recomputes the geodesic area itself rather than trusting the
+    browser, and rejects anything that is not a valid plot: an unclosed ring, fewer
+    than three distinct corners, a self-intersecting shape, or anything over
+    <strong>500 hectares</strong>, which is almost always a mis-draw.
+  </p>
+
+  <h3>5.3 Finding a plot (Android)</h3>
+  <p>
+    Three screens: a list of cached plots sorted by distance, a detail screen with
+    the boundary sketch and landmark note, and the AR view. The agent taps
+    <em>Find this plot</em>, points the phone, and sees the boundary drawn on the
+    ground with a vertical post at each corner.
+  </p>
+
+  <h3>5.4 The measurement, in metres</h3>
+  <p>
+    All geometry is converted once from latitude and longitude into a local
+    east-north-up frame in metres, anchored at the agent's current position and
+    re-anchored whenever they walk more than 50 m. Nothing downstream ever works in
+    degrees — at this latitude a degree of longitude is 108,560 m and a degree of
+    latitude is 110,540 m, so anything computed in raw degrees is wrong by a
+    different amount in each direction.
+  </p>
+  <p>
+    Points are projected with the camera's <strong>actual</strong> field of view,
+    read from the hardware rather than assumed. On the test device that is 60.5°
+    across a portrait viewport; a hardcoded 60° guess would have stretched the whole
+    outline about the centre of the image.
+  </p>
+
+  <h3>5.5 Heading is the whole problem</h3>
+  <p>
+    This is the part the product lives or dies on, and it is worth being precise
+    about why. Two kinds of error can misplace the overlay, and they are not
+    remotely equal.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 700 300" role="img" aria-label="At 80 metres, a 20 degree heading error displaces the overlay 29 metres sideways, while a 10 metre position error displaces it only 10 metres.">
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- ground line -->
+      <line x1="60" y1="250" x2="500" y2="250" stroke="currentColor" stroke-width="1.5"/>
+      <text x="280" y="270" text-anchor="middle" class="mono">80 m to the plot</text>
+
+      <!-- agent -->
+      <circle cx="60" cy="250" r="6" fill="currentColor"/>
+      <text x="60" y="285" text-anchor="middle" class="small">agent</text>
+
+      <!-- heading error fan -->
+      <path d="M 60 250 L 500 90" fill="none" stroke="var(--signal)" stroke-width="2"/>
+      <path d="M 130 250 A 70 70 0 0 0 125.7 224.5" fill="none" stroke="var(--signal)" stroke-width="1.5"/>
+      <text x="150" y="228" class="mono" style="fill:var(--signal)">20°</text>
+
+      <!-- heading bracket -->
+      <line x1="516" y1="90" x2="516" y2="250" stroke="var(--signal)" stroke-width="1.5" marker-start="url(#ar2)" marker-end="url(#ar2)"/>
+      <text x="528" y="164" font-size="15" font-weight="600" style="fill:var(--signal)">29 m</text>
+      <text x="528" y="184" class="small" style="fill:var(--signal)">wrong field</text>
+
+      <!-- position bracket -->
+      <line x1="628" y1="195" x2="628" y2="250" stroke="var(--lock)" stroke-width="1.5" marker-start="url(#ar2)" marker-end="url(#ar2)"/>
+      <text x="640" y="220" font-size="15" font-weight="600" style="fill:var(--lock)">10 m</text>
+      <text x="640" y="240" class="small" style="fill:var(--lock)">invisible</text>
+
+      <text x="60" y="40" font-size="13" font-weight="600">Same 80 m target. Two errors, two outcomes.</text>
+      <text x="60" y="62" class="small">20° of heading error vs 10 m of position error</text>
+    </svg>
+    <figcaption>
+      Position error shifts the overlay by however many metres it is wrong — at 80 m
+      that is imperceptible. Heading error multiplies by distance. This asymmetry is
+      why the engineering went into direction rather than into a better receiver.
+    </figcaption>
+  </figure>
+
+  <p>
+    A phone compass in a farmyard is wrong by 15–25°, and it is wrong silently. So
+    the app does not trust it. It gets direction from two better sources and tells
+    the agent which one it is using.
+  </p>
+
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Source</th><th class="num-col">Typical error</th><th>How it is obtained</th><th>Why it is trustworthy</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Course over ground</td>
+          <td class="num-col">3–5°</td>
+          <td>Agent walks 20 m in a straight line</td>
+          <td>Derived from satellite motion, so a tractor or transformer cannot corrupt it</td>
+        </tr>
+        <tr>
+          <td>Landmark snap</td>
+          <td class="num-col">2–3°</td>
+          <td>Agent aims the crosshair at the plot's access point and taps</td>
+          <td>Both coordinates are known, so the true bearing is computed outright</td>
+        </tr>
+        <tr>
+          <td>Magnetometer</td>
+          <td class="num-col">15–25°</td>
+          <td>The phone compass</td>
+          <td>Fallback only — never a resting state</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>
+    Once direction is fixed by a walk or a snap, it is carried by the gyroscope.
+    The compass is allowed only to correct slow drift, over a five-minute time
+    constant and with a hard ceiling of 10° on how far it may ever pull a good
+    lock. Without that ceiling, a magnetically disturbed site would drag the
+    heading onto the neighbouring field slowly enough that nobody would notice.
+  </p>
+
+  <h3>5.6 Telling the agent what it knows</h3>
+
+  <figure>
+    <svg viewBox="0 0 720 250" role="img" aria-label="The heading confidence chip moves between three states: Unreliable, Locked, and Holding, driven by walking, snapping, and elapsed time.">
+      <defs>
+        <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <rect x="20" y="86" width="170" height="70" rx="35" fill="none" stroke="var(--dim)" stroke-width="2"/>
+      <circle cx="52" cy="121" r="7" fill="var(--dim)"/>
+      <text x="70" y="115" font-size="14" font-weight="600">Unreliable</text>
+      <text x="70" y="135" class="small">compass only</text>
+
+      <rect x="275" y="86" width="170" height="70" rx="35" fill="none" stroke="var(--lock)" stroke-width="2.5"/>
+      <circle cx="307" cy="121" r="7" fill="var(--lock)"/>
+      <text x="325" y="115" font-size="14" font-weight="600">Locked</text>
+      <text x="325" y="135" class="small">walk or snap</text>
+
+      <rect x="530" y="86" width="170" height="70" rx="35" fill="none" stroke="var(--signal)" stroke-width="2"/>
+      <circle cx="562" cy="121" r="7" fill="var(--signal)"/>
+      <text x="580" y="115" font-size="14" font-weight="600">Holding</text>
+      <text x="580" y="135" class="small">gyro-carried</text>
+
+      <line x1="190" y1="121" x2="269" y2="121" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <text x="229" y="110" text-anchor="middle" class="mono">walk 20 m</text>
+      <text x="229" y="145" text-anchor="middle" class="mono">or tap snap</text>
+
+      <line x1="445" y1="121" x2="524" y2="121" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <text x="484" y="110" text-anchor="middle" class="mono">30 s</text>
+
+      <path d="M 615 86 C 615 40, 105 40, 105 82" fill="none" stroke="currentColor" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <text x="360" y="38" text-anchor="middle" class="mono">3 minutes with no new fix</text>
+
+      <path d="M 360 156 C 360 205, 190 205, 130 165" fill="none" stroke="var(--lock)" stroke-width="1.5" marker-end="url(#ar3)"/>
+      <text x="290" y="222" text-anchor="middle" class="mono" style="fill:var(--lock)">overlay greys out until re-locked</text>
+    </svg>
+    <figcaption>
+      A persistent chip in the corner always says which of the three states the app is
+      in. In <em>Unreliable</em> the overlay greys out and the chip reads "walk a few
+      steps to lock direction" — turning the worst failure mode into a two-second
+      action instead of a confidently wrong answer.
+    </figcaption>
+  </figure>
+
+  <h3>5.7 Two ways of drawing, because distance changes the claim</h3>
+
+  <figure>
+    <svg viewBox="0 0 720 260" role="img" aria-label="Beyond 30 metres the plot is drawn as a filled shape with corner posts; inside 30 metres the fill is dropped and each edge becomes a band as wide as the GNSS accuracy.">
+      <line x1="360" y1="26" x2="360" y2="236" stroke="var(--rule-firm)" stroke-width="1.5" stroke-dasharray="6 5"/>
+      <text x="360" y="252" text-anchor="middle" class="mono">switch at 30 m to the nearest edge</text>
+
+      <text x="30" y="42" font-size="14" font-weight="600">FAR — beyond 30 m</text>
+      <text x="30" y="62" class="small">"which field is it?"</text>
+
+      <polygon points="60,190 300,190 265,140 95,140" fill="var(--lock)" fill-opacity="0.16" stroke="var(--lock)" stroke-width="2"/>
+      <line x1="60" y1="190" x2="60" y2="150" stroke="var(--lock)" stroke-width="3"/>
+      <line x1="300" y1="190" x2="300" y2="150" stroke="var(--lock)" stroke-width="3"/>
+      <line x1="95" y1="140" x2="95" y2="112" stroke="var(--lock)" stroke-width="3"/>
+      <line x1="265" y1="140" x2="265" y2="112" stroke="var(--lock)" stroke-width="3"/>
+      <text x="180" y="215" text-anchor="middle" class="small">filled shape · post at each corner · label</text>
+
+      <text x="400" y="42" font-size="14" font-weight="600">NEAR — inside 30 m</text>
+      <text x="400" y="62" class="small">"exactly where is the line?"</text>
+
+      <polygon points="400,196 690,196 690,176 400,176" fill="var(--signal)" fill-opacity="0.2" stroke="var(--signal)" stroke-width="1.5"/>
+      <polygon points="400,150 640,150 640,132 400,132" fill="var(--signal)" fill-opacity="0.2" stroke="var(--signal)" stroke-width="1.5"/>
+      <text x="545" y="215" text-anchor="middle" class="small">no fill · each edge a band as wide as the fix</text>
+    </svg>
+    <figcaption>
+      The switch is on distance to the nearest <em>edge</em>, never the centroid — an
+      elongated plot's centroid can be 60 m away while the agent stands on its
+      boundary. Up close a crisp line would be a false precision claim, and it is the
+      line that gets blamed the first time a farmer disputes a reading.
+    </figcaption>
+  </figure>
+
+  <h3>5.8 What was deliberately not built</h3>
+  <p>
+    v0 does not use ARCore's Geospatial API, which is the obvious thing to reach for
+    and the wrong one. It depends on Google's Visual Positioning System, which needs
+    Street View coverage that farmland does not have. It compiles, it reports
+    sub-2 metre accuracy, and in a field it is wrong by 5–10 m with a 30–45° heading
+    error — <em>while still reporting confidence</em>. Silent wrongness is the one
+    failure this product cannot afford.
+  </p>
+  <p>
+    Pose is instead read from the phone's own rotation sensors, behind an interface
+    that an ARCore implementation could satisfy later without changing anything
+    above it. Also out of scope for v0: boundary correction by the agent, photo
+    capture, audit forms, and iOS.
+  </p>
+
+  <h3>5.9 Measuring itself</h3>
+  <p>
+    Every AR session writes one row to a local table — position, reported accuracy,
+    heading, which source produced it, render mode, session length — and uploads it
+    when there is signal. No UI, by design. This is what turns "it seemed to work"
+    into a real accuracy distribution across the actual device fleet, and it is the
+    evidence any decision about phase 2 should rest on.
+  </p>
+</section>
+
+<!-- ============================================================ 06 -->
+<section>
+  <div class="head"><span class="num">06</span><h2>Acceptance criteria</h2></div>
+
+  <p>Status as of the v0 build and its first field test.</p>
+
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th style="width:34px">#</th><th>Criterion</th><th>How it is verified</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>A surveyor can draw a closed boundary on satellite imagery and see live area in hectares and acres</td><td>Browser walkthrough of the draw tool</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>2</td><td>Area is computed geodesically on the server, not taken from the client</td><td>Automated API test posts a bogus area and asserts it is ignored</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>3</td><td>Invalid boundaries are rejected with a readable reason</td><td>API tests for unclosed, &lt;3 corners, self-intersecting, zero-area, holes, &gt;500 ha</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>4</td><td>An access point is required and stored separately from the boundary</td><td>API test asserts save fails without it</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>5</td><td>The mobile app can fetch plots near a point in one request</td><td><code>GET /api/plots?near=lat,lng&amp;radius_m=</code> returns nearest-first with distances</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>6</td><td>All plot reads work with no network</td><td>Every screen reads the local cache; sync is a separate explicit action</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>7</td><td>Geometry is computed in metres, never in degrees</td><td>Unit tests against hand-computed ENU values</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>8</td><td>Points behind the camera are culled, not mirrored in front of the agent</td><td>Unit tests assert null for points behind, and clipping for shapes that straddle</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>9</td><td>Camera field of view is read from hardware, not assumed</td><td>Device log: <code>camera id=0 … portrait hFOV=60.5 deg</code></td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>10</td><td>Heading is obtained from a walked segment or a landmark snap, not the compass</td><td>Unit tests for straight-segment detection, turn rejection and snap bearing</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>11</td><td>Heading confidence is always visible, and the overlay greys out when unreliable</td><td>Observed on device: chip read "Unreliable — walk a few steps to lock direction"</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>12</td><td>Render mode switches on distance to the nearest edge, not the centroid</td><td>Unit test with an elongated plot: edge 5 m, centroid &gt;100 m</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>13</td><td>Near mode shows uncertainty as a band matching live GNSS accuracy</td><td>Unit tests: wider accuracy produces a wider band; a perfect fix still draws one</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>14</td><td>One telemetry row per session, synced opportunistically</td><td>Room table written on session end; upload retries silently</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>15</td><td>Runs on a real phone and identifies a real plot outdoors</td><td>Field test, Galaxy S23 Ultra, Android 16, street environment</td><td><span class="chip met">Met</span></td></tr>
+        <tr><td>16</td><td>Accuracy quantified across a device fleet</td><td>Requires telemetry from multiple devices over multiple visits</td><td><span class="chip open">Not yet</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout good">
+    <span class="tag">Verification summary</span>
+    <p style="margin:0">
+      <strong>75 unit tests</strong> on the coordinate, projection and heading logic
+      (150 executions across build variants, zero failures) ·
+      <strong>13 end-to-end API tests</strong> ·
+      full module type-checks against the real Android SDK ·
+      <strong>one successful field test</strong> in a real street environment.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================ 07 -->
+<section>
+  <div class="head"><span class="num">07</span><h2>Applicable use cases</h2></div>
+
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Use case</th><th>What the agent does</th><th>Mode it exercises</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Identify the right field from the road</td>
+          <td>Arrives, walks 20 m to lock heading, points the phone, sees which of the adjacent fields is highlighted</td>
+          <td>Far mode</td>
+        </tr>
+        <tr>
+          <td>Walk to a plot with no track</td>
+          <td>Follows the highlighted shape and corner posts across open ground</td>
+          <td>Far mode + edge arrow</td>
+        </tr>
+        <tr>
+          <td>Find the entrance</td>
+          <td>Uses the stored access point and landmark note to find where to walk or drive in</td>
+          <td>Detail screen + snap</td>
+        </tr>
+        <tr>
+          <td>Check roughly where a boundary runs</td>
+          <td>Stands near the edge and sees the uncertainty band across the ground</td>
+          <td>Near mode</td>
+        </tr>
+        <tr>
+          <td>Explain a reading to a farmer</td>
+          <td>Shows the band and its accuracy figure rather than asserting a hard line</td>
+          <td>Near mode</td>
+        </tr>
+        <tr>
+          <td>Work a full route with no signal</td>
+          <td>Syncs assigned plots in the morning, then works offline all day</td>
+          <td>Cache + sync</td>
+        </tr>
+        <tr>
+          <td>Back-office boundary capture</td>
+          <td>Surveyor draws and adjusts plots on imagery, area computed for them</td>
+          <td>Web tool</td>
+        </tr>
+        <tr>
+          <td>Demo and training without travel</td>
+          <td>Debug simulation drives the overlay from a desk, with error sliders</td>
+          <td>Simulation mode</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Where it does not apply</h3>
+  <ul>
+    <li><strong>Legal boundary determination.</strong> This is an identification aid at metre scale, not a cadastral survey instrument.</li>
+    <li><strong>Dense forest or steep terrain.</strong> Geometry assumes flat ground at the device's altitude; there is no terrain model.</li>
+    <li><strong>Very small plots.</strong> Below roughly 10 m across, GNSS uncertainty is comparable to the plot itself.</li>
+    <li><strong>Indoor or covered sites.</strong> Needs a usable satellite fix.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ 08 -->
+<section>
+  <div class="head"><span class="num">08</span><h2>Success metrics</h2></div>
+
+  <p>
+    The first four are the ones that decide whether v0 was worth building. All are
+    measurable from the telemetry that already ships.
+  </p>
+
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Metric</th><th>Definition</th><th class="num-col">Target</th><th>Source</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Heading lock rate</td>
+          <td>Share of sessions where heading reached Locked or Holding rather than staying on the compass</td>
+          <td class="num-col">&gt; 85%</td>
+          <td>Telemetry: heading source per session</td>
+        </tr>
+        <tr>
+          <td>Time to first lock</td>
+          <td>Seconds from opening the AR view to the chip turning green</td>
+          <td class="num-col">&lt; 45 s median</td>
+          <td>Telemetry: session timings</td>
+        </tr>
+        <tr>
+          <td>Reported GNSS accuracy</td>
+          <td>Median horizontal accuracy across the real device fleet</td>
+          <td class="num-col">&lt; 10 m</td>
+          <td>Telemetry: reported accuracy</td>
+        </tr>
+        <tr>
+          <td>Wrong-plot rate</td>
+          <td>Assessments later found to be recorded against the wrong plot</td>
+          <td class="num-col">&lt; 1%</td>
+          <td>Back-office reconciliation vs. baseline</td>
+        </tr>
+        <tr>
+          <td>Time per plot visit</td>
+          <td>Arrival at road to start of assessment</td>
+          <td class="num-col">−30% vs. baseline</td>
+          <td>Session duration + field study</td>
+        </tr>
+        <tr>
+          <td>Offline completion</td>
+          <td>Share of visits completed with no data connection</td>
+          <td class="num-col">100%</td>
+          <td>Telemetry: sessions with no sync</td>
+        </tr>
+        <tr>
+          <td>Crash-free sessions</td>
+          <td>AR sessions completed without a crash</td>
+          <td class="num-col">&gt; 99.5%</td>
+          <td>Crash reporting</td>
+        </tr>
+        <tr>
+          <td>Agent trust</td>
+          <td>Agents who say they would rather use it than not</td>
+          <td class="num-col">&gt; 80%</td>
+          <td>Post-pilot survey</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="tag">The one number that matters most</span>
+    <p style="margin:0">
+      <strong>Heading lock rate.</strong> If agents routinely end up on the compass,
+      the overlay is greyed out and the product is not delivering — and the fix is a
+      product and training question, not an accuracy question.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================ 09 -->
+<section>
+  <div class="head"><span class="num">09</span><h2>Risks</h2></div>
+
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Risk</th><th class="num-col">Impact</th><th class="num-col">Likelihood</th><th>Mitigation</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Agents do not walk to get a lock, and work with a greyed overlay</td>
+          <td class="num-col"><span class="chip hi">High</span></td>
+          <td class="num-col"><span class="chip med">Medium</span></td>
+          <td>The landmark snap needs no walking at all; the chip states the required action in plain words. Lock rate is the headline metric</td>
+        </tr>
+        <tr>
+          <td>A confident-looking overlay is wrong and someone trusts it</td>
+          <td class="num-col"><span class="chip hi">High</span></td>
+          <td class="num-col"><span class="chip lo">Low</span></td>
+          <td>Overlay greys out when heading is unreliable; near mode shows a band not a line; accuracy printed on screen</td>
+        </tr>
+        <tr>
+          <td>Poor GNSS under tree cover or beside tall buildings</td>
+          <td class="num-col"><span class="chip med">Medium</span></td>
+          <td class="num-col"><span class="chip med">Medium</span></td>
+          <td>Band width follows reported accuracy, so degradation is visible rather than hidden. Far mode tolerates several metres</td>
+        </tr>
+        <tr>
+          <td>Camera field of view mis-read on some phone models</td>
+          <td class="num-col"><span class="chip med">Medium</span></td>
+          <td class="num-col"><span class="chip lo">Low</span></td>
+          <td>Read from hardware and logged. Verified correct on the test device; multi-lens phones need spot checks during rollout</td>
+        </tr>
+        <tr>
+          <td>Terrain is not flat, tilting the drawn shape</td>
+          <td class="num-col"><span class="chip med">Medium</span></td>
+          <td class="num-col"><span class="chip med">Medium</span></td>
+          <td>Accepted for v0 on flat farmland. Sloped sites are a known limitation, not a silent one</td>
+        </tr>
+        <tr>
+          <td>Low-end devices lack a gyroscope, so heading cannot be carried</td>
+          <td class="num-col"><span class="chip med">Medium</span></td>
+          <td class="num-col"><span class="chip med">Medium</span></td>
+          <td>Falls back to the magnetic rotation vector and reports lower confidence. Fleet capability should be checked before rollout</td>
+        </tr>
+        <tr>
+          <td>Boundary data itself is wrong in the source records</td>
+          <td class="num-col"><span class="chip hi">High</span></td>
+          <td class="num-col"><span class="chip med">Medium</span></td>
+          <td>Out of the app's control. The web tool's validation catches gross errors; agent-side correction is a phase 2 candidate</td>
+        </tr>
+        <tr>
+          <td>Battery drain from camera, GNSS and sensors together</td>
+          <td class="num-col"><span class="chip lo">Low</span></td>
+          <td class="num-col"><span class="chip med">Medium</span></td>
+          <td>AR view is opened per plot, not left running. Worth measuring across a full route in the pilot</td>
+        </tr>
+        <tr>
+          <td>Single field test is not a representative sample</td>
+          <td class="num-col"><span class="chip med">Medium</span></td>
+          <td class="num-col"><span class="chip hi">High</span></td>
+          <td>Explicitly acknowledged. Telemetry exists precisely to replace one good result with a distribution</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="tag">Honest status</span>
+    <p style="margin:0">
+      v0 has been validated <strong>once</strong>, by one person, on one high-end
+      phone, in one location. That is enough to prove the approach works and not
+      enough to predict how it behaves across a fleet of mid-range devices in
+      monsoon conditions. The next milestone is a multi-device pilot, and the
+      telemetry to judge it by is already built.
+    </p>
+  </div>
+</section>
+
+<footer>
+  Plot Finder v0 · web tool (React, MapLibre, Esri imagery, Express, SQLite) and
+  Android app (Kotlin, CameraX, Jetpack Compose, Room, Retrofit) · no ARCore, no
+  external GNSS, offline after sync.
+</footer>
+
+</div>
+</body>
+</html>

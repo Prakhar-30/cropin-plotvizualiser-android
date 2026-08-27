@@ -1,0 +1,14 @@
+# Normalise text in the repository, but never rewrite line endings on files that
+# an OS actually executes. A CRLF gradlew fails on macOS and Linux with
+# "bad interpreter: No such file or directory", which is a confusing first
+# experience for anyone cloning this on a non-Windows machine.
+* text=auto eol=lf
+
+gradlew        text eol=lf
+*.sh           text eol=lf
+gradlew.bat    text eol=crlf
+
+*.jar          binary
+*.apk          binary
+*.png          binary
+*.jpg          binary
