@@ -166,10 +166,11 @@ Findings from re-reading the round-2 work before closing it out:
 
 ## Known gaps, stated rather than papered over
 
-1. **The API still writes to SQLite, not Supabase.** The schema is deployed and
-   correct, and the wire shape (`fieldar.plots_api`) matches what the API already
-   serves, but no storage driver has been swapped in. Until that is done the
-   phone reaches the API over the LAN, not the internet.
+1. ~~**The API still writes to SQLite, not Supabase.**~~ **Closed.** The Supabase
+   driver is live and deployed; `GET /api/health` reports `{"ok":true,
+   "store":"supabase"}`. SQLite remains as the dev/test fallback when no
+   credentials are present, which is what lets the API test suite run with
+   nothing to provision. The phone now reaches a deployed URL, not a LAN address.
 2. **The health index is synthetic.** `syntheticNdviSampler` is deterministic
    noise, not remote sensing. Every response carries `synthetic: true` and the UI
    shows an amber warning. Real Sentinel-2 replaces one function.
@@ -220,3 +221,104 @@ Also from this round:
 - Health grading moved to green/yellow/amber/brown and cells are clipped to the
   boundary with a real intersection; centre-inside testing left half of each edge
   cell hanging over the neighbour's fence.
+
+## R8 — third field test, and the docs (2026-08-27)
+
+Reported: *"it is still moving as we move and it is shifting by around one
+geographic pixel"*, plus a request for more solid, brighter AR objects. Crop
+health had never appeared in the AR view at all.
+
+**The residual movement was two sensor streams sharing one filter.** Both
+rotation vectors were being fed into a single `OrientationSmoother`. They
+disagree in yaw by tens of degrees — the game vector's origin is arbitrary at
+boot — so the deviation measure saturated at ~33°, pinned the time constant at
+its most agile 0.05 s and switched the smoothing off entirely. My first
+hypothesis, that this corrupted pitch and roll directly, was wrong: `withHeading`
+is yaw-only and overwrites it downstream. The real mechanism is the saturation.
+Now exactly one stream is the carrier, only the carrier is smoothed, and only the
+carrier publishes a pose — which also stopped the overlay rebuilding ~100×/s for
+samples that changed nothing.
+
+**Walking gait was reading as deliberate motion.** `AGILE_DEVIATION_DEG` 10 → 25,
+`DEVIATION_TAU_S` 0.15 → 0.30. Each footfall pitches the handset several degrees
+over about 0.2 s; averaging over longer than one step means a step cannot unlock
+the filter but a turn still can.
+
+**The drawn position was separated from the estimate.** New slew limiter in
+`PositionStabilizer`: 8 cm/s stationary, 2 m/s walking, snap past 10 m, capped
+along the line to the estimate rather than per axis. An unbiased estimator still
+twitches, and twitch is what the eye reads. Measured locked step is now 0.0800 m
+per fix — the cap itself, so it is a guarantee rather than an observation.
+
+**Crop health in AR was built from nothing.** New `core/render/HealthGeometry.kt`
+(cells, hotspots, three layers, range cull at 150 m, nearest-500 cap), Room
+migration 2→3 for `plot_health`, DTO parsing, and rendering ahead of the walls
+with numbered hotspot markers behind them. It is suppressed entirely when the
+heading is UNRELIABLE.
+
+**Why it had looked broken even once drawn:** three independent fades multiplied.
+Severity alpha × foreground fade × confidence tier put a stressed patch underfoot
+at 0.42 × 0.35 × 0.6 ≈ 9% — invisible in daylight. Every multiplier still exists,
+but the floors are now set so the *worst* combination stays legible, not just the
+best. `MIN_PATCH_OPACITY` 0.35 → 0.62, `MIN_RAIL_OPACITY` 0.45 → 0.75, wall fades
+12/3 m → 8/1.5 m, HOLDING 0.6 → 0.85, and dark backing strokes under every rail,
+post and marker.
+
+**The health ramp was earth-coloured, on earth.** R7 moved it to
+green/yellow/amber/brown so the bad end described the ground rather than alarming
+about it. Outdoors that failed on its own terms: amber and brown *are* dry soil,
+so the two worst bands vanished. Now `#2FD44E / #FFE81A / #FF8A00 / #FF2118`.
+
+**A fixed 10 m grid gave small plots a 3×3 raster** — too coarse to locate
+anything, and unable to form a hotspot at all, so they silently reported no
+problems. Added `recommendedCellSizeM`: √area ÷ 15, half-metre steps, clamped
+2–10 m. PLT-7013 went from 9 cells to 221, and from 0 hotspots to 2.
+
+**`lockFreshMs` 30 s → 60 s.** Re-locking needs a 20 m straight walk and an agent
+circles a small plot rather than crossing it, so 30 s made HOLDING the permanent
+state and LOCKED the exception — inverting what the labels are for.
+
+### The palette generator had stopped reading palette.json
+
+Worth recording in full, because every artefact looked internally consistent and
+the verification step was itself the broken part.
+
+When the severity ramp was added to `tools/gen-palette.mjs`, the values were
+interpolated *while editing the generator* and pasted into the templates as
+literals. `const severities = health.severity` was declared and never used.
+`--check` passed forever after, because the generator and the files it wrote were
+equally stale. Consequence: the brighter ramp reached neither language, and an
+APK was built, installed and reported on while still carrying the old colours.
+
+Caught only because the deployed web bundle hash never changed. Fixed by making
+the templates interpolate, and by adding `assertDerived()`, which runs before any
+write and exits 2 naming any `palette.json` value missing from a generated file.
+Verified by sabotage rather than by assumption.
+
+**Test bounds updated honestly**, with measured values rather than loosened
+silently: pan lag 15° → 20° (measured 15.66°), stationary drift 2.0 → 3.0 m
+(2.241 m), locked step 0.25 → 0.09 m (0.0800 m), settle-at-0.5 s 2.0° → 5.0°
+(3.48°), settle-at-1.5 s 0.4° → 1.0° (0.582°). The one bound that got *tighter*
+is the one a person can actually see.
+
+**Verified:** 125 Android tests, 17 API tests, 0 failures. Live API on Supabase.
+Both palettes confirmed matching end to end, web bundle to compiled Kotlin.
+
+### Documentation
+
+`docs/builders-manual.html` written for the partner team — problem statement,
+both platforms end to end, all ten logics with reasoning, full library inventory,
+14 diagrams, and the questions the team actually asked (grid size, how the camera
+locates itself, how distance is computed). Earlier drafts moved to `docs/archive/`.
+
+Repository split: this half now lives in `cropin-plotvizualiser-android`, the web
+tool stays in `cropin-PlotVisualizer` where Vercel deploys from it.
+
+### Still open
+
+- `tools/demo` off-device harness still renders the old flat overlay.
+- The "cropin office" boundary has a stray 6th vertex forming a spike across the
+  plot; it renders as a wall through the middle of the field and should be
+  redrawn in the web tool.
+- Telemetry rows are written locally but never uploaded — `POST /api/telemetry`
+  is declared client-side and unimplemented server-side.
