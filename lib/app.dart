@@ -17,7 +17,7 @@ class PlotFinderApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
         title: 'Plot Finder',
         debugShowCheckedModeBanner: false,
-        theme: plotFinderTheme(),
+        theme: growTheme(),
         home: PermissionGate(child: _Home(container: container)),
       );
 }
@@ -136,7 +136,12 @@ class _HomeState extends State<_Home> {
 
   void _openAr(String plotId, bool simulated) {
     Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => ArScreen(container: widget.container, plotId: plotId, simulated: simulated),
+      // The AR view stays dark whatever the rest of the app uses: light chrome
+      // over a daylight camera feed washes the overlay out.
+      builder: (_) => Theme(
+        data: plotFinderTheme(),
+        child: ArScreen(container: widget.container, plotId: plotId, simulated: simulated),
+      ),
     ));
   }
 
