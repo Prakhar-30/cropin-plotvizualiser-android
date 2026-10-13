@@ -56,7 +56,7 @@ void main() {
     );
     bool? simulatedTapped;
     await tester.pumpWidget(MaterialApp(
-      theme: plotFinderTheme(),
+      theme: growTheme(),
       home: PlotDetailScreen(
         plot: plot,
         distanceM: 1530,
@@ -65,7 +65,7 @@ void main() {
       ),
     ));
     expect(find.text('North field'), findsOneWidget);
-    expect(find.text('PLT-1  ·  2.50 ha  ·  1.5 km away'), findsOneWidget);
+    expect(find.text('PLT-1 · 2.50 ha · 1.5 km away'), findsOneWidget);
     expect(find.text('none recorded'), findsOneWidget);
     expect(find.text('3'), findsOneWidget, reason: 'three corners, not counting the closing repeat');
     expect(find.text('2026-08-01'), findsOneWidget);
