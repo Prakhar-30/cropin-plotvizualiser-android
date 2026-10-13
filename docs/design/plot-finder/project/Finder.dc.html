@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Plot Finder – AR finder, heading locked</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#FFFFFF}a:hover{color:#E5E7EB}
+button{font-family:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; overflow: hidden; position: relative; background: #0B0F14; font-family: Roboto, system-ui, sans-serif; color: #FFFFFF; display: flex; flex-direction: column">
+
+  <!-- App bar -->
+  <header style="height: 56px; flex-shrink: 0; background: #234556; display: flex; align-items: center; gap: 4px; padding: 0 4px; position: relative; z-index: 2">
+    <a href="Detail.dc.html" aria-label="Back to plot details" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border-radius: 24px">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    </a>
+    <div style="flex: 1; display: flex; flex-direction: column">
+      <div style="font-size: 17px; font-weight: 500; line-height: 22px">North block · Field 14</div>
+      <div style="font-size: 12px; color: #C3D2DA; line-height: 16px">PLT-0142 · 1.84 ha</div>
+    </div>
+  </header>
+
+  <!-- Camera + overlay -->
+  <div style="flex: 1; position: relative; overflow: hidden">
+    <svg aria-hidden="true" width="390" height="560" viewBox="0 0 390 560" preserveAspectRatio="none" style="position: absolute; inset: 0; width: 100%; height: 100%">
+      <!-- sky + tree line -->
+      <rect x="0" y="0" width="390" height="560" fill="#8FA6B2"/>
+      <path d="M0 170 Q40 150 80 165 T160 160 T240 158 T320 162 T390 155 L390 200 L0 200 Z" fill="#3D5A3F"/>
+      <!-- ground -->
+      <path d="M0 196 L390 190 L390 560 L0 560 Z" fill="#5F7A43"/>
+      <path d="M0 196 L130 194 L-40 560 L0 560 Z" fill="#6C8A4B"/>
+      <path d="M260 192 L390 190 L390 560 L430 560 Z" fill="#6C8A4B"/>
+      <path d="M150 560 L188 193 L196 193 L240 560 Z" fill="#8C7A58"/>
+      <!-- target plot -->
+      <polygon points="96,232 300,224 372,420 18,436" fill="rgba(10,132,255,0.18)" stroke="#0A84FF" stroke-width="4" stroke-linejoin="round"/>
+      <!-- health cells -->
+      <polygon points="214,258 262,256 276,296 222,298" fill="rgba(255,138,0,0.68)"/>
+      <polygon points="262,256 290,255 306,294 276,296" fill="rgba(255,232,26,0.55)"/>
+      <polygon points="90,330 160,327 152,380 70,384" fill="rgba(255,33,24,0.8)"/>
+      <polygon points="160,327 226,325 230,378 152,380" fill="rgba(255,138,0,0.68)"/>
+      <!-- hotspot marker -->
+      <circle cx="118" cy="356" r="11" fill="none" stroke="#FFFFFF" stroke-width="3"/>
+      <circle cx="118" cy="356" r="4" fill="#FFFFFF"/>
+    </svg>
+
+    <!-- Top overlays -->
+    <div style="position: absolute; left: 12px; right: 12px; top: 12px; display: flex; gap: 8px; align-items: flex-start; justify-content: space-between">
+      <div role="status" style="background: rgba(15,26,32,0.86); border-radius: 12px; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px">
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700">
+          <span style="width: 10px; height: 10px; border-radius: 5px; background: #4ADE80"></span>Heading locked
+        </div>
+        <div style="font-size: 12px; color: #B6BEC9">from your walk · ±3°</div>
+      </div>
+      <div style="background: rgba(15,26,32,0.86); border-radius: 12px; padding: 8px 12px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px">
+        <div style="display: flex; align-items: center; gap: 6px">
+          <span style="height: 20px; padding: 0 8px; border-radius: 10px; background: #FFFFFF; color: #1A3542; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; display: flex; align-items: center">NEAR</span>
+        </div>
+        <div style="font-size: 13px; font-weight: 500">18 m to edge</div>
+      </div>
+    </div>
+
+    <!-- Hotspot label -->
+    <div style="position: absolute; left: 136px; top: 340px; background: rgba(15,26,32,0.86); border-radius: 8px; padding: 4px 8px; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 6px">
+      <span style="width: 8px; height: 8px; border-radius: 2px; background: #FF2118"></span>Critical · 26 m
+    </div>
+  </div>
+
+  <!-- Bottom sheet -->
+  <section aria-label="Crop health and heading" style="flex-shrink: 0; background: #0F1A20; border-radius: 16px 16px 0 0; margin-top: -16px; position: relative; padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 14px">
+    <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 2px; background: #3A4A53"></span>
+
+    <!-- Health layer -->
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <span style="font-size: 14px; font-weight: 700">Crop health</span>
+        <span style="font-size: 12px; color: #B6BEC9">NDVI · 2026-10-08</span>
+      </div>
+      <div role="radiogroup" aria-label="Crop health layer" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 3px; border-radius: 10px; background: #1E2B32">
+        <button role="radio" aria-checked="false" style="height: 40px; border: 0; border-radius: 8px; background: transparent; color: #B6BEC9; font-size: 13px; font-weight: 500">Off</button>
+        <button role="radio" aria-checked="true" style="height: 40px; border: 0; border-radius: 8px; background: #FFFFFF; color: #1A3542; font-size: 13px; font-weight: 700">Problem areas</button>
+        <button role="radio" aria-checked="false" style="height: 40px; border: 0; border-radius: 8px; background: transparent; color: #B6BEC9; font-size: 13px; font-weight: 500">All cells</button>
+      </div>
+      <div style="font-size: 13px; color: #E5E7EB">2 patches · 0.21 ha stressed</div>
+      <div style="display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: #B6BEC9">
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 12px; height: 12px; border-radius: 3px; background: #FFE81A"></span>Mild</span>
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 12px; height: 12px; border-radius: 3px; background: #FF8A00"></span>Stressed</span>
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 12px; height: 12px; border-radius: 3px; background: #FF2118"></span>Critical</span>
+      </div>
+      <div style="font-size: 12px; color: #8A94A0">38 healthy cells hidden · choose All cells to show them</div>
+    </div>
+
+    <div style="height: 1px; background: #23323A"></div>
+
+    <!-- Access point + snap -->
+    <div style="display: flex; gap: 12px; align-items: flex-start">
+      <span style="width: 32px; height: 32px; flex-shrink: 0; border-radius: 16px; background: rgba(245,158,11,0.18); color: #F59E0B; display: flex; align-items: center; justify-content: center">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V4M4 4h12l-2 4 2 4H4"/></svg>
+      </span>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 12px; color: #B6BEC9">Access point</span>
+        <span style="font-size: 14px; line-height: 20px">Gate beside the blue water tank, east side of the canal road</span>
+      </div>
+    </div>
+    <button style="height: 48px; border-radius: 8px; border: 0; background: #FFFFFF; color: #1A3542; font-size: 15px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 8px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+      Aim at it and tap to pin heading
+    </button>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

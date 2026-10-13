@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Plot Finder – plots</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#234556}a:hover{color:#1A3542}
+button{font-family:inherit;cursor:pointer}
+input{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; overflow: hidden; background: #F2F4F5; font-family: Roboto, system-ui, sans-serif; color: #1A2228; display: flex; flex-direction: column">
+
+  <!-- App bar -->
+  <header style="flex-shrink: 0; background: #234556; color: #FFFFFF; padding: 8px 8px 16px 20px; display: flex; flex-direction: column; gap: 12px">
+    <div style="height: 48px; display: flex; align-items: center; gap: 8px">
+      <div style="flex: 1; display: flex; flex-direction: column">
+        <div style="font-size: 20px; font-weight: 500; line-height: 24px">Plots</div>
+        <div style="font-size: 12px; line-height: 16px; color: #C3D2DA">12 cached · nearest first</div>
+      </div>
+    </div>
+    <label style="height: 44px; border-radius: 8px; background: #FFFFFF; display: flex; align-items: center; gap: 10px; padding: 0 12px; color: #56636C">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search plots</span>
+      <input type="search" placeholder="Search by plot name or ID" style="flex: 1; border: 0; outline: none; font-size: 15px; color: #1A2228; background: transparent">
+    </label>
+  </header>
+
+  <!-- Status strip -->
+  <div style="flex-shrink: 0; padding: 12px 16px 4px; display: flex; gap: 8px; flex-wrap: wrap">
+    <span style="height: 28px; padding: 0 10px; border-radius: 14px; background: #E8F2EB; color: #1F5A31; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 6px">
+      <span style="width: 8px; height: 8px; border-radius: 4px; background: #2F7D45"></span>GPS fix ±4 m
+    </span>
+  </div>
+
+  <!-- List -->
+  <div style="flex: 1; overflow: hidden; padding: 8px 16px 0; display: flex; flex-direction: column; gap: 10px">
+    <sc-for list="{{plots}}" as="p" hint-placeholder-count="5">
+      <a href="Detail.dc.html" style="text-decoration: none; color: inherit; background: #FFFFFF; border-radius: 12px; border: 1px solid #DDE3E6; padding: 12px; display: flex; gap: 12px; align-items: center">
+        <span style="width: 56px; height: 56px; flex-shrink: 0; border-radius: 10px; background: #EEF2F3; display: flex; align-items: center; justify-content: center">
+          <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true"><polygon points="{{p.shape}}" fill="{{p.fill}}" stroke="{{p.colour}}" stroke-width="2" stroke-linejoin="round"/></svg>
+        </span>
+        <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+          <span style="font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{p.name}}</span>
+          <span style="font-size: 12px; color: #56636C">{{p.id}} · {{p.area}}</span>
+          <span style="font-size: 12px; color: {{p.healthColour}}; font-weight: 500">{{p.health}}</span>
+        </span>
+        <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px">
+          <span style="font-size: 16px; font-weight: 700; color: #234556">{{p.distance}}</span>
+          <span style="font-size: 11px; color: #56636C">away</span>
+        </span>
+      </a>
+    </sc-for>
+    <p style="margin: 4px 0 0; text-align: center; font-size: 12px; color: #56636C">Boundaries are drawn in the web tool. This app finds them.</p>
+  </div>
+
+  <!-- Sync bar -->
+  <div style="flex-shrink: 0; background: #FFFFFF; border-top: 1px solid #DDE3E6; padding: 12px 16px 20px; display: flex; align-items: center; gap: 12px">
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+      <span style="font-size: 14px; font-weight: 500">Last synced 2 h ago</span>
+      <span style="font-size: 12px; color: #56636C">11 of 12 plots have crop health</span>
+    </div>
+    <button style="height: 48px; padding: 0 20px; border-radius: 8px; border: 0; background: #234556; color: #FFFFFF; font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 8px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.4 6.4L3 16"/><path d="M3 12a9 9 0 0 1 15.4-6.4L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></svg>
+      Sync now
+    </button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const plots = [
+      { name: 'North block · Field 14', id: 'PLT-0142', area: '1.84 ha', distance: '120 m', health: '2 stressed patches', healthColour: '#A15C07', colour: '#0A84FF', fill: 'rgba(10,132,255,0.15)', shape: '6,10 36,6 40,34 10,38' },
+      { name: 'Canal side · Field 9', id: 'PLT-0138', area: '0.92 ha', distance: '340 m', health: 'No stress detected', healthColour: '#2F7D45', colour: '#FF9F0A', fill: 'rgba(255,159,10,0.15)', shape: '8,8 38,12 34,38 4,30' },
+      { name: 'Mango orchard east', id: 'PLT-0151', area: '2.40 ha', distance: '780 m', health: '1 critical patch', healthColour: '#C62828', colour: '#BF5AF2', fill: 'rgba(191,90,242,0.15)', shape: '4,14 22,4 40,14 36,40 8,36' },
+      { name: 'South block · Field 3', id: 'PLT-0117', area: '1.10 ha', distance: '1.4 km', health: 'No health raster cached', healthColour: '#56636C', colour: '#FF375F', fill: 'rgba(255,55,95,0.15)', shape: '10,6 34,6 40,24 30,40 6,34' },
+      { name: 'Well plot · Field 21', id: 'PLT-0163', area: '0.56 ha', distance: '2.2 km', health: 'No stress detected', healthColour: '#2F7D45', colour: '#64D2FF', fill: 'rgba(100,210,255,0.18)', shape: '6,6 38,8 38,36 6,38' }
+    ];
+    return { plots };
+  }
+}
+</script>
+</body>
+</html>

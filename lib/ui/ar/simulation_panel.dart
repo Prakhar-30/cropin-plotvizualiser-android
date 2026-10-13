@@ -35,72 +35,98 @@ class _SimulationPanelState extends State<SimulationPanel> {
 
   @override
   Widget build(BuildContext context) {
+    // Sits inside the AR sheet, under a SIMULATION badge in the app bar. The
+    // amber frame keeps debug controls from ever passing for real ones.
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: const BoxDecoration(
-        color: Color(0xE60B0F14),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0x0FF59E0B),
+        border: Border.all(color: const Color(0xFF6B5320)),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('SIMULATION', style: TextStyle(color: PlotFinderColors.warning, fontSize: 11)),
+          const Text(
+            'SIMULATION CONTROLS',
+            style: TextStyle(color: PlotFinderColors.warning, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6),
+          ),
+          const SizedBox(height: 4),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _WalkPad(onWalk: _engine.move),
-              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   children: [
-                    _LabelledSlider(
-                      label: 'Aim  ${_heading.toInt()}°',
-                      value: _heading,
-                      min: 0,
-                      max: 359,
-                      onChanged: (v) {
-                        setState(() => _heading = v);
-                        _engine.aim(v);
-                      },
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _LabelledSlider(
+                            label: 'Aim  ${_heading.toInt()}°',
+                            value: _heading,
+                            min: 0,
+                            max: 359,
+                            onChanged: (v) {
+                              setState(() => _heading = v);
+                              _engine.aim(v);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _LabelledSlider(
+                            label: 'Heading error  ${_headingError.toInt()}°',
+                            value: _headingError,
+                            min: 0,
+                            max: 45,
+                            onChanged: (v) {
+                              setState(() => _headingError = v);
+                              _engine.headingErrorDeg = v;
+                              _engine.refresh();
+                            },
+                          ),
+                        ),
+                      ],
                     ),
-                    _LabelledSlider(
-                      label: 'Heading error  ${_headingError.toInt()}°',
-                      value: _headingError,
-                      min: 0,
-                      max: 45,
-                      onChanged: (v) {
-                        setState(() => _headingError = v);
-                        _engine.headingErrorDeg = v;
-                        _engine.refresh();
-                      },
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _LabelledSlider(
+                            label: 'GNSS error  ${_gnssError.toInt()} m',
+                            value: _gnssError,
+                            min: 0,
+                            max: 30,
+                            onChanged: (v) {
+                              setState(() => _gnssError = v);
+                              _engine.gnssErrorM = v;
+                              _engine.refresh();
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _LabelledSlider(
+                            label: 'Reported accuracy  ${_accuracy.toInt()} m',
+                            value: _accuracy,
+                            min: 1,
+                            max: 30,
+                            onChanged: (v) {
+                              setState(() => _accuracy = v);
+                              _engine.reportedAccuracyM = v;
+                              _engine.refresh();
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 12),
+              _WalkPad(onWalk: _engine.move),
             ],
-          ),
-          _LabelledSlider(
-            label: 'GNSS error  ${_gnssError.toInt()} m',
-            value: _gnssError,
-            min: 0,
-            max: 30,
-            onChanged: (v) {
-              setState(() => _gnssError = v);
-              _engine.gnssErrorM = v;
-              _engine.refresh();
-            },
-          ),
-          _LabelledSlider(
-            label: 'Reported accuracy  ${_accuracy.toInt()} m',
-            value: _accuracy,
-            min: 1,
-            max: 30,
-            onChanged: (v) {
-              setState(() => _accuracy = v);
-              _engine.reportedAccuracyM = v;
-              _engine.refresh();
-            },
           ),
         ],
       ),
@@ -128,8 +154,24 @@ class _LabelledSlider extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 11)),
-          SizedBox(height: 32, child: Slider(value: value, min: min, max: max, onChanged: onChanged)),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 11),
+          ),
+          SizedBox(
+            height: 32,
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: PlotFinderColors.warning,
+                thumbColor: PlotFinderColors.warning,
+                inactiveTrackColor: PlotFinderColors.sheetRaised,
+                overlayShape: SliderComponentShape.noOverlay,
+              ),
+              child: Slider(value: value, min: min, max: max, onChanged: onChanged),
+            ),
+          ),
         ],
       );
 }
@@ -149,7 +191,7 @@ class _WalkPad extends StatefulWidget {
 }
 
 class _WalkPadState extends State<_WalkPad> {
-  static const double _size = 96;
+  static const double _size = 84;
   static const double _radius = _size / 2;
   static const double _maxSpeedMps = 1.6;
 
@@ -198,23 +240,27 @@ class _WalkPadState extends State<_WalkPad> {
       child: Container(
         width: _size,
         height: _size,
-        decoration: const BoxDecoration(color: Color(0x33FFFFFF), shape: BoxShape.circle),
+        decoration: BoxDecoration(
+          color: PlotFinderColors.sheetRaised,
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0xFF3A4A53)),
+        ),
         child: Stack(
           alignment: Alignment.center,
           children: [
             Transform.translate(
               offset: Offset(
-                math.max(-radius + 14, math.min(radius - 14, _knob.dx)),
-                math.max(-radius + 14, math.min(radius - 14, _knob.dy)),
+                math.max(-radius + 18, math.min(radius - 18, _knob.dx)),
+                math.max(-radius + 18, math.min(radius - 18, _knob.dy)),
               ),
               child: Container(
-                width: 28,
-                height: 28,
+                width: 36,
+                height: 36,
                 decoration: const BoxDecoration(color: PlotFinderColors.warning, shape: BoxShape.circle),
               ),
             ),
             const IgnorePointer(
-              child: Text('walk', style: TextStyle(color: PlotFinderColors.background, fontSize: 9)),
+              child: Text('walk', style: TextStyle(color: Color(0xFF1A1206), fontSize: 10, fontWeight: FontWeight.w700)),
             ),
           ],
         ),

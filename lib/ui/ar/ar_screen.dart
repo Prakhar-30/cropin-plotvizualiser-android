@@ -11,6 +11,7 @@ import '../../core/heading/heading_model.dart';
 import '../../core/render/health_geometry.dart';
 import '../../core/render/overlay_geometry.dart';
 import '../../core/render/plot_palette.dart';
+import '../../data/plot.dart';
 import '../formatting.dart';
 import '../theme.dart';
 import 'ar_controller.dart';
@@ -176,78 +177,42 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                 );
               }),
             ),
-            // Chip and badge share one row so they cannot overlap: at a large
-            // system font scale the chip's text grows into the badge if both are
-            // absolutely positioned against opposite corners.
+            // App bar, then chip and badge in one row so they cannot overlap:
+            // at a large system font scale the chip's text grows into the
+            // badge if both are absolutely positioned against opposite corners.
             Positioned(
               top: 0,
               left: 0,
               right: 0,
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (state.headingStatus != null) Flexible(child: HeadingChip(status: state.headingStatus!)),
-                      const Spacer(),
-                      _ModeBadge(state: state),
-                    ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ArAppBar(plot: state.plot, simulated: widget.simulated),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (state.headingStatus != null) Flexible(child: HeadingChip(status: state.headingStatus!)),
+                        const Spacer(),
+                        _ModeBadge(state: state),
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (state.message != null)
-                      Container(
-                        color: PlotFinderColors.scrim,
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(state.message!, style: const TextStyle(color: Colors.white, fontSize: 13)),
-                            ),
-                            TextButton(onPressed: _controller.dismissMessage, child: const Text('Dismiss')),
-                          ],
-                        ),
-                      ),
-                    if (state.plot != null)
-                      Container(
-                        width: double.infinity,
-                        color: PlotFinderColors.scrim,
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _HealthControls(state: state, onCycleHealth: _controller.cycleHealthLayer),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 10),
-                              child: Text(
-                                'Access point: ${state.plot!.landmarkNote.trim().isEmpty ? 'no landmark note recorded' : state.plot!.landmarkNote}',
-                                style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: FilledButton(
-                                onPressed: _controller.snapToAccessPoint,
-                                child: const Text('Aim at it and tap to pin heading'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (_controller.simulation != null) SimulationPanel(engine: _controller.simulation!),
-                  ],
-                ),
+              child: _BottomSheet(
+                state: state,
+                onDismissMessage: _controller.dismissMessage,
+                onSelectHealth: _controller.setHealthLayer,
+                onSnap: _controller.snapToAccessPoint,
+                simulation: _controller.simulation == null ? null : SimulationPanel(engine: _controller.simulation!),
               ),
             ),
           ],
@@ -255,6 +220,188 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+/// Grow's slate app bar, carried over the camera so the agent always sees
+/// which plot they are looking for.
+class _ArAppBar extends StatelessWidget {
+  const _ArAppBar({required this.plot, required this.simulated});
+
+  final Plot? plot;
+  final bool simulated;
+
+  @override
+  Widget build(BuildContext context) {
+    final plot = this.plot;
+    return Material(
+      color: GrowColors.primary,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(4, MediaQuery.paddingOf(context).top, 12, 0),
+        child: SizedBox(
+          height: 56,
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Back to plot details',
+                color: Colors.white,
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      plot?.name ?? 'Finding plot',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w500),
+                    ),
+                    if (plot != null)
+                      Text(
+                        '${plot.id} · ${formatHectares(plot.areaSqM)}',
+                        style: const TextStyle(color: GrowColors.onPrimaryMuted, fontSize: 12),
+                      ),
+                  ],
+                ),
+              ),
+              if (simulated)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(color: PlotFinderColors.warning, borderRadius: BorderRadius.circular(12)),
+                  child: const Text(
+                    'SIMULATION',
+                    style: TextStyle(color: Color(0xFF1A1206), fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Message, crop health, access point and snap, and the simulator in debug.
+class _BottomSheet extends StatelessWidget {
+  const _BottomSheet({
+    required this.state,
+    required this.onDismissMessage,
+    required this.onSelectHealth,
+    required this.onSnap,
+    required this.simulation,
+  });
+
+  final ArUiState state;
+  final VoidCallback onDismissMessage;
+  final ValueChanged<HealthLayer> onSelectHealth;
+  final VoidCallback onSnap;
+  final Widget? simulation;
+
+  @override
+  Widget build(BuildContext context) {
+    final plot = state.plot;
+    final message = state.message;
+    final simulation = this.simulation;
+    if (plot == null && message == null && simulation == null) return const SizedBox.shrink();
+    final landmark = plot?.landmarkNote.trim() ?? '';
+    return Container(
+      decoration: const BoxDecoration(
+        color: PlotFinderColors.sheet,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      padding: EdgeInsets.fromLTRB(16, 10, 16, 16 + MediaQuery.paddingOf(context).bottom),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(color: const Color(0xFF3A4A53), borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (message != null) ...[
+            _MessageBanner(message: message, onDismiss: onDismissMessage),
+            const SizedBox(height: 12),
+          ],
+          if (plot != null) ...[
+            _HealthControls(state: state, onSelect: onSelectHealth),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Divider(height: 1, color: PlotFinderColors.sheetDivider),
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: const BoxDecoration(color: Color(0x2EF59E0B), shape: BoxShape.circle),
+                  child: const Icon(Icons.flag_outlined, size: 16, color: PlotFinderColors.warning),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Access point', style: TextStyle(color: PlotFinderColors.mutedText, fontSize: 12)),
+                      const SizedBox(height: 2),
+                      Text(
+                        landmark.isEmpty ? 'no landmark note recorded' : landmark,
+                        style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.43),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              style: cameraPrimaryButtonStyle(),
+              onPressed: onSnap,
+              icon: const Icon(Icons.gps_fixed, size: 18),
+              label: const Text('Aim at it and tap to pin heading'),
+            ),
+          ],
+          if (simulation != null) ...[
+            const SizedBox(height: 12),
+            simulation,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MessageBanner extends StatelessWidget {
+  const _MessageBanner({required this.message, required this.onDismiss});
+
+  final String message;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+        decoration: BoxDecoration(color: PlotFinderColors.sheetRaised, borderRadius: BorderRadius.circular(10)),
+        child: Row(
+          children: [
+            const Icon(Icons.info_outline, size: 18, color: PlotFinderColors.warning),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(message, style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.38)),
+            ),
+            TextButton(
+              onPressed: onDismiss,
+              style: TextButton.styleFrom(foregroundColor: Colors.white),
+              child: const Text('Dismiss'),
+            ),
+          ],
+        ),
+      );
 }
 
 /// The live preview, filling a box already sized to its aspect ratio so
@@ -296,29 +443,45 @@ class _ModeBadge extends StatelessWidget {
     final mode = state.mode;
     if (mode == null) return const SizedBox.shrink();
     return Container(
-      color: PlotFinderColors.scrim,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(color: PlotFinderColors.scrim, borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            mode == RenderMode.far ? 'FAR' : 'NEAR',
-            style: const TextStyle(color: Colors.white, fontSize: 13),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: mode == RenderMode.far ? PlotFinderColors.sheetRaised : Colors.white,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              mode == RenderMode.far ? 'FAR' : 'NEAR',
+              style: TextStyle(
+                color: mode == RenderMode.far ? Colors.white : GrowColors.primaryDark,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+              ),
+            ),
           ),
+          const SizedBox(height: 4),
           Text(
             '${state.edgeDistanceM} m to edge',
-            style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 11),
+            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
           ),
           if (!state.hasFix)
-            const Text('waiting for GNSS', style: TextStyle(color: PlotFinderColors.warning, fontSize: 11)),
+            const Text(
+              'waiting for GNSS',
+              style: TextStyle(color: PlotFinderColors.warning, fontSize: 12, fontWeight: FontWeight.w500),
+            ),
         ],
       ),
     );
   }
 }
 
-/// The crop-health toggle, its legend, and every caveat attached to it.
+/// The crop-health switch, its legend, and every caveat attached to it.
 ///
 /// The caveats are not decoration. This overlay paints ground brown and tells a
 /// field agent to walk there, and there are three separate ways it can be saying
@@ -327,83 +490,153 @@ class _ModeBadge extends StatelessWidget {
 /// cached. Each of those has to be visible at the moment the colour is, because
 /// a confident-looking overlay is believed.
 class _HealthControls extends StatelessWidget {
-  const _HealthControls({required this.state, required this.onCycleHealth});
+  const _HealthControls({required this.state, required this.onSelect});
 
   final ArUiState state;
-  final VoidCallback onCycleHealth;
+  final ValueChanged<HealthLayer> onSelect;
 
   @override
   Widget build(BuildContext context) {
     final health = state.health;
-    final Widget status;
-    if (state.healthLayer == HealthLayer.off) {
-      status = const Text('Crop health hidden', style: TextStyle(color: PlotFinderColors.faintText, fontSize: 11));
+    final caveats = <Widget>[];
+    if (state.healthSyncing) {
+      caveats.add(const _Caveat(Icons.downloading, 'Fetching health...', PlotFinderColors.mutedText));
+    } else if (state.healthLayer == HealthLayer.off) {
+      caveats.add(const _Caveat(Icons.visibility_off_outlined, 'Crop health hidden', PlotFinderColors.faintText));
     } else if (health == null) {
-      status = const Text(
+      caveats.add(const _Caveat(
+        Icons.cloud_off_outlined,
         'No raster cached - tap Sync on the plot list',
-        style: TextStyle(color: PlotFinderColors.warning, fontSize: 11),
-      );
+        PlotFinderColors.warning,
+      ));
     } else if (state.healthVetoed) {
       // The veto, spelled out. "Nothing is drawn" and "nothing is wrong" look
       // identical on a camera feed, so the reason has to be stated or the agent
       // will read an empty field as a healthy one.
-      status = const Text(
+      caveats.add(const _Caveat(
+        Icons.visibility_off_outlined,
         'Health hidden until heading is trusted - pin it below',
-        style: TextStyle(color: PlotFinderColors.warning, fontSize: 11),
-      );
-    } else {
-      final patches = health.hotspots.length;
-      final hidden = state.hiddenCellCount;
-      status = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '${health.indexName.toUpperCase()} ${health.capturedOn} · '
-            '$patches patch${patches == 1 ? '' : 'es'} · '
-            '${formatHectares(health.stressedAreaSqM)} stressed',
-            style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 11),
-          ),
-          // Says out loud that healthy ground is being withheld. An agent who
-          // does not know the filter is on reads bare ground between two brown
-          // patches as unsurveyed.
-          if (hidden > 0)
-            Text(
-              '$hidden healthy cells hidden - tap for all',
-              style: const TextStyle(color: PlotFinderColors.faintText, fontSize: 10),
-            ),
-          // The server's own wording, not a second copy of it written here.
-          if (health.synthetic)
-            Text(
-              health.note.trim().isEmpty ? 'Synthetic values - not measured imagery' : health.note,
-              style: const TextStyle(color: PlotFinderColors.warning, fontSize: 10),
-            ),
-        ],
-      );
+        PlotFinderColors.warning,
+      ));
     }
+    if (health != null && state.healthLayer != HealthLayer.off && health.synthetic) {
+      // The server's own wording, not a second copy of it written here.
+      caveats.add(_Caveat(
+        Icons.warning_amber_rounded,
+        health.note.trim().isEmpty ? 'Synthetic values - not measured imagery' : health.note,
+        PlotFinderColors.warning,
+      ));
+    }
+    final showing = state.healthLayer != HealthLayer.off && health != null && !state.healthVetoed;
+    final patches = health?.hotspots.length ?? 0;
+    final hidden = state.hiddenCellCount;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
           children: [
-            OutlinedButton(
-              onPressed: onCycleHealth,
-              child: Text(
-                state.healthSyncing ? 'Fetching health...' : state.healthLayer.label,
-                style: const TextStyle(fontSize: 13),
-              ),
+            const Expanded(
+              child: Text('Crop health', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
             ),
-            const SizedBox(width: 10),
-            Expanded(child: status),
+            if (health != null)
+              Text(
+                '${health.indexName.toUpperCase()} · ${health.capturedOn}',
+                style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
+              ),
           ],
         ),
-        if (state.healthLayer != HealthLayer.off && health != null && !state.healthVetoed)
+        const SizedBox(height: 10),
+        _LayerSwitch(selected: state.healthLayer, onSelect: onSelect),
+        if (showing) ...[
+          const SizedBox(height: 10),
+          Text(
+            '$patches patch${patches == 1 ? '' : 'es'} · ${formatHectares(health.stressedAreaSqM)} stressed',
+            style: const TextStyle(color: PlotFinderColors.onSurface, fontSize: 13),
+          ),
           _SeverityLegend(minSeverity: state.healthLayer.minSeverity),
+          // Says out loud that healthy ground is being withheld. An agent who
+          // does not know the filter is on reads bare ground between two brown
+          // patches as unsurveyed.
+          if (hidden > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '$hidden healthy cells hidden - choose All cells to show them',
+                style: const TextStyle(color: PlotFinderColors.faintText, fontSize: 12),
+              ),
+            ),
+        ],
+        for (final caveat in caveats) Padding(padding: const EdgeInsets.only(top: 8), child: caveat),
       ],
     );
   }
+}
+
+/// Off / Problem areas / All cells as one segmented control, so the agent
+/// picks the layer instead of cycling past the one they want.
+class _LayerSwitch extends StatelessWidget {
+  const _LayerSwitch({required this.selected, required this.onSelect});
+
+  final HealthLayer selected;
+  final ValueChanged<HealthLayer> onSelect;
+
+  static String _label(HealthLayer layer) => switch (layer) {
+        HealthLayer.off => 'Off',
+        HealthLayer.stress => 'Problem areas',
+        HealthLayer.all => 'All cells',
+      };
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(color: PlotFinderColors.sheetRaised, borderRadius: BorderRadius.circular(10)),
+        child: Row(
+          children: [
+            for (final layer in HealthLayer.values)
+              Expanded(
+                child: Semantics(
+                  selected: layer == selected,
+                  button: true,
+                  child: TextButton(
+                    onPressed: () => onSelect(layer),
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      backgroundColor: layer == selected ? Colors.white : Colors.transparent,
+                      foregroundColor: layer == selected ? GrowColors.primaryDark : PlotFinderColors.mutedText,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      textStyle: TextStyle(
+                        fontSize: 13,
+                        fontWeight: layer == selected ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                    child: Text(_label(layer), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+}
+
+class _Caveat extends StatelessWidget {
+  const _Caveat(this.icon, this.text, this.colour);
+
+  final IconData icon;
+  final String text;
+  final Color colour;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(padding: const EdgeInsets.only(top: 1), child: Icon(icon, size: 15, color: colour)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: TextStyle(color: colour, fontSize: 12, height: 1.4))),
+        ],
+      );
 }
 
 /// The colour key, showing only the bands this layer actually draws.
@@ -419,16 +652,21 @@ class _SeverityLegend extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(top: 8),
         child: Wrap(
-          spacing: 12,
+          spacing: 14,
+          runSpacing: 6,
           children: [
             for (final band in severityColours)
               if (band.level >= minSeverity)
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(width: 11, height: 11, color: Color(band.argb)),
-                    const SizedBox(width: 5),
-                    Text(band.label, style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 10)),
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(color: Color(band.argb), borderRadius: BorderRadius.circular(3)),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(band.label, style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12)),
                   ],
                 ),
           ],

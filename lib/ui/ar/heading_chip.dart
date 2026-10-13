@@ -19,9 +19,9 @@ class HeadingChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (dot, title) = switch (status.confidence) {
-      HeadingConfidence.locked => (const Color(0xFF4ADE80), 'Locked'),
-      HeadingConfidence.holding => (const Color(0xFFF59E0B), 'Holding'),
-      HeadingConfidence.unreliable => (const Color(0xFF9CA3AF), 'Unreliable'),
+      HeadingConfidence.locked => (const Color(0xFF4ADE80), 'Heading locked'),
+      HeadingConfidence.holding => (const Color(0xFFF59E0B), 'Heading holding'),
+      HeadingConfidence.unreliable => (const Color(0xFF9CA3AF), 'Heading unreliable'),
     };
 
     final error = status.expectedErrorDeg.toInt();
@@ -37,7 +37,7 @@ class HeadingChip extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(color: PlotFinderColors.scrim, borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(color: PlotFinderColors.scrim, borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -46,13 +46,17 @@ class HeadingChip extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(width: 10, height: 10, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
-              Text(
-                '  $title',
-                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  title,
+                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+                ),
               ),
             ],
           ),
-          Text(detail, style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 11)),
+          const SizedBox(height: 2),
+          Text(detail, style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12)),
         ],
       ),
     );

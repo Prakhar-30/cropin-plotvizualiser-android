@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Plot Finder – AR finder, caution states and simulation</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#FFFFFF}a:hover{color:#E5E7EB}
+button{font-family:inherit;cursor:pointer}
+input[type=range]{width:100%;margin:0;accent-color:#F59E0B;height:24px}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; overflow: hidden; position: relative; background: #0B0F14; font-family: Roboto, system-ui, sans-serif; color: #FFFFFF; display: flex; flex-direction: column">
+
+  <!-- App bar -->
+  <header style="height: 56px; flex-shrink: 0; background: #234556; display: flex; align-items: center; gap: 4px; padding: 0 12px 0 4px; position: relative; z-index: 2">
+    <a href="Detail.dc.html" aria-label="Back to plot details" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border-radius: 24px">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    </a>
+    <div style="flex: 1; display: flex; flex-direction: column">
+      <div style="font-size: 17px; font-weight: 500; line-height: 22px">North block · Field 14</div>
+      <div style="font-size: 12px; color: #C3D2DA; line-height: 16px">PLT-0142 · 1.84 ha</div>
+    </div>
+    <span style="height: 24px; padding: 0 10px; border-radius: 12px; background: #F59E0B; color: #1A1206; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; display: flex; align-items: center">SIMULATION</span>
+  </header>
+
+  <!-- Camera + overlay -->
+  <div style="height: 300px; flex-shrink: 0; position: relative; overflow: hidden">
+    <svg aria-hidden="true" width="390" height="300" viewBox="0 0 390 300" style="position: absolute; inset: 0">
+      <rect x="0" y="0" width="390" height="300" fill="#8FA6B2"/>
+      <path d="M0 120 Q40 104 80 116 T160 112 T240 110 T320 114 T390 108 L390 140 L0 140 Z" fill="#3D5A3F"/>
+      <path d="M0 136 L390 132 L390 300 L0 300 Z" fill="#5F7A43"/>
+      <path d="M170 300 L192 134 L198 134 L230 300 Z" fill="#8C7A58"/>
+      <!-- far target, outline only -->
+      <polygon points="232,146 318,144 334,160 222,163" fill="rgba(10,132,255,0.22)" stroke="#0A84FF" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M276 150 L276 92" stroke="#0A84FF" stroke-width="2" stroke-dasharray="4 4"/>
+    </svg>
+    <div style="position: absolute; left: 240px; top: 66px; background: rgba(15,26,32,0.86); border-radius: 8px; padding: 4px 8px; font-size: 12px; font-weight: 500">Target · 240 m</div>
+
+    <!-- Unreliable heading: full-width so it cannot be missed -->
+    <div role="alert" style="position: absolute; left: 12px; right: 12px; top: 12px; background: rgba(15,26,32,0.9); border-radius: 12px; padding: 10px 12px; display: flex; gap: 10px; align-items: center">
+      <span style="width: 10px; height: 10px; flex-shrink: 0; border-radius: 5px; background: #9CA3AF"></span>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 14px; font-weight: 700">Heading unreliable</span>
+        <span style="font-size: 12px; color: #B6BEC9">Compass only. Walk a few steps to lock direction.</span>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding-left: 10px; border-left: 1px solid #2E3D45">
+        <span style="height: 20px; padding: 0 8px; border-radius: 10px; background: #1E2B32; color: #FFFFFF; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; display: flex; align-items: center">FAR</span>
+        <span style="font-size: 12px; color: #F59E0B; font-weight: 500">No GNSS fix</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet -->
+  <section style="flex: 1; background: #0F1A20; border-radius: 16px 16px 0 0; margin-top: -16px; position: relative; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px">
+    <!-- Message -->
+    <div role="status" style="background: #1E2B32; border-radius: 10px; padding: 6px 6px 6px 12px; display: flex; align-items: center; gap: 10px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5h.01"/></svg>
+      <span style="flex: 1; font-size: 13px; line-height: 18px">Waiting for a GNSS fix before snapping</span>
+      <button style="height: 40px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #FFFFFF; font-size: 13px; font-weight: 500; text-decoration: underline">Dismiss</button>
+    </div>
+
+    <!-- Health, vetoed -->
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div role="radiogroup" aria-label="Crop health layer" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 3px; border-radius: 10px; background: #1E2B32">
+        <button role="radio" aria-checked="false" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #B6BEC9; font-size: 13px; font-weight: 500">Off</button>
+        <button role="radio" aria-checked="true" style="height: 36px; border: 0; border-radius: 8px; background: #FFFFFF; color: #1A3542; font-size: 13px; font-weight: 700">Problem areas</button>
+        <button role="radio" aria-checked="false" style="height: 36px; border: 0; border-radius: 8px; background: transparent; color: #B6BEC9; font-size: 13px; font-weight: 500">All cells</button>
+      </div>
+      <div style="display: flex; gap: 8px; align-items: flex-start; font-size: 12px; line-height: 17px; color: #F59E0B">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><path d="M3 3l18 18"/></svg>
+        Health hidden until heading is trusted. Pin it below.
+      </div>
+      <div style="display: flex; gap: 8px; align-items: flex-start; font-size: 12px; line-height: 17px; color: #F59E0B">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>
+        Synthetic values, not measured imagery
+      </div>
+    </div>
+
+    <button style="height: 44px; border-radius: 8px; border: 0; background: #FFFFFF; color: #1A3542; font-size: 14px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 8px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+      Aim at the access point and tap to pin heading
+    </button>
+
+    <!-- Simulation panel -->
+    <div style="border: 1px dashed #6B5320; border-radius: 12px; padding: 10px 12px; display: flex; gap: 12px; align-items: stretch; background: rgba(245,158,11,0.06)">
+      <div style="flex: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; row-gap: 4px">
+        <label style="display: flex; flex-direction: column; font-size: 11px; color: #B6BEC9">Aim 212°<input type="range" min="0" max="359" value="212"></label>
+        <label style="display: flex; flex-direction: column; font-size: 11px; color: #B6BEC9">Heading error 15°<input type="range" min="0" max="45" value="15"></label>
+        <label style="display: flex; flex-direction: column; font-size: 11px; color: #B6BEC9">GNSS error 8 m<input type="range" min="0" max="30" value="8"></label>
+        <label style="display: flex; flex-direction: column; font-size: 11px; color: #B6BEC9">Reported accuracy 5 m<input type="range" min="1" max="30" value="5"></label>
+      </div>
+      <button aria-label="Walk pad, drag to move the simulated agent" style="width: 84px; flex-shrink: 0; border-radius: 42px; border: 1px solid #3A4A53; background: #1E2B32; position: relative; padding: 0; display: flex; align-items: center; justify-content: center">
+        <span style="width: 36px; height: 36px; border-radius: 18px; background: #F59E0B; color: #1A1206; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center">walk</span>
+      </button>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

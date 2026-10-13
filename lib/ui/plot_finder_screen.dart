@@ -7,6 +7,7 @@ import '../platform/native_platform.dart';
 import 'ar/ar_screen.dart';
 import 'detail/plot_detail_screen.dart';
 import 'plots/plot_list_controller.dart';
+import 'permission_screen.dart';
 import 'plots/plot_list_screen.dart';
 import 'theme.dart';
 
@@ -20,9 +21,10 @@ bool get plotFinderSupported => !kIsWeb && defaultTargetPlatform == TargetPlatfo
 /// The whole feature behind one widget: plot list, plot detail and AR view.
 ///
 /// Push it from anywhere in a host app's navigator. It opens its own cache and
-/// HTTP client when shown and releases them when popped, wraps its pages in its
-/// own dark theme so the host theme cannot wash the overlay out, and asks for
-/// camera and location itself.
+/// HTTP client when shown and releases them when popped, and asks for camera
+/// and location itself. Its pages carry their own themes - the Cropin Grow
+/// look for the planning screens, dark for the AR view - so neither depends on
+/// how the host app is themed.
 class PlotFinderScreen extends StatefulWidget {
   const PlotFinderScreen({super.key, this.config = const PlotFinderConfig()});
 
@@ -51,7 +53,7 @@ class _PlotFinderScreenState extends State<PlotFinderScreen> {
   Widget build(BuildContext context) {
     final container = _container;
     return Theme(
-      data: plotFinderTheme(),
+      data: growTheme(),
       child: container == null
           ? const _Notice('Plot Finder is available on Android only.')
           : FutureBuilder<AppContainer>(
@@ -113,34 +115,8 @@ class _PermissionGateState extends State<PermissionGate> {
     if (granted == null) return const Scaffold();
     if (granted) return widget.child;
 
-    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
-    return Scaffold(
-      appBar: AppBar(),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Plot Finder needs the camera and your location'),
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                'The camera is the view the boundary is drawn on, and the location '
-                'anchors it to the ground. Neither leaves the device.',
-                style: TextStyle(color: muted),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: FilledButton(onPressed: _request, child: const Text('Grant permissions')),
-            ),
-            // Once Android stops showing the dialog, the setting is the only
-            // way back.
-            TextButton(onPressed: widget.platform.openAppSettings, child: const Text('Open app settings')),
-          ],
-        ),
-      ),
-    );
+    // Once Android stops showing the dialog, the setting is the only way back.
+    return PermissionScreen(onGrant: _request, onOpenSettings: widget.platform.openAppSettings);
   }
 }
 
@@ -173,14 +149,15 @@ class _HomeState extends State<_Home> {
   }
 
   /// Pages are pushed on the host's navigator, so system back behaves as the
-  /// host expects; each one carries the feature's own theme, because a pushed
+  /// host expects; each one carries its theme explicitly, because a pushed
   /// route is built under the navigator, not under [PlotFinderScreen].
-  Route<void> _route(WidgetBuilder builder) => MaterialPageRoute<void>(
-        builder: (context) => Theme(data: plotFinderTheme(), child: Builder(builder: builder)),
+  Route<void> _route(ThemeData theme, WidgetBuilder builder) => MaterialPageRoute<void>(
+        builder: (context) => Theme(data: theme, child: Builder(builder: builder)),
       );
 
   void _openPlot(String plotId) {
     Navigator.of(context).push(_route(
+      growTheme(),
       (context) => ValueListenableBuilder<PlotListState>(
         valueListenable: _list,
         builder: (context, _, __) {
@@ -197,7 +174,10 @@ class _HomeState extends State<_Home> {
   }
 
   void _openAr(String plotId, bool simulated) {
+    // The AR view stays dark whatever the rest of the app uses: light chrome
+    // over a daylight camera feed washes the overlay out.
     Navigator.of(context).push(_route(
+      plotFinderTheme(),
       (_) => ArScreen(container: widget.container, plotId: plotId, simulated: simulated),
     ));
   }

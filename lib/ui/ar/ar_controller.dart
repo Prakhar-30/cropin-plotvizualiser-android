@@ -278,10 +278,14 @@ class ArController extends ValueNotifier<ArUiState> {
   }
 
   /// Cycles off - problem areas - all cells.
-  void cycleHealthLayer() {
-    final next = value.healthLayer.next();
-    _rebuildOverlay(value.copyWith(healthLayer: next));
-    if (next != HealthLayer.off && value.health == null) unawaited(refreshHealth());
+  void cycleHealthLayer() => setHealthLayer(value.healthLayer.next());
+
+  /// Shows [layer], fetching the raster if the agent turned health on and
+  /// none is cached.
+  void setHealthLayer(HealthLayer layer) {
+    if (layer == value.healthLayer) return;
+    _rebuildOverlay(value.copyWith(healthLayer: layer));
+    if (layer != HealthLayer.off && value.health == null) unawaited(refreshHealth());
   }
 
   /// Pulls this plot's raster from the API on demand.
