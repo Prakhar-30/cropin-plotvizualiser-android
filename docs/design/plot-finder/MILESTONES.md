@@ -15,6 +15,7 @@ Artboards live in `project/` as `.dc.html` files, laid out by `project/canvas.js
 | D3 | Plot detail | `Detail.dc.html` | `lib/ui/detail/plot_detail_screen.dart` | Boundary sketch, access point, landmark, facts, Find / Simulate |
 | D4 | AR finder · locked | `Finder.dc.html` | `lib/ui/ar/ar_screen.dart`, `heading_chip.dart` | Heading chip, FAR/NEAR badge, health controls + legend, pin heading |
 | D5 | AR finder · caution | `FinderCaution.dc.html` | `ar_screen.dart`, `simulation_panel.dart` | Unreliable heading veto, synthetic-data warning, message, simulation panel |
+| D6 | Starting up · not available | `Loading.dc.html`, `Notice.dc.html` | `lib/ui/status_screen.dart` | Loading while permissions and cache open; Android-only and start-failure notice with a way back |
 
 ## Design tokens
 
@@ -52,6 +53,7 @@ and checked by CI (`flutter analyze`, `flutter test`, debug APK build).
 | C4 | Plot detail (D3): sketch card, getting-there card with copy, facts, pinned actions | `lib/ui/detail/plot_detail_screen.dart` |
 | C5 | AR finder (D4): app bar, heading chip, mode badge, sheet with Off / Problem areas / All cells switch | `lib/ui/ar/ar_screen.dart`, `heading_chip.dart`, `ar_controller.dart` |
 | C6 | AR caution states and simulation panel (D5) | `lib/ui/ar/simulation_panel.dart` |
+| C7 | After the plugin packaging (F9): back button on the permission screen; styled loading and notice screens (D6) | `lib/ui/permission_screen.dart`, `lib/ui/status_screen.dart`, `lib/ui/plot_finder_screen.dart` |
 
 Where code and mockup differ, it is because the data is not there: list rows
 show cache age rather than a crop-health summary (the list does not load
