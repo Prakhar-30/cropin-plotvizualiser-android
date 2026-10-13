@@ -1,0 +1,27 @@
+name: flutter
+
+# The port is verified here rather than on a laptop: every push to the Flutter
+# branch is analysed and its unit tests run, so a milestone that does not
+# compile cannot pass silently.
+on:
+  push:
+    branches: [flutter]
+  pull_request:
+    branches: [flutter]
+  workflow_dispatch:
+
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter --version
+      - run: flutter pub get
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+      - name: Unit tests
+        run: flutter test --reporter expanded
