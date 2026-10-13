@@ -4,6 +4,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'app_container.dart';
 import 'ui/ar/ar_screen.dart';
 import 'ui/detail/plot_detail_screen.dart';
+import 'ui/permission_screen.dart';
 import 'ui/plots/plot_list_controller.dart';
 import 'ui/plots/plot_list_screen.dart';
 import 'ui/theme.dart';
@@ -57,35 +58,7 @@ class _PermissionGateState extends State<PermissionGate> {
     if (granted == null) return const Scaffold();
     if (granted) return widget.child;
 
-    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
-    return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Plot Finder needs the camera and your location'),
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'The camera is the view the boundary is drawn on, and the location '
-                  'anchors it to the ground. Neither leaves the device.',
-                  style: TextStyle(color: muted),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: FilledButton(onPressed: _request, child: const Text('Grant permissions')),
-              ),
-              // Once Android stops showing the dialog, the setting is the only
-              // way back.
-              const TextButton(onPressed: openAppSettings, child: Text('Open app settings')),
-            ],
-          ),
-        ),
-      ),
-    );
+    return PermissionScreen(onGrant: _request, onOpenSettings: openAppSettings);
   }
 }
 
