@@ -38,3 +38,21 @@ Radius 8 for fields and buttons, 12 for cards, full for chips. Touch targets ≥
 
 The AR view stays dark on purpose (see `lib/ui/theme.dart`): light chrome over
 a daylight camera feed washes the overlay out.
+
+## Code milestones
+
+Each design milestone, built into `lib/ui/`. Every one was pushed on its own
+and checked by CI (`flutter analyze`, `flutter test`, debug APK build).
+
+| # | Milestone | Files |
+|---|---|---|
+| C1 | `GrowColors` + light `growTheme()` for planning screens; AR route keeps `plotFinderTheme()` | `lib/ui/theme.dart`, `lib/app.dart` |
+| C2 | Permission gate (D1) | `lib/ui/permission_screen.dart`, `lib/app.dart` |
+| C3 | Plots list (D2): search, GPS-fix chip, boundary thumbnails, bottom sync bar | `lib/ui/plots/plot_list_screen.dart` |
+| C4 | Plot detail (D3): sketch card, getting-there card with copy, facts, pinned actions | `lib/ui/detail/plot_detail_screen.dart` |
+| C5 | AR finder (D4): app bar, heading chip, mode badge, sheet with Off / Problem areas / All cells switch | `lib/ui/ar/ar_screen.dart`, `heading_chip.dart`, `ar_controller.dart` |
+| C6 | AR caution states and simulation panel (D5) | `lib/ui/ar/simulation_panel.dart` |
+
+Where code and mockup differ, it is because the data is not there: list rows
+show cache age rather than a crop-health summary (the list does not load
+rasters), and the detail screen has no health card for the same reason.
