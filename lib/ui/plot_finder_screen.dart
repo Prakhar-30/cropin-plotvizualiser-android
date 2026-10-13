@@ -9,6 +9,7 @@ import 'detail/plot_detail_screen.dart';
 import 'plots/plot_list_controller.dart';
 import 'permission_screen.dart';
 import 'plots/plot_list_screen.dart';
+import 'status_screen.dart';
 import 'theme.dart';
 
 /// Whether the plot finder can run on this device.
@@ -55,30 +56,28 @@ class _PlotFinderScreenState extends State<PlotFinderScreen> {
     return Theme(
       data: growTheme(),
       child: container == null
-          ? const _Notice('Plot Finder is available on Android only.')
+          ? const StatusScreen.notice(
+              title: 'Available on Android only',
+              detail: 'Plot Finder uses Android sensors and the camera to find a plot on the ground.',
+              icon: Icons.phone_android,
+            )
           : FutureBuilder<AppContainer>(
               future: container,
               builder: (context, snapshot) {
-                if (snapshot.hasError) return _Notice('Plot Finder could not start: ${snapshot.error}');
+                if (snapshot.hasError) {
+                  return StatusScreen.notice(
+                    title: 'Plot Finder could not start',
+                    detail: '${snapshot.error}',
+                    icon: Icons.error_outline,
+                  );
+                }
                 final ready = snapshot.data;
-                if (ready == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                if (ready == null) return const StatusScreen.loading(title: 'Opening offline plots…');
                 return PermissionGate(platform: ready.platform, child: _Home(container: ready));
               },
             ),
     );
   }
-}
-
-class _Notice extends StatelessWidget {
-  const _Notice(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(),
-        body: Padding(padding: const EdgeInsets.all(24), child: Text(text)),
-      );
 }
 
 /// Camera and location are both hard requirements: without them there is no
@@ -112,7 +111,7 @@ class _PermissionGateState extends State<PermissionGate> {
   @override
   Widget build(BuildContext context) {
     final granted = _granted;
-    if (granted == null) return const Scaffold();
+    if (granted == null) return const StatusScreen.loading(title: 'Checking camera and location access…');
     if (granted) return widget.child;
 
     // Once Android stops showing the dialog, the setting is the only way back.

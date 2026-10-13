@@ -129,6 +129,13 @@ class _Hero extends StatelessWidget {
           children: [
             Row(
               children: [
+                // Embedded in a host app this is a pushed page; someone who
+                // declines needs a way out besides the system gesture.
+                if (Navigator.of(context).canPop())
+                  const Padding(
+                    padding: EdgeInsets.only(right: 4),
+                    child: BackButton(color: Colors.white),
+                  ),
                 Container(
                   width: 32,
                   height: 32,
