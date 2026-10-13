@@ -20,7 +20,7 @@ void main() {
         expectedErrorDeg: 20,
       ),
     )));
-    expect(find.text('  Unreliable'), findsOneWidget);
+    expect(find.text('Heading unreliable'), findsOneWidget);
     expect(find.text('compass only — walk a few steps to lock direction'), findsOneWidget);
   });
 
