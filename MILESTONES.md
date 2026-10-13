@@ -17,6 +17,33 @@ this log must match the code.
 | F7 | UI: theme, plot list, plot detail + sketch, AR screen, overlay painter, heading chip, simulation panel, permission gate | Every Compose screen has its Flutter counterpart |
 | F8 | Review pass and docs | README describes the Flutter build; no dead code |
 
+**How it was verified.** The port was written without a local Flutter SDK, so
+every milestone was pushed and checked by CI (`.github/workflows/flutter.yml`):
+`flutter analyze`, `flutter test`, and from F6 on a debug APK build that
+compiles the Android host, the native channel and every plugin. What CI caught:
+
+- F2: the orientation smoother's constructor defaults referred to the private
+  fields they shadowed - a compile error.
+- F6: current Flutter refuses Gradle below 8.14; the wrapper carried over from
+  the Kotlin project was 8.11.1. Moved to Gradle 8.14.3, AGP 8.11.1, Kotlin
+  2.2.20, and the `compilerOptions` DSL.
+
+**What changed in the port, on purpose.**
+
+- `CameraGeometry` corrects the FOV for the preview crop. CameraX could be sized
+  to the sensor's 4:3; the Flutter camera plugin picks its own preview size, and
+  a 16:9 stream crops exactly the axis a portrait screen's width shows.
+- Projection runs in logical pixels. Stroke widths and text sizes were tuned in
+  physical pixels, so the painter divides them by the device pixel ratio.
+- Enum values keep their original upper-case names in telemetry rows
+  (`wireName`), so fleet data from both builds reads the same.
+- The cache is the Room v3 schema byte for byte, same file and version, so
+  installing over the Kotlin build keeps the cached plots.
+
+**Not ported.** `tools/demo/OverlayDemo.kt` (an off-device PNG renderer) and the
+Kotlin-only test and type-check scripts; `flutter test` replaces the latter.
+iOS has no native channel yet - see the README.
+
 ---
 
 # Original Kotlin build log
