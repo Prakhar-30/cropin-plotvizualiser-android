@@ -18,25 +18,48 @@ import '../../data/plot.dart';
 import '../../pose/pose_source.dart';
 import '../../sim/simulation_engine.dart';
 
+/// What the overlay canvas draws for one pose sample.
+///
+/// Kept out of [ArUiState] on purpose. A new frame arrives with every carrier
+/// sample - about fifty a second - and only the canvas needs it. Folding it into
+/// the UI state made every one of those samples rebuild the whole screen: the
+/// chip, the health panel, the buttons and the camera box.
+class ArFrame {
+  const ArFrame(this.overlay, this.health);
+
+  final PlotOverlay overlay;
+
+  /// The crop-health raster, already projected. Null when the layer is off.
+  final HealthOverlay? health;
+}
+
+/// Everything on the AR screen except the per-frame geometry - see [ArFrame].
 class ArUiState {
   const ArUiState({
     this.plot,
-    this.overlay,
-    this.pose = DevicePose.unknown,
+    this.mode,
+    this.edgeDistanceM = 0,
+    this.hiddenCellCount = 0,
     this.headingStatus,
     this.accuracyM = 0.0,
     this.hasFix = false,
     this.stationary = false,
     this.health,
     this.healthLayer = HealthLayer.stress,
-    this.healthOverlay,
     this.healthSyncing = false,
     this.message,
   });
 
   final Plot? plot;
-  final PlotOverlay? overlay;
-  final DevicePose pose;
+
+  /// Render mode of the latest frame, or null before the first one.
+  final RenderMode? mode;
+
+  /// Distance to the nearest edge, whole metres - as precise as the badge shows.
+  final int edgeDistanceM;
+
+  /// Cells inside range that the health layer chose not to draw.
+  final int hiddenCellCount;
   final HeadingStatus? headingStatus;
   final double accuracyM;
   final bool hasFix;
@@ -49,7 +72,6 @@ class ArUiState {
 
   /// What the agent asked to see. Not necessarily what is drawn - see below.
   final HealthLayer healthLayer;
-  final HealthOverlay? healthOverlay;
   final bool healthSyncing;
   final String? message;
 
@@ -70,29 +92,29 @@ class ArUiState {
 
   ArUiState copyWith({
     Plot? Function()? plot,
-    PlotOverlay? Function()? overlay,
-    DevicePose? pose,
+    RenderMode? mode,
+    int? edgeDistanceM,
+    int? hiddenCellCount,
     HeadingStatus? Function()? headingStatus,
     double? accuracyM,
     bool? hasFix,
     bool? stationary,
     PlotHealth? Function()? health,
     HealthLayer? healthLayer,
-    HealthOverlay? Function()? healthOverlay,
     bool? healthSyncing,
     String? Function()? message,
   }) =>
       ArUiState(
         plot: plot == null ? this.plot : plot(),
-        overlay: overlay == null ? this.overlay : overlay(),
-        pose: pose ?? this.pose,
+        mode: mode ?? this.mode,
+        edgeDistanceM: edgeDistanceM ?? this.edgeDistanceM,
+        hiddenCellCount: hiddenCellCount ?? this.hiddenCellCount,
         headingStatus: headingStatus == null ? this.headingStatus : headingStatus(),
         accuracyM: accuracyM ?? this.accuracyM,
         hasFix: hasFix ?? this.hasFix,
         stationary: stationary ?? this.stationary,
         health: health == null ? this.health : health(),
         healthLayer: healthLayer ?? this.healthLayer,
-        healthOverlay: healthOverlay == null ? this.healthOverlay : healthOverlay(),
         healthSyncing: healthSyncing ?? this.healthSyncing,
         message: message == null ? this.message : message(),
       );
@@ -117,6 +139,13 @@ class ArController extends ValueNotifier<ArUiState> {
   final Sensors _sensors;
 
   SimulationEngine? get simulation => _sensors.simulation;
+
+  /// The geometry to draw, updated at sensor rate. The canvas listens to this
+  /// alone; see [ArFrame].
+  final ValueNotifier<ArFrame?> frame = ValueNotifier(null);
+
+  /// The latest attitude. Not UI state: only the overlay and telemetry use it.
+  DevicePose _pose = DevicePose.unknown;
 
   final CourseOverGroundDetector _courseOverGround = CourseOverGroundDetector();
 
@@ -186,9 +215,22 @@ class ArController extends ValueNotifier<ArUiState> {
   }
 
   void stop() {
+    pause();
+    _recordTelemetry();
+  }
+
+  /// Releases the sensors and the GNSS receiver while the app is in the
+  /// background, without ending the session. An AR screen left open in a
+  /// pocket would otherwise keep a 1 Hz high-accuracy fix and two 50 Hz sensor
+  /// streams running for nothing.
+  void pause() {
     _sensors.pose.stop();
     _sensors.location.stop();
-    _recordTelemetry();
+  }
+
+  void resume() {
+    _sensors.pose.start();
+    _sensors.location.start();
   }
 
   /// The viewport is only known once the camera box has been laid out.
@@ -238,12 +280,8 @@ class ArController extends ValueNotifier<ArUiState> {
   /// Cycles off - problem areas - all cells.
   void cycleHealthLayer() {
     final next = value.healthLayer.next();
-    value = value.copyWith(healthLayer: next);
-    if (next != HealthLayer.off && value.health == null) {
-      unawaited(refreshHealth());
-    } else {
-      _rebuildOverlay();
-    }
+    _rebuildOverlay(value.copyWith(healthLayer: next));
+    if (next != HealthLayer.off && value.health == null) unawaited(refreshHealth());
   }
 
   /// Pulls this plot's raster from the API on demand.
@@ -270,11 +308,10 @@ class ArController extends ValueNotifier<ArUiState> {
   Future<void> _loadHealth() async {
     final health = await _container.plots.healthFor(_plotId);
     if (_disposed) return;
-    value = value.copyWith(health: () => health);
     // The metric conversion belongs to the old raster; keeping it would draw
     // the previous cells under the new data.
     _healthField = null;
-    _rebuildOverlay();
+    _rebuildOverlay(value.copyWith(health: () => health));
   }
 
   void dismissMessage() => value = value.copyWith(message: () => null);
@@ -317,40 +354,57 @@ class ArController extends ValueNotifier<ArUiState> {
       _healthField = null;
     }
 
-    value = value.copyWith(accuracyM: sample.accuracyM, hasFix: true, stationary: stabilized.stationary);
-    _rebuildOverlay();
+    _rebuildOverlay(value.copyWith(
+      accuracyM: sample.accuracyM,
+      hasFix: true,
+      stationary: stabilized.stationary,
+    ));
   }
 
   void _onPoseChanged() {
-    value = value.copyWith(pose: _sensors.pose.pose.value);
+    _pose = _sensors.pose.pose.value;
     _rebuildOverlay();
   }
 
   void _onHeadingStatusChanged() {
+    // Through the overlay, not around it: the heading veto on the health layer
+    // depends on this status, so the frame has to be rebuilt against it.
     final status = _sensors.pose.headingStatus.value;
-    value = value.copyWith(headingStatus: () => status);
+    _rebuildOverlay(value.copyWith(headingStatus: () => status));
   }
 
-  void _rebuildOverlay() {
+  /// Rebuilds the frame and publishes [next] - the current state when omitted.
+  ///
+  /// Listeners hear about a state change at most once per call, and not at all
+  /// when nothing they show has changed. At fifty pose samples a second that is
+  /// the difference between redrawing the canvas and rebuilding the screen.
+  void _rebuildOverlay([ArUiState? next]) {
     if (_disposed) return;
-    final plot = value.plot;
+    var state = next ?? value;
+    final plot = state.plot;
     final frame = _frame;
     final intrinsics = _intrinsics;
     final agent = _agentPosition;
-    if (plot == null || frame == null || intrinsics == null || agent == null) return;
-    final pose = value.pose;
+    if (plot != null && frame != null && intrinsics != null && agent != null) {
+      final overlay = buildPlotOverlay(
+        ring: plot.ring,
+        centroid: plot.centroid,
+        agent: agent,
+        frame: frame,
+        deviceToEnu: _pose.deviceToEnu,
+        intrinsics: intrinsics,
+        gnssAccuracyM: state.accuracyM,
+      );
+      final health = _buildHealth(state, frame, agent, _pose.deviceToEnu, intrinsics);
+      this.frame.value = ArFrame(overlay, health);
 
-    final overlay = buildPlotOverlay(
-      ring: plot.ring,
-      centroid: plot.centroid,
-      agent: agent,
-      frame: frame,
-      deviceToEnu: pose.deviceToEnu,
-      intrinsics: intrinsics,
-      gnssAccuracyM: value.accuracyM,
-    );
-    final health = _buildHealth(frame, agent, pose.deviceToEnu, intrinsics);
-    value = value.copyWith(overlay: () => overlay, healthOverlay: () => health);
+      final edge = overlay.edgeDistanceM.toInt();
+      final hidden = health?.hiddenCellCount ?? 0;
+      if (state.mode != overlay.mode || state.edgeDistanceM != edge || state.hiddenCellCount != hidden) {
+        state = state.copyWith(mode: overlay.mode, edgeDistanceM: edge, hiddenCellCount: hidden);
+      }
+    }
+    if (!identical(state, value)) value = state;
   }
 
   /// Projects the health raster against the same eye and frame as the boundary.
@@ -359,10 +413,16 @@ class ArController extends ValueNotifier<ArUiState> {
   /// frame, so the raster and the boundary move together or not at all.
   /// Deriving the eye separately here is precisely what would let the brown
   /// ground drift outside the plot that is supposed to contain it.
-  HealthOverlay? _buildHealth(EnuFrame frame, LatLng agent, Mat3 deviceToEnu, CameraIntrinsics intrinsics) {
-    final layer = value.effectiveHealthLayer;
+  HealthOverlay? _buildHealth(
+    ArUiState state,
+    EnuFrame frame,
+    LatLng agent,
+    Mat3 deviceToEnu,
+    CameraIntrinsics intrinsics,
+  ) {
+    final layer = state.effectiveHealthLayer;
     if (layer == HealthLayer.off) return null;
-    final health = value.health;
+    final health = state.health;
     if (health == null) return null;
 
     final existing = _healthField;
@@ -386,7 +446,7 @@ class ArController extends ValueNotifier<ArUiState> {
     final location = _lastLocation;
     final status = snapshot.headingStatus;
     if (location == null || status == null) return;
-    final mode = snapshot.overlay?.mode.wireName ?? 'NONE';
+    final mode = snapshot.mode?.wireName ?? 'NONE';
 
     final now = DateTime.now().millisecondsSinceEpoch;
     final row = TelemetryEntity(
@@ -396,7 +456,7 @@ class ArController extends ValueNotifier<ArUiState> {
       lat: location.position.lat,
       lng: location.position.lng,
       reportedAccuracyM: location.accuracyM,
-      headingDeg: snapshot.pose.headingDeg,
+      headingDeg: _pose.headingDeg,
       headingSource: status.source.wireName,
       headingConfidence: status.confidence.wireName,
       renderMode: mode,
@@ -429,6 +489,7 @@ class ArController extends ValueNotifier<ArUiState> {
     _sensors.location.location.removeListener(_onLocationChanged);
     _sensors.pose.pose.removeListener(_onPoseChanged);
     _sensors.pose.headingStatus.removeListener(_onHeadingStatusChanged);
+    frame.dispose();
     super.dispose();
   }
 }

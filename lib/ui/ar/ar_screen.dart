@@ -64,6 +64,8 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
   /// every other app from the camera and drain the battery behind a lock screen.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) _controller.pause();
+    if (state == AppLifecycleState.resumed) _controller.resume();
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       final camera = _camera;
       _camera = null;
@@ -146,16 +148,20 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                       fit: StackFit.expand,
                       children: [
                         _CameraBox(camera: _camera),
-                        CustomPaint(
-                          painter: ArOverlayPainter(
-                            overlay: state.overlay,
-                            health: state.healthOverlay,
-                            plotId: state.plot?.id ?? '',
-                            areaHectares: state.plot?.areaHectares ?? 0.0,
-                            colourIndex: state.plot?.colourIndex ?? 0,
-                            confidence: state.headingStatus?.confidence ?? HeadingConfidence.unreliable,
-                            accuracyM: state.accuracyM,
-                            devicePixelRatio: dpr,
+                        // Its own layer: the canvas repaints at sensor rate,
+                        // and without the boundary each repaint would drag the
+                        // camera texture and the chrome along with it.
+                        RepaintBoundary(
+                          child: CustomPaint(
+                            painter: ArOverlayPainter(
+                              frame: _controller.frame,
+                              plotId: state.plot?.id ?? '',
+                              areaHectares: state.plot?.areaHectares ?? 0.0,
+                              colourIndex: state.plot?.colourIndex ?? 0,
+                              confidence: state.headingStatus?.confidence ?? HeadingConfidence.unreliable,
+                              accuracyM: state.accuracyM,
+                              devicePixelRatio: dpr,
+                            ),
                           ),
                         ),
                       ],
@@ -281,8 +287,8 @@ class _ModeBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final overlay = state.overlay;
-    if (overlay == null) return const SizedBox.shrink();
+    final mode = state.mode;
+    if (mode == null) return const SizedBox.shrink();
     return Container(
       color: PlotFinderColors.scrim,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -291,11 +297,11 @@ class _ModeBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            overlay.mode == RenderMode.far ? 'FAR' : 'NEAR',
+            mode == RenderMode.far ? 'FAR' : 'NEAR',
             style: const TextStyle(color: Colors.white, fontSize: 13),
           ),
           Text(
-            '${overlay.edgeDistanceM.toInt()} m to edge',
+            '${state.edgeDistanceM} m to edge',
             style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 11),
           ),
           if (!state.hasFix)
@@ -341,7 +347,7 @@ class _HealthControls extends StatelessWidget {
       );
     } else {
       final patches = health.hotspots.length;
-      final hidden = state.healthOverlay?.hiddenCellCount ?? 0;
+      final hidden = state.hiddenCellCount;
       status = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,

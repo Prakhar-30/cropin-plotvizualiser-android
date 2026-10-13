@@ -258,12 +258,13 @@ PlotOverlay buildPlotOverlay({
   final labelPoint = projectDevice(toDevice(centroidEnu, eye, enuToDevice), intrinsics);
   final label = labelPoint == null ? null : OverlayLabel(labelPoint, centroidDistanceM);
 
-  final anythingVisible = [
-    ...fill,
-    for (final w in walls) ...w.quad,
-    for (final b in bands) ...b.corners,
-    for (final p in posts) p.base,
-  ].any((it) => it.isOnScreen(intrinsics));
+  // Short-circuits on the first visible point instead of concatenating every
+  // projected point of the plot into a throwaway list each frame.
+  bool onScreen(ScreenPoint p) => p.isOnScreen(intrinsics);
+  final anythingVisible = fill.any(onScreen) ||
+      walls.any((w) => w.quad.any(onScreen)) ||
+      bands.any((b) => b.corners.any(onScreen)) ||
+      posts.any((p) => onScreen(p.base));
 
   final offscreenBearingDeg = anythingVisible
       ? null

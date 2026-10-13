@@ -80,7 +80,7 @@ class _PermissionGateState extends State<PermissionGate> {
               ),
               // Once Android stops showing the dialog, the setting is the only
               // way back.
-              TextButton(onPressed: openAppSettings, child: const Text('Open app settings')),
+              const TextButton(onPressed: openAppSettings, child: Text('Open app settings')),
             ],
           ),
         ),
@@ -102,9 +102,17 @@ class _Home extends StatefulWidget {
 
 class _HomeState extends State<_Home> {
   late final PlotListController _list = PlotListController(widget.container);
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(onHide: _list.pause, onShow: _list.resume);
+  }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _list.dispose();
     super.dispose();
   }

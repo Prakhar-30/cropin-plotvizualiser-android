@@ -1,9 +1,9 @@
-/// The companion web tool's wire format, exactly as it is served.
-///
-/// Hand-written rather than generated: there are five small shapes, and the
-/// parse rules worth knowing - which fields are defaulted, and in which
-/// direction - read better as code than as annotations. Unknown keys are
-/// ignored throughout, as the Kotlin client's `ignoreUnknownKeys` did.
+// The companion web tool's wire format, exactly as it is served.
+//
+// Hand-written rather than generated: there are five small shapes, and the
+// parse rules worth knowing - which fields are defaulted, and in which
+// direction - read better as code than as annotations. Unknown keys are
+// ignored throughout, as the Kotlin client's `ignoreUnknownKeys` did.
 
 typedef Json = Map<String, dynamic>;
 

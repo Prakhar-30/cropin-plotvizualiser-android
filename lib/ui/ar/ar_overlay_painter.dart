@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/geo/projection.dart';
@@ -7,6 +8,7 @@ import '../../core/heading/heading_model.dart';
 import '../../core/render/health_geometry.dart';
 import '../../core/render/overlay_geometry.dart';
 import '../../core/render/plot_palette.dart';
+import 'ar_controller.dart';
 
 /// Draws a [PlotOverlay] on a 2D canvas composited over the camera preview.
 ///
@@ -19,22 +21,22 @@ import '../../core/render/plot_palette.dart';
 /// built in. Stroke widths and text sizes were tuned in physical pixels on the
 /// Kotlin app, so they are divided by [devicePixelRatio] to land at the same
 /// physical size.
+///
+/// It repaints straight off [frame] rather than being rebuilt with new
+/// geometry: frames arrive at sensor rate, and nothing but this canvas needs
+/// them.
 class ArOverlayPainter extends CustomPainter {
   ArOverlayPainter({
-    required this.overlay,
-    required this.health,
+    required this.frame,
     required this.plotId,
     required this.areaHectares,
     required this.colourIndex,
     required this.confidence,
     required this.accuracyM,
     required this.devicePixelRatio,
-  });
+  }) : super(repaint: frame);
 
-  final PlotOverlay? overlay;
-
-  /// The crop-health raster, already projected. Null when the layer is off.
-  final HealthOverlay? health;
+  final ValueListenable<ArFrame?> frame;
   final String plotId;
   final double areaHectares;
 
@@ -60,8 +62,9 @@ class ArOverlayPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     _drawCrosshair(canvas, size);
-    final overlay = this.overlay;
-    if (overlay == null) return;
+    final current = frame.value;
+    if (current == null) return;
+    final overlay = current.overlay;
 
     // Grey and dim when the heading cannot be trusted. The overlay is still
     // drawn rather than hidden, because "roughly there, direction unknown" is
@@ -86,7 +89,7 @@ class ArOverlayPainter extends CustomPainter {
 
     // The raster goes down before anything else, because it lies on the ground
     // and everything else stands on it.
-    final health = this.health;
+    final health = current.health;
     if (health != null) _drawHealthPatches(canvas, health, alpha);
 
     // Walls next, in both modes: they are the boundary.
@@ -145,13 +148,33 @@ class ArOverlayPainter extends CustomPainter {
   /// severity band and the distance fade. No outline: a stroke around every cell
   /// turns a 500-cell raster into a grid of boxes, and the eye follows the grid
   /// instead of the colour.
+  ///
+  /// Cells at full strength - everything beyond the foreground fade, which is
+  /// nearly all of them - are merged into one path per severity band, so up to
+  /// 500 draw calls become four. That is safe only because cells never overlap:
+  /// the union of non-overlapping translucent fills is the same picture as the
+  /// fills drawn one by one, in any order, and it loses the faint seams where
+  /// neighbouring antialiased edges used to double up. Faded foreground cells
+  /// each have their own alpha, so they are still drawn individually.
   void _drawHealthPatches(Canvas canvas, HealthOverlay health, double confidenceAlpha) {
+    final merged = <int, Path>{};
     for (final patch in health.patches) {
-      final path = _path(patch.corners);
-      if (path == null) continue;
+      if (patch.corners.length < 3) continue;
+      final polygon = [for (final p in patch.corners) _o(p)];
+      if (patch.opacity >= 1.0) {
+        (merged[patch.severity] ??= Path()).addPolygon(polygon, true);
+        continue;
+      }
       final band = severityColour(patch.severity);
-      canvas.drawPath(path, _fill(Color(band.argb), band.fillAlpha * patch.opacity * confidenceAlpha));
+      canvas.drawPath(
+        Path()..addPolygon(polygon, true),
+        _fill(Color(band.argb), band.fillAlpha * patch.opacity * confidenceAlpha),
+      );
     }
+    merged.forEach((severity, path) {
+      final band = severityColour(severity);
+      canvas.drawPath(path, _fill(Color(band.argb), band.fillAlpha * confidenceAlpha));
+    });
   }
 
   /// Stands a stem at each hotspot centroid, ranked.
@@ -292,8 +315,9 @@ class ArOverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(ArOverlayPainter oldDelegate) =>
-      oldDelegate.overlay != overlay ||
-      oldDelegate.health != health ||
+      oldDelegate.frame != frame ||
+      oldDelegate.plotId != plotId ||
+      oldDelegate.areaHectares != areaHectares ||
       oldDelegate.confidence != confidence ||
       oldDelegate.accuracyM != accuracyM ||
       oldDelegate.colourIndex != colourIndex ||

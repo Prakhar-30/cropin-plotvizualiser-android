@@ -1,5 +1,5 @@
-/// Cache rows, column for column the same as the Kotlin app's Room schema
-/// (version 3), so a device upgrading from that build keeps its cached plots.
+// Cache rows, column for column the same as the Kotlin app's Room schema
+// (version 3), so a device upgrading from that build keeps its cached plots.
 
 /// A plot as cached on the device. Mirrors the web tool's `plots` table.
 ///

@@ -105,11 +105,27 @@ class PlotDao {
   final StreamController<void> _changes = StreamController<void>.broadcast();
 
   /// Every cached plot, by name, re-emitted whenever the table changes.
-  Stream<List<PlotEntity>> observeAll() async* {
-    yield await _all();
-    await for (final _ in _changes.stream) {
-      yield await _all();
+  ///
+  /// Subscribes to changes *before* the first query runs. Querying first and
+  /// subscribing after would drop a sync that lands while that query is in
+  /// flight, and the list would show the stale cache until the next one.
+  /// sqflite runs queries in order, so emissions arrive in order too.
+  Stream<List<PlotEntity>> observeAll() {
+    late final StreamController<List<PlotEntity>> out;
+    StreamSubscription<void>? changes;
+    Future<void> emit() async {
+      final rows = await _all();
+      if (!out.isClosed) out.add(rows);
     }
+
+    out = StreamController<List<PlotEntity>>(
+      onListen: () {
+        changes = _changes.stream.listen((_) => emit());
+        emit();
+      },
+      onCancel: () => changes?.cancel(),
+    );
+    return out.stream;
   }
 
   Future<List<PlotEntity>> _all() async =>

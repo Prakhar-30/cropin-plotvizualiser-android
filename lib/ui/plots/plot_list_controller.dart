@@ -69,8 +69,7 @@ class PlotListController extends ValueNotifier<PlotListState> {
   void _onLocation() {
     final LocationSample? sample = _locationSource.location.value;
     _here = sample?.position;
-    value = value.copyWith(hasFix: sample != null);
-    _recompute();
+    _recompute(hasFix: sample != null);
   }
 
   // Plots are drawn in the web tool and only ever read here. Two places that
@@ -95,6 +94,12 @@ class PlotListController extends ValueNotifier<PlotListState> {
     value = value.copyWith(syncing: false, lastSyncMessage: () => message);
   }
 
+  /// Stops the GNSS receiver while the app is in the background; the list
+  /// only needs a fix to sort by distance, and nobody is looking at it.
+  void pause() => _locationSource.stop();
+
+  void resume() => _locationSource.start();
+
   PlotListItem? itemFor(String plotId) {
     for (final item in value.items) {
       if (item.plot.id == plotId) return item;
@@ -102,12 +107,13 @@ class PlotListController extends ValueNotifier<PlotListState> {
     return null;
   }
 
-  void _recompute() {
+  /// One notification per fix or cache change, never two.
+  void _recompute({bool? hasFix}) {
     final from = _here;
     final items = [
       for (final plot in _plots) PlotListItem(plot, from == null ? null : distanceM(from, plot.centroid)),
     ]..sort((a, b) => (a.distanceM ?? double.maxFinite).compareTo(b.distanceM ?? double.maxFinite));
-    value = value.copyWith(items: items);
+    value = value.copyWith(items: items, hasFix: hasFix);
   }
 
   @override

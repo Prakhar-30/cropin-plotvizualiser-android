@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -149,28 +150,51 @@ class _WalkPad extends StatefulWidget {
 
 class _WalkPadState extends State<_WalkPad> {
   static const double _size = 96;
+  static const double _radius = _size / 2;
   static const double _maxSpeedMps = 1.6;
+
+  /// Keeps walking while the thumb is held still off-centre.
+  ///
+  /// Drag events stop arriving the moment the thumb stops moving, so without
+  /// this the agent froze mid-walk and a twenty-metre course-over-ground lock
+  /// needed fifteen seconds of constant wiggling. Five steps a second keeps the
+  /// simulator's 0.5 s step cap from ever being reached.
+  Timer? _stride;
   Offset _knob = Offset.zero;
+
+  void _walk() => widget.onWalk(
+        _knob.dx / _radius * _maxSpeedMps,
+        // Screen y grows downward; dragging up must walk north.
+        -_knob.dy / _radius * _maxSpeedMps,
+      );
+
+  void _release() {
+    _stride?.cancel();
+    _stride = null;
+    setState(() => _knob = Offset.zero);
+    widget.onWalk(0, 0);
+  }
+
+  @override
+  void dispose() {
+    _stride?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    const radius = _size / 2;
+    const radius = _radius;
     return GestureDetector(
+      onPanStart: (_) => _stride ??= Timer.periodic(const Duration(milliseconds: 200), (_) => _walk()),
       onPanUpdate: (details) {
         var next = _knob + details.delta;
         final length = next.distance;
         if (length > radius) next = next * (radius / length);
         setState(() => _knob = next);
-        widget.onWalk(
-          _knob.dx / radius * _maxSpeedMps,
-          // Screen y grows downward; dragging up must walk north.
-          -_knob.dy / radius * _maxSpeedMps,
-        );
+        _walk();
       },
-      onPanEnd: (_) {
-        setState(() => _knob = Offset.zero);
-        widget.onWalk(0, 0);
-      },
+      onPanEnd: (_) => _release(),
+      onPanCancel: _release,
       child: Container(
         width: _size,
         height: _size,

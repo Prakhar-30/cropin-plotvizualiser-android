@@ -1,5 +1,5 @@
-/// One place to decide how numbers read, so the list, the detail screen and the
-/// AR label never disagree about what "120 m" looks like.
+// One place to decide how numbers read, so the list, the detail screen and the
+// AR label never disagree about what "120 m" looks like.
 
 String formatDistance(double metres) {
   if (!metres.isFinite) return '—';
