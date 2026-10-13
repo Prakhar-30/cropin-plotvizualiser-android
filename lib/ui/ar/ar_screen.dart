@@ -543,7 +543,7 @@ class _HealthControls extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         _LayerSwitch(selected: state.healthLayer, onSelect: onSelect),
-        if (showing && health != null) ...[
+        if (showing) ...[
           const SizedBox(height: 10),
           Text(
             '$patches patch${patches == 1 ? '' : 'es'} · ${formatHectares(health.stressedAreaSqM)} stressed',
