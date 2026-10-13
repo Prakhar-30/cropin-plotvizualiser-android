@@ -26,10 +26,10 @@ import 'linear.dart';
 /// it shears the overlay rather than turning it.
 
 /// Time constant while the phone is held still. Heavy: kills the shimmer.
-const double _steadyTauS = 0.65;
+const double _defaultSteadyTauS = 0.65;
 
 /// Time constant while the phone is being turned. Light: catches up fast.
-const double _agileTauS = 0.05;
+const double _defaultAgileTauS = 0.05;
 
 /// Deviation from the current estimate that counts as fully deliberate motion.
 ///
@@ -50,7 +50,7 @@ const double _agileTauS = 0.05;
 /// bounce straight through to the overlay - the boundary jogging along with the
 /// walk. A deliberate pan is 60 degrees or more and still clears this bar
 /// immediately, so nothing was given up to buy it.
-const double _agileDeviationDeg = 25.0;
+const double _defaultAgileDeviationDeg = 25.0;
 
 /// Time constant for the deviation measure itself.
 ///
@@ -174,9 +174,9 @@ Quat slerp(Quat from, Quat to, double t) {
 
 class OrientationSmoother {
   OrientationSmoother({
-    double steadyTauS = _steadyTauS,
-    double agileTauS = _agileTauS,
-    double agileDeviationDeg = _agileDeviationDeg,
+    double steadyTauS = _defaultSteadyTauS,
+    double agileTauS = _defaultAgileTauS,
+    double agileDeviationDeg = _defaultAgileDeviationDeg,
   })  : _steadyTauS = steadyTauS,
         _agileTauS = agileTauS,
         _agileDeviationDeg = agileDeviationDeg;
