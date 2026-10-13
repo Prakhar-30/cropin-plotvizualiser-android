@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app_container.dart';
 import '../../core/geo/camera_geometry.dart';
@@ -45,6 +46,10 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Portrait while this screen is open, and only while it is. The overlay
+    // maths assumes the screen frame the sensor matrix is remapped into; the
+    // rest of the host app keeps whatever orientations it allows.
+    SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
     _controller = ArController(widget.container, widget.plotId, simulated: widget.simulated);
     _controller.start();
     unawaited(_startCamera());
@@ -53,6 +58,7 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    SystemChrome.setPreferredOrientations(widget.container.config.restoreOrientations);
     _controller.stop();
     _controller.dispose();
     unawaited(_camera?.dispose());

@@ -16,6 +16,16 @@ this log must match the code.
 | F6 | Platform: native Android channel (rotation vectors, camera geometry, fused location, device info), `PoseSource` / `LocationSource`, simulation engine | Dart side compiles against the channel contract |
 | F7 | UI: theme, plot list, plot detail + sketch, AR screen, overlay painter, heading chip, simulation panel, permission gate | Every Compose screen has its Flutter counterpart |
 | F8 | Review pass and docs | README describes the Flutter build; no dead code |
+| F9 | Package as an embeddable Flutter plugin; standalone app moved to `example/` | A host app integrates with one dependency and one screen; CI green on Flutter 3.22 and stable |
+
+**F9, packaging for a host app.** The aim was to add nothing that could break a
+host app's build: no third-party native dependencies (framework
+`LocationManager` instead of Play Services location, native permission
+requests instead of `permission_handler`), wide Dart version ranges, no
+Flutter API newer than 3.22, minSdk 21, no `<uses-feature required>` in the
+merged manifest, namespaced channels, portrait locked only while the AR screen
+is open, and a configurable cache file name. Integration is described in
+`INTEGRATION.md`.
 
 **How it was verified.** The port was written without a local Flutter SDK, so
 every milestone was pushed and checked by CI (`.github/workflows/flutter.yml`):

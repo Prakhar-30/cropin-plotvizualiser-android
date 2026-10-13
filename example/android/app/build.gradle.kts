@@ -17,8 +17,7 @@ android {
 
     defaultConfig {
         applicationId = "com.fieldar.plotfinder"
-        // 26, as before: the rotation-vector remap and elapsedRealtimeNanos on a
-        // Location are what the native channel relies on.
+        // 26, as the Kotlin app was. The plugin itself needs only 21.
         minSdk = 26
         targetSdk = 35
         versionCode = flutter.versionCode
@@ -44,8 +43,3 @@ flutter {
     source = "../.."
 }
 
-dependencies {
-    // The fused provider, exactly as the Kotlin app used it, so a fix still
-    // says whether it carries a bearing - see PlotFinderChannels.kt.
-    implementation("com.google.android.gms:play-services-location:21.3.0")
-}

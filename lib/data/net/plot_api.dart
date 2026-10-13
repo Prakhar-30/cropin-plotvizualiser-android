@@ -79,6 +79,8 @@ class HttpPlotApi implements PlotApi {
         for (final p in body as List<dynamic>) PlotDto.fromJson(p as Json),
       ];
 
+  void close() => _client.close(force: true);
+
   Future<Object?> _get(String path, [Map<String, String>? query]) async {
     var uri = _base.resolve(path);
     if (query != null) uri = uri.replace(queryParameters: query);

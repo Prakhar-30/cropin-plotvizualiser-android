@@ -1,0 +1,61 @@
+// Built as a library inside whichever app depends on it, so it pins as little
+// as it can. The buildscript versions below are only used when the plugin is
+// built on its own; inside a host app, the host's Android Gradle Plugin and
+// Kotlin versions win.
+group = "com.fieldar.plotfinder.plugin"
+version = "1.0"
+
+buildscript {
+    ext.kotlin_version = "1.9.24"
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.3.2")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+android {
+    namespace = "com.fieldar.plotfinder.plugin"
+    compileSdk = 35
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    sourceSets {
+        main.java.srcDirs += "src/main/kotlin"
+    }
+
+    defaultConfig {
+        // As low as the code allows, so the plugin never raises a host app's
+        // minimum. Everything newer than this is guarded at runtime.
+        minSdk = 21
+    }
+}
+
+// Through the compile task rather than the android { kotlinOptions } block:
+// that block is deprecated in Kotlin 2.x and rejected by newer versions, and
+// this form works from Kotlin 1.8 up. Java and Kotlin must agree on the JVM
+// target, or Gradle 8 refuses the build.
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    }
+}
+
+// No dependencies beyond the Android framework and the Flutter embedding, on
+// purpose - see PlotFinderPlugin.kt.

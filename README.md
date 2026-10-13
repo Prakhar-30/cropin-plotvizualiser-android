@@ -4,6 +4,10 @@
 > for feature; `main` keeps the original Kotlin/Compose app. The algorithms, the
 > numbers and the reasoning below are unchanged by the port. How it was done is
 > logged milestone by milestone in [`MILESTONES.md`](MILESTONES.md).
+>
+> It is packaged as a **Flutter plugin** so another Flutter app can embed it with
+> one dependency and one screen - see [`INTEGRATION.md`](INTEGRATION.md). The
+> standalone app lives in `example/`.
 
 
 A field agent is dispatched to a farm plot, arrives at the nearest road, and is
@@ -41,9 +45,12 @@ lib/sim            debug-only simulated agent (implements both interfaces)
 lib/data           sqflite cache, HTTP sync, repositories
 lib/platform       Dart end of the native channel, monotonic clock
 lib/ui             Flutter screens: plot list, plot detail, AR view
-android/app/src/main/kotlin
-                   the native channel: rotation vectors, camera geometry,
-                   fused-provider fixes, device info
+lib/plot_finder.dart
+                   the public API: PlotFinderScreen, PlotFinderConfig
+android/src/main/kotlin
+                   the plugin's native side: rotation vectors, camera geometry,
+                   location, permissions, device info
+example/           the standalone app, which embeds the package like any host
 ```
 
 Everything under `lib/core/` imports nothing but `dart:math`. That is what makes
@@ -63,9 +70,11 @@ plugins, because the plugins cannot hand them over faithfully:
 - **The camera's physical sensor size and focal length,** which set the FOV —
   the scale factor on every projected point. The camera plugin does not expose
   `CameraCharacteristics`.
-- **Fixes that admit when they have no bearing.** The fused provider's
-  `hasBearing()` goes through as a null, so course over ground rejects the fix
-  instead of reading it as "due north".
+- **Fixes that admit when they have no bearing.** `Location.hasBearing()`
+  goes through as a null, so course over ground rejects the fix instead of
+  reading it as "due north". Fixes come from the framework's `LocationManager`
+  (its fused provider on Android 12+, GPS before that) rather than Google Play
+  Services, so the package has no native dependency to clash with a host app's.
 
 The Flutter camera plugin chooses its own preview size, often 16:9 from a 4:3
 sensor, which crops the axis that spans a portrait screen. `CameraGeometry`
@@ -86,7 +95,8 @@ the wire format, plus new tests for the preview-crop FOV correction, the
 simulator and a few widgets. None of them needs a device.
 
 CI (`.github/workflows/flutter.yml`) runs `flutter analyze` and `flutter test`
-on every push to this branch, then builds a debug APK and keeps it as a
+on every push to this branch, on the current Flutter and on 3.22 (the oldest
+the package supports), then builds the example's debug APK and keeps it as a
 downloadable artifact of the run.
 
 ## Coordinate math
@@ -345,18 +355,19 @@ already carries the columns a boundary edit would need.
 
 - Flutter, Android host in `android/`, min SDK 26, portrait-locked (the overlay
   maths assumes the screen frame the sensor matrix is remapped into).
-- `flutter run` for a debug build with simulation mode; `flutter build apk
-  --release` for a build without it.
+- `cd example && flutter run` for a debug build with simulation mode;
+  `flutter build apk --release` there for a build without it.
 - API base URL is a compile-time define; it defaults to `http://10.0.2.2:4000/`,
   the emulator's route to a `plot-web` API running on the host. A real handset
   needs the dev machine's LAN address or a deployed URL:
   `flutter run --dart-define=PLOT_API_BASE_URL=http://192.168.1.20:4000/`
-- Same applicationId and the same cache file, tables and schema version as the
-  Kotlin build, so installing over it keeps the cached plots.
+- The example keeps the Kotlin build's applicationId and cache file, tables and
+  schema version, so installing over it keeps the cached plots. Embedded, the
+  cache file name is the host's choice.
 - The rotation matrix is remapped through `SensorManager.remapCoordinateSystem`
   for the display rotation, so a natural-landscape device does not render the
   whole overlay on its side.
-- **iOS is not wired up.** All of `lib/` is portable, but the native channel
-  exists only for Android. An iOS build needs `flutter create --platforms=ios .`
-  and a Swift counterpart of `PlotFinderChannels.kt` (CoreMotion attitude,
-  AVCaptureDevice field of view, CoreLocation course).
+- **iOS is not wired up.** All of `lib/` is portable, but the plugin's native
+  side exists only for Android; on iOS the screen shows an "Android only"
+  notice. Support needs a Swift counterpart of `PlotFinderPlugin.kt`
+  (CoreMotion attitude, AVCaptureDevice field of view, CoreLocation course).

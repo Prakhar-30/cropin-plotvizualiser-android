@@ -48,7 +48,7 @@ class DeviceInfo {
   static const DeviceInfo unknown = DeviceInfo('unknown', '');
 }
 
-/// The Dart end of `PlotFinderChannels.kt`.
+/// The Dart end of `PlotFinderPlugin.kt`.
 ///
 /// One instance per app. Each event stream is created once and shared: an
 /// EventChannel has a single native listener, so two screens opening their own
@@ -56,9 +56,12 @@ class DeviceInfo {
 class NativePlatform {
   NativePlatform();
 
-  static const MethodChannel _methods = MethodChannel('plotfinder/platform');
-  static const EventChannel _rotation = EventChannel('plotfinder/rotation');
-  static const EventChannel _location = EventChannel('plotfinder/location');
+  // Namespaced to this package, so they cannot collide with a host app's own
+  // channels.
+  static const String _prefix = 'com.fieldar.plot_finder';
+  static const MethodChannel _methods = MethodChannel('$_prefix/platform');
+  static const EventChannel _rotation = EventChannel('$_prefix/rotation');
+  static const EventChannel _location = EventChannel('$_prefix/location');
 
   late final Stream<RotationSample> rotationSamples =
       _rotation.receiveBroadcastStream().map(_toRotation).handleError(_log);
@@ -85,6 +88,32 @@ class NativePlatform {
     } on Object catch (e) {
       debugPrint('PlotFinder: camera characteristics unreadable ($e) - using fallback FOV');
       return _fallback(previewAspect);
+    }
+  }
+
+  /// True when camera and fine location are both granted.
+  Future<bool> hasPermissions() async {
+    try {
+      return await _methods.invokeMethod<bool>('hasPermissions') ?? false;
+    } on Object {
+      return false;
+    }
+  }
+
+  /// Asks for camera and location, and reports whether both were granted.
+  Future<bool> requestPermissions() async {
+    try {
+      return await _methods.invokeMethod<bool>('requestPermissions') ?? false;
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<void> openAppSettings() async {
+    try {
+      await _methods.invokeMethod<bool>('openAppSettings');
+    } on Object {
+      // Nothing useful to do; the button simply does nothing.
     }
   }
 

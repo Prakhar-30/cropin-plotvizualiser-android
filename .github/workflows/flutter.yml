@@ -1,8 +1,8 @@
 name: flutter
 
-# The port is verified here rather than on a laptop: every push to the Flutter
-# branch is analysed and its unit tests run, so a milestone that does not
-# compile cannot pass silently.
+# The package is verified here rather than on a laptop: every push is analysed,
+# its tests run on the current Flutter and on the oldest one pubspec.yaml
+# promises, and the example app - standing in for a host app - is built.
 on:
   push:
     branches: [flutter]
@@ -18,25 +18,39 @@ concurrency:
 jobs:
   analyze-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 'any' is the latest stable; 3.22.3 is the floor in pubspec.yaml, so a
+        # host app on an older Flutter is not the first to find an API we use
+        # that it does not have.
+        flutter: ['any', '3.22.3']
+    name: analyze-and-test (flutter ${{ matrix.flutter }})
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ matrix.flutter }}
           cache: true
       - run: flutter --version
       - run: flutter pub get
+      - run: flutter pub get
+        working-directory: example
       - name: Analyze
         run: flutter analyze
       - name: Unit tests
         run: flutter test --reporter expanded
 
-  # Compiles the Android host, the native channel in Kotlin and every plugin,
-  # which `flutter analyze` cannot see. The debug APK is kept as an artifact so
-  # a build can be side-loaded straight from the run.
+  # Compiles the plugin's Kotlin inside a host app - the example - along with
+  # every dependency's native code, which `flutter analyze` cannot see. The
+  # debug APK is kept as an artifact so a build can be side-loaded from the run.
   build-apk:
     runs-on: ubuntu-latest
     needs: analyze-and-test
+    defaults:
+      run:
+        working-directory: example
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -55,5 +69,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: plot-finder-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          path: example/build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 14

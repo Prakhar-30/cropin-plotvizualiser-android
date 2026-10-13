@@ -9,22 +9,23 @@ build/
 coverage/
 *.g.dart.tmp
 
-# Android host
-android/.gradle/
-android/local.properties
-android/app/debug/
-android/app/profile/
-android/app/release/
-android/**/GeneratedPluginRegistrant.java
-android/key.properties
+# Android (the plugin in android/, the example host in example/android/)
+**/android/.gradle/
+**/android/local.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+**/android/**/GeneratedPluginRegistrant.java
+**/android/key.properties
 **/android/**/gradle-wrapper.jar.tmp
+pubspec.lock
 
 # iOS host (generated on demand with `flutter create --platforms=ios .`)
-ios/Pods/
-ios/.symlinks/
-ios/Flutter/Generated.xcconfig
-ios/Flutter/flutter_export_environment.sh
-ios/Flutter/ephemeral/
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Flutter/ephemeral/
 
 # IDE
 .idea/

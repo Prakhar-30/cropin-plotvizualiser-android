@@ -6,6 +6,7 @@ import '../../core/geo/enu.dart';
 import '../../core/geo/polygon_geometry.dart';
 import '../../data/plot.dart';
 import '../formatting.dart';
+import '../theme.dart';
 
 /// Screen 2: what the agent reads before setting off.
 ///
@@ -152,7 +153,7 @@ class PlotSketchPainter extends CustomPainter {
         );
 
     final path = Path()..addPolygon([for (final p in ring) toScreen(p)], true);
-    canvas.drawPath(path, Paint()..color = _line.withValues(alpha: 0.18));
+    canvas.drawPath(path, Paint()..color = _line.withAlpha(alpha8(0.18)));
     canvas.drawPath(
       path,
       Paint()

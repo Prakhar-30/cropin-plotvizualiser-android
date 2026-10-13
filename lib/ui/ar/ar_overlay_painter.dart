@@ -8,6 +8,7 @@ import '../../core/heading/heading_model.dart';
 import '../../core/render/health_geometry.dart';
 import '../../core/render/overlay_geometry.dart';
 import '../../core/render/plot_palette.dart';
+import '../theme.dart';
 import 'ar_controller.dart';
 
 /// Draws a [PlotOverlay] on a 2D canvas composited over the camera preview.
@@ -124,12 +125,12 @@ class ArOverlayPainter extends CustomPainter {
   }
 
   Paint _fill(Color colour, double alpha) => Paint()
-    ..color = colour.withValues(alpha: alpha.clamp(0.0, 1.0))
+    ..color = colour.withAlpha(alpha8(alpha.clamp(0.0, 1.0)))
     ..style = PaintingStyle.fill
     ..isAntiAlias = true;
 
   Paint _stroke(Color colour, double alpha, double physicalWidth) => Paint()
-    ..color = colour.withValues(alpha: alpha.clamp(0.0, 1.0))
+    ..color = colour.withAlpha(alpha8(alpha.clamp(0.0, 1.0)))
     ..style = PaintingStyle.stroke
     ..strokeWidth = _px(physicalWidth)
     ..strokeCap = StrokeCap.butt
@@ -200,7 +201,7 @@ class ArOverlayPainter extends CustomPainter {
         '${marker.rank}',
         Offset(top.dx, top.dy + _px(10)),
         TextStyle(
-          color: Colors.white.withValues(alpha: confidenceAlpha),
+          color: Colors.white.withAlpha(alpha8(confidenceAlpha)),
           fontSize: _px(28),
           fontWeight: FontWeight.bold,
         ),
@@ -290,7 +291,7 @@ class ArOverlayPainter extends CustomPainter {
 
   void _drawLabel(Canvas canvas, String text, ScreenPoint at, Color tint, double alpha) {
     final painter = TextPainter(
-      text: TextSpan(text: text, style: TextStyle(color: Colors.white.withValues(alpha: alpha), fontSize: _px(34))),
+      text: TextSpan(text: text, style: TextStyle(color: Colors.white.withAlpha(alpha8(alpha)), fontSize: _px(34))),
       textDirection: TextDirection.ltr,
     )..layout();
     final padding = _px(14);

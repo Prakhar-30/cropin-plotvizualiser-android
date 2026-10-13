@@ -16,7 +16,6 @@ import 'entities.dart';
 class AppDatabase {
   AppDatabase._(this._db);
 
-  static const String fileName = 'plotfinder.db';
   static const int schemaVersion = 3;
 
   final Database _db;
@@ -25,7 +24,14 @@ class AppDatabase {
   late final HealthDao health = HealthDao(_db);
   late final TelemetryDao telemetry = TelemetryDao(_db);
 
-  static Future<AppDatabase> open() async {
+  Future<void> close() async {
+    plots._changes.close();
+    await _db.close();
+  }
+
+  /// [fileName] is the host's choice when embedded; the standalone example
+  /// passes the Kotlin app's `plotfinder.db` to inherit its cache.
+  static Future<AppDatabase> open(String fileName) async {
     final path = p.join(await getDatabasesPath(), fileName);
     final db = await openDatabase(
       path,

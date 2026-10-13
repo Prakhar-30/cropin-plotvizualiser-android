@@ -35,3 +35,9 @@ ThemeData plotFinderTheme() {
     useMaterial3: true,
   );
 }
+
+/// An opacity in 0..1 as the 0..255 alpha `Color.withAlpha` takes.
+///
+/// Used instead of `Color.withValues`, which only exists from Flutter 3.27, so
+/// a host app on an older Flutter can still build this package.
+int alpha8(double opacity) => (opacity.clamp(0.0, 1.0) * 255).round();

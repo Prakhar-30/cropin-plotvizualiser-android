@@ -22,7 +22,14 @@ class PlotListScreen extends StatelessWidget {
             builder: (context, state, _) => Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Plots', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
+                Row(
+                  children: [
+                    // Embedded in a host app, the list is a pushed page and
+                    // needs a way back besides the system gesture.
+                    if (Navigator.of(context).canPop()) const BackButton(),
+                    const Text('Plots', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
+                  ],
+                ),
                 Text(
                   state.hasFix
                       ? '${state.items.length} cached, nearest first'
