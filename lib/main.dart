@@ -1,6 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-/// Placeholder entry point while the port lands milestone by milestone. The
-/// real wiring - permission gate, plot list, detail and AR screens - replaces
-/// this in the UI milestone.
-void main() => runApp(const MaterialApp(home: Scaffold(body: Center(child: Text('Plot Finder')))));
+import 'app.dart';
+import 'app_container.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Portrait only. The overlay maths assumes the screen frame the sensor
+  // rotation matrix is remapped into, and letting the device rotate mid-session
+  // would change that frame under the projection.
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  final container = await AppContainer.create();
+  runApp(PlotFinderApp(container: container));
+}

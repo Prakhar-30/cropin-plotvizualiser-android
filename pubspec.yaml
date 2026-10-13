@@ -9,7 +9,7 @@ version: 0.2.0+2
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
-  flutter: ">=3.24.0"
+  flutter: ">=3.27.0"
 
 # Deliberately short. Everything that decides where the overlay lands lives in
 # lib/core and imports nothing but dart:math, so it runs under `flutter test`
