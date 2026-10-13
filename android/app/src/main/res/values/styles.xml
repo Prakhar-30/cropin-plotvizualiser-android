@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown while the Flutter engine starts. Dark, like the app itself. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:statusBarColor">#0B0F14</item>
+        <item name="android:navigationBarColor">#0B0F14</item>
+    </style>
+    <!-- Behind the Flutter UI once it is up. -->
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">#0B0F14</item>
+        <item name="android:statusBarColor">#0B0F14</item>
+        <item name="android:navigationBarColor">#0B0F14</item>
+    </style>
+</resources>

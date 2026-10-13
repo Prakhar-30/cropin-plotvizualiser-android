@@ -1,5 +1,10 @@
 # plot-ar-android — AR plot finder
 
+> **This is the `flutter` branch.** The app below has been rebuilt in Flutter,
+> feature for feature; `main` keeps the original Kotlin/Compose app. Progress is
+> logged milestone by milestone in [`MILESTONES.md`](MILESTONES.md).
+
+
 A field agent is dispatched to a farm plot, arrives at the nearest road, and is
 surrounded by visually identical fields. This app points the phone around, shows
 the target plot highlighted on the ground through the camera, and shows roughly

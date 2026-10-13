@@ -1,3 +1,26 @@
+# Flutter port — Milestones
+
+This branch (`flutter`) is the Kotlin/Compose app rebuilt in Flutter, feature for
+feature. `main` keeps the Kotlin original; nothing here changes what it does.
+
+Same rule as the original build: **revise before advancing**, and a number in
+this log must match the code.
+
+| # | Milestone | Done when |
+|---|---|---|
+| F1 | Scaffold: Flutter project, Android host (portrait, permissions, debug cleartext), Kotlin project removed from this branch | `pubspec.yaml`, `android/` host and placeholder `lib/main.dart` committed |
+| F2 | `core/geo` in Dart: ENU frame, 3x3 algebra, projection + near-plane clipping, polygon distance, position stabiliser, orientation smoother | Kotlin geo tests ported to `test/core/geo` |
+| F3 | `core/heading` in Dart: heading model, fusion, course-over-ground detector, landmark snap | Kotlin heading tests ported to `test/core/heading` |
+| F4 | `core/render` in Dart: palette, overlay geometry, health raster | Kotlin render tests ported to `test/core/render` |
+| F5 | Data: domain models, wire DTOs, mapping, HTTP client, sqflite cache (same schema as Room v3), repositories | Health DTO parsing tests ported |
+| F6 | Platform: native Android channel (rotation vectors, camera geometry, fused location, device info), `PoseSource` / `LocationSource`, simulation engine | Dart side compiles against the channel contract |
+| F7 | UI: theme, plot list, plot detail + sketch, AR screen, overlay painter, heading chip, simulation panel, permission gate | Every Compose screen has its Flutter counterpart |
+| F8 | Review pass and docs | README describes the Flutter build; no dead code |
+
+---
+
+# Original Kotlin build log
+
 # AR_Project — Milestones
 
 Two independent deliverables in two folders:

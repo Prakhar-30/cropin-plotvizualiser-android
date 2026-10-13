@@ -1,0 +1,22 @@
+<!--
+    Debug-only overlay.
+
+    Since Android 9 cleartext HTTP is blocked by default, and this app targets
+    SDK 35, so a plain `http://192.168.x.x:4000/` dev server is unreachable
+    without an opt-in. That opt-in lives here, in the debug source set alone:
+    release builds keep the secure default, because a flag that permits
+    unencrypted traffic is exactly the kind of thing that gets added "just for
+    testing" and then ships.
+
+    INTERNET is repeated here because the Flutter tool needs it in debug for
+    hot reload, independent of whether the app syncs.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:usesCleartextTraffic="true"
+        tools:targetApi="28" />
+</manifest>

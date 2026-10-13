@@ -1,18 +1,40 @@
-# Gradle / build output
-.gradle/
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
 build/
-.kotlin/
+coverage/
+*.g.dart.tmp
 
-# Machine-specific: points at whatever SDK this checkout was built against.
-local.properties
+# Android host
+android/.gradle/
+android/local.properties
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/**/GeneratedPluginRegistrant.java
+android/key.properties
+**/android/**/gradle-wrapper.jar.tmp
+
+# iOS host (generated on demand with `flutter create --platforms=ios .`)
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/ephemeral/
 
 # IDE
 .idea/
 *.iml
+.vscode/
 .DS_Store
 
-# Built artefacts. A debug APK is ~13 MB and changes on every build; git would
+# Built artefacts. A debug APK is ~20 MB and changes on every build; git would
 # keep a full copy of each one forever. Ship builds through GitHub Releases
 # instead, where the download link stays stable and the history stays small.
 *.apk
 *.aab
+*.ipa
