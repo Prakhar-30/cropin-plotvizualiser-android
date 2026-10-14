@@ -7,7 +7,6 @@ class PlotFinderConfig {
   const PlotFinderConfig({
     this.apiBaseUrl = defaultApiBaseUrl,
     this.databaseName = 'plot_finder.db',
-    this.enableSimulation = false,
     this.restoreOrientations = const [],
   });
 
@@ -17,11 +16,6 @@ class PlotFinderConfig {
   /// File name of the offline cache, inside the app's databases directory.
   /// Distinct from anything the host uses, by default.
   final String databaseName;
-
-  /// Shows the debug joystick and error sliders on the AR screen. Never turn
-  /// this on in a release build: it puts fabricated positions in front of an
-  /// agent who thinks they are real.
-  final bool enableSimulation;
 
   /// The orientations to restore when the AR screen closes.
   ///

@@ -35,6 +35,8 @@ import io.flutter.plugin.common.PluginRegistry
  * over faithfully. Everything here is plumbing; every decision made with these
  * values - smoothing, heading fusion, projection - lives in Dart.
  *
+ *  - **Acceleration magnitude**, for counting steps, stamped on the same clock
+ *    as the fixes so the two can be fused.
  *  - **Rotation vectors.** Both `TYPE_ROTATION_VECTOR` (knows magnetic north)
  *    and `TYPE_GAME_ROTATION_VECTOR` (gyro + accel, no magnetometer), already
  *    turned into rotation matrices and remapped to the display.
@@ -61,6 +63,7 @@ class PlotFinderPlugin :
     private var methods: MethodChannel? = null
     private var rotation: EventChannel? = null
     private var location: EventChannel? = null
+    private var acceleration: EventChannel? = null
 
     private var activity: ActivityPluginBinding? = null
     private var pendingPermission: MethodChannel.Result? = null
@@ -69,6 +72,8 @@ class PlotFinderPlugin :
     private var magneticRotation: Sensor? = null
     private var gameRotation: Sensor? = null
     private var rotationListener: SensorEventListener? = null
+    private var accelerometer: Sensor? = null
+    private var accelerationListener: SensorEventListener? = null
 
     private var locationManager: LocationManager? = null
     private var locationListener: LocationListener? = null
@@ -80,6 +85,7 @@ class PlotFinderPlugin :
         sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
         magneticRotation = sensorManager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         gameRotation = sensorManager?.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+        accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
 
         val messenger = binding.binaryMessenger
@@ -97,17 +103,23 @@ class PlotFinderPlugin :
         }
         rotation = EventChannel(messenger, "$CHANNEL/rotation").apply { setStreamHandler(RotationHandler()) }
         location = EventChannel(messenger, "$CHANNEL/location").apply { setStreamHandler(LocationHandler()) }
+        acceleration = EventChannel(messenger, "$CHANNEL/acceleration").apply {
+            setStreamHandler(AccelerationHandler())
+        }
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         stopRotation()
         stopLocation()
+        stopAcceleration()
         methods?.setMethodCallHandler(null)
         rotation?.setStreamHandler(null)
         location?.setStreamHandler(null)
+        acceleration?.setStreamHandler(null)
         methods = null
         rotation = null
         location = null
+        acceleration = null
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
@@ -279,6 +291,50 @@ class PlotFinderPlugin :
         }
         SensorManager.remapCoordinateSystem(matrix, axisX, axisY, out)
         return out
+    }
+
+    // --- acceleration ----------------------------------------------------------
+
+    /**
+     * Magnitude of the raw accelerometer, gravity included, for step counting.
+     *
+     * Only the magnitude crosses the channel: it does not depend on how the
+     * phone is held, and it is one number instead of three at 50 Hz. Each
+     * event is `[timestampMs, magnitude]`, with the timestamp from the sensor
+     * event itself - nanoseconds since boot, the same clock as
+     * `Location.elapsedRealtimeNanos` - so a step and a fix can be ordered
+     * against each other exactly.
+     */
+    private inner class AccelerationHandler : EventChannel.StreamHandler {
+        override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+            stopAcceleration()
+            val manager = sensorManager ?: return
+            val sensor = accelerometer ?: return
+            val listener = object : SensorEventListener {
+                override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
+                override fun onSensorChanged(event: SensorEvent) {
+                    val x = event.values[0]
+                    val y = event.values[1]
+                    val z = event.values[2]
+                    events.success(
+                        doubleArrayOf(
+                            (event.timestamp / 1_000_000L).toDouble(),
+                            Math.sqrt((x * x + y * y + z * z).toDouble()),
+                        ),
+                    )
+                }
+            }
+            accelerationListener = listener
+            manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+        }
+
+        override fun onCancel(arguments: Any?) = stopAcceleration()
+    }
+
+    private fun stopAcceleration() {
+        accelerationListener?.let { sensorManager?.unregisterListener(it) }
+        accelerationListener = null
     }
 
     // --- location --------------------------------------------------------------

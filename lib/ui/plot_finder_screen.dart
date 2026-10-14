@@ -164,20 +164,19 @@ class _HomeState extends State<_Home> {
           return PlotDetailScreen(
             plot: item?.plot,
             distanceM: item?.distanceM,
-            simulationAvailable: widget.container.simulationAvailable,
-            onFindPlot: (simulated) => _openAr(plotId, simulated),
+            onFindPlot: () => _openAr(plotId),
           );
         },
       ),
     ));
   }
 
-  void _openAr(String plotId, bool simulated) {
+  void _openAr(String plotId) {
     // The AR view stays dark whatever the rest of the app uses: light chrome
     // over a daylight camera feed washes the overlay out.
     Navigator.of(context).push(_route(
       plotFinderTheme(),
-      (_) => ArScreen(container: widget.container, plotId: plotId, simulated: simulated),
+      (_) => ArScreen(container: widget.container, plotId: plotId),
     ));
   }
 

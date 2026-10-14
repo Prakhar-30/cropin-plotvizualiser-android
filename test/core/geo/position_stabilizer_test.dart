@@ -242,4 +242,74 @@ void main() {
     expect(out.rejectedOutlier, isFalse, reason: 'a fix after reset must not be gated');
     expect(distanceM(farAway, out.position), closeTo(0.0, 1.0));
   });
+
+  // Regression test for the field report that prompted step counting.
+  //
+  // Indoors the receiver barely moves and reports ~13 m accuracy and zero
+  // Doppler speed while the agent walks. The filter used to read that as
+  // standing still and hold the drawn position, so as the agent walked nine
+  // metres towards a plot the boundary receded with them.
+  test('walking indoors moves the drawn position with the steps', () {
+    final stabilizer = PositionStabilizer();
+    var t = 1000;
+    for (var i = 0; i < 10; i++) {
+      stabilizer.update(position: origin, accuracyM: 13.0, speedMps: 0.0, timestampMs: t);
+      t += 1000;
+    }
+
+    // Twelve 0.7 m steps due north, two a second, with the receiver still
+    // insisting nothing has changed.
+    late StabilizedPosition out;
+    for (var i = 0; i < 12; i++) {
+      t += 500;
+      out = stabilizer.onStep(lengthM: 0.7, headingDeg: 0.0, timestampMs: t)!;
+      if (i.isOdd) out = stabilizer.update(position: origin, accuracyM: 13.0, speedMps: 0.0, timestampMs: t);
+    }
+
+    final walked = offset(origin, 0.0, 8.4);
+    expect(distanceM(walked, out.position), lessThan(1.5),
+        reason: 'drawn ${distanceM(origin, out.position)} m from the start after an 8.4 m walk');
+    expect(stabilizer.stationary, isFalse);
+  });
+
+  test('a step moves the drawn position at once, with no slew lag', () {
+    final stabilizer = PositionStabilizer();
+    stabilizer.update(position: origin, accuracyM: 5.0, speedMps: 0.0, timestampMs: 1000);
+    final out = stabilizer.onStep(lengthM: 0.7, headingDeg: 90.0, timestampMs: 1100)!;
+    expect(distanceM(origin, out.position), closeTo(0.7, 0.01));
+    expect(bearingDeg(origin, out.position), closeTo(90.0, 0.5));
+  });
+
+  test('with steps being counted, stillness comes from the steps, not Doppler', () {
+    final stabilizer = PositionStabilizer();
+    stabilizer.update(position: origin, accuracyM: 5.0, speedMps: 0.0, timestampMs: 1000);
+    stabilizer.onStep(lengthM: 0.7, headingDeg: 0.0, timestampMs: 1500);
+    // Doppler says stopped; the last step was half a second ago - walking.
+    stabilizer.update(position: origin, accuracyM: 5.0, speedMps: 0.0, timestampMs: 2000);
+    expect(stabilizer.stationary, isFalse);
+    // Three seconds with no step - standing, whatever Doppler says.
+    stabilizer.update(position: origin, accuracyM: 5.0, speedMps: 1.2, timestampMs: 4500);
+    expect(stabilizer.stationary, isTrue);
+  });
+
+  test('outdoors, good fixes still pull a wrong step length back to the truth', () {
+    // Steps sized 30% too short against a receiver accurate to 4 m: GNSS must
+    // keep the drawn position from falling behind for good.
+    final stabilizer = PositionStabilizer();
+    var t = 1000;
+    stabilizer.update(position: origin, accuracyM: 4.0, speedMps: 0.0, timestampMs: t);
+    var truth = origin;
+    late StabilizedPosition out;
+    for (var i = 0; i < 60; i++) {
+      t += 500;
+      truth = offset(truth, 0.0, 0.7);
+      stabilizer.onStep(lengthM: 0.49, headingDeg: 0.0, timestampMs: t);
+      if (i.isOdd) out = stabilizer.update(position: truth, accuracyM: 4.0, speedMps: 1.4, timestampMs: t);
+    }
+    expect(distanceM(truth, out.position), lessThan(4.0));
+  });
+
+  test('a step before the first fix has nowhere to step from', () {
+    expect(PositionStabilizer().onStep(lengthM: 0.7, headingDeg: 0.0, timestampMs: 1000), isNull);
+  });
 }

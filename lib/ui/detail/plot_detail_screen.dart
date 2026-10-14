@@ -20,14 +20,12 @@ class PlotDetailScreen extends StatelessWidget {
     super.key,
     required this.plot,
     required this.distanceM,
-    required this.simulationAvailable,
     required this.onFindPlot,
   });
 
   final Plot? plot;
   final double? distanceM;
-  final bool simulationAvailable;
-  final void Function(bool simulated) onFindPlot;
+  final VoidCallback onFindPlot;
 
   @override
   Widget build(BuildContext context) {
@@ -119,16 +117,9 @@ class PlotDetailScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             child: Row(
               children: [
-                if (simulationAvailable) ...[
-                  Expanded(
-                    child: OutlinedButton(onPressed: () => onFindPlot(true), child: const Text('Simulate')),
-                  ),
-                  const SizedBox(width: 12),
-                ],
                 Expanded(
-                  flex: 2,
                   child: FilledButton.icon(
-                    onPressed: () => onFindPlot(false),
+                    onPressed: onFindPlot,
                     icon: const Icon(Icons.center_focus_strong_outlined, size: 18),
                     label: const Text('Find this plot'),
                   ),

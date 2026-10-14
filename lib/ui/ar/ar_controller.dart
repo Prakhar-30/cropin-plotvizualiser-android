@@ -11,12 +11,13 @@ import '../../core/geo/projection.dart';
 import '../../core/heading/course_over_ground_detector.dart';
 import '../../core/heading/heading_model.dart';
 import '../../core/heading/landmark_snap.dart';
+import '../../core/motion/step_calibrator.dart';
+import '../../core/motion/step_detector.dart';
 import '../../core/render/health_geometry.dart';
 import '../../core/render/overlay_geometry.dart';
 import '../../data/db/entities.dart';
 import '../../data/plot.dart';
 import '../../pose/pose_source.dart';
-import '../../sim/simulation_engine.dart';
 
 /// What the overlay canvas draws for one pose sample.
 ///
@@ -122,8 +123,8 @@ class ArUiState {
 
 /// Runs one AR session: pose in, overlay out, telemetry recorded.
 class ArController extends ValueNotifier<ArUiState> {
-  ArController(this._container, this._plotId, {required bool simulated})
-      : _sensors = _container.createSensors(simulated: simulated, simulationOrigin: simulationOrigin),
+  ArController(this._container, this._plotId)
+      : _sensors = _container.createSensors(),
         super(const ArUiState()) {
     _sensors.location.location.addListener(_onLocationChanged);
     _sensors.pose.pose.addListener(_onPoseChanged);
@@ -131,14 +132,9 @@ class ArController extends ValueNotifier<ArUiState> {
     _load();
   }
 
-  /// Used only until the plot loads and the agent is placed relative to it.
-  static const LatLng simulationOrigin = LatLng(12.7862, 76.7201);
-
   final AppContainer _container;
   final String _plotId;
   final Sensors _sensors;
-
-  SimulationEngine? get simulation => _sensors.simulation;
 
   /// The geometry to draw, updated at sensor rate. The canvas listens to this
   /// alone; see [ArFrame].
@@ -150,8 +146,15 @@ class ArController extends ValueNotifier<ArUiState> {
   final CourseOverGroundDetector _courseOverGround = CourseOverGroundDetector();
 
   /// Smooths the agent's position so a stationary agent gets a stationary
-  /// overlay. Applied to the render path only - see [_onLocation].
+  /// overlay, and moves it with each counted step so a walking agent's overlay
+  /// keeps pace with the camera. Applied to the render path only - see
+  /// [_onLocation].
   final PositionStabilizer _stabilizer = PositionStabilizer();
+
+  final StepDetector _steps = StepDetector();
+  final StepLengthModel _stepLength = StepLengthModel();
+  late final StepCalibrator _stepCalibration = StepCalibrator(_stepLength);
+  StreamSubscription<(double, int)>? _acceleration;
 
   /// The local metric frame, re-anchored whenever the agent walks far enough.
   /// Held here rather than rebuilt per frame so that a single origin serves
@@ -187,14 +190,7 @@ class ArController extends ValueNotifier<ArUiState> {
       plot: () => plot,
       message: () => plot == null ? 'Plot $_plotId is not in the offline cache' : null,
     );
-    // Simulation starts the agent a realistic walk away from the plot, so far
-    // mode is what you see first. The stabiliser is reset first: a teleport is
-    // not a GNSS observation, and filtering it against an estimate anchored
-    // somewhere else would have it gated as a wild outlier - which once left
-    // the overlay stranded 97 km away.
     if (plot != null) {
-      _stabilizer.reset();
-      simulation?.teleport(_simulationStartFor(plot));
       // The raster is loaded after the plot, never before: the boundary is
       // what the agent came for and must not wait on it.
       await _loadHealth();
@@ -209,8 +205,7 @@ class ArController extends ValueNotifier<ArUiState> {
   }
 
   void start() {
-    _sensors.pose.start();
-    _sensors.location.start();
+    resume();
     unawaited(_container.telemetry.syncPending());
   }
 
@@ -226,11 +221,54 @@ class ArController extends ValueNotifier<ArUiState> {
   void pause() {
     _sensors.pose.stop();
     _sensors.location.stop();
+    _acceleration?.cancel();
+    _acceleration = null;
+    // A stride interrupted by the app going away is not one to finish later.
+    _steps.reset();
   }
 
   void resume() {
     _sensors.pose.start();
     _sensors.location.start();
+    _acceleration ??= _container.platform.acceleration.listen((sample) {
+      final step = _steps.add(sample.$1, sample.$2);
+      if (step != null) _onStep(step);
+    });
+  }
+
+  /// One counted step: move the agent along the way the camera faces.
+  ///
+  /// The camera heading stands in for the walking direction, which is right
+  /// for the way this screen is used - phone held up, looking where you are
+  /// going - and is the fused, locked heading rather than the compass. When it
+  /// is wrong, because the agent walks one way while looking another, the
+  /// error is bounded by GNSS pulling the estimate back, and it only lasts
+  /// until they look where they are going again.
+  void _onStep(DetectedStep step) {
+    if (_pose.timestampMs == 0) return;
+    final heading = _pose.headingDeg;
+    _stepCalibration.onStep(step, heading);
+    final stepped = _stabilizer.onStep(
+      lengthM: _stepLength.lengthM(step.swingMps2),
+      headingDeg: heading,
+      timestampMs: step.timestampMs,
+    );
+    if (stepped == null) return;
+    _moveAgent(stepped.position);
+    _rebuildOverlay(value.copyWith(stationary: false));
+  }
+
+  /// Re-anchors the local frame if the agent has walked far enough from it.
+  void _moveAgent(LatLng position) {
+    _agentPosition = position;
+    final current = _frame;
+    if (current == null || current.needsReanchor(position)) {
+      _frame = EnuFrame(position);
+      _frameAnchoredAtMs = DateTime.now().millisecondsSinceEpoch;
+      // Every cached metre is measured from the old origin. Keeping them would
+      // offset the whole raster by however far the agent walked.
+      _healthField = null;
+    }
   }
 
   /// The viewport is only known once the camera box has been laid out.
@@ -343,19 +381,13 @@ class ArController extends ValueNotifier<ArUiState> {
       speedMps: sample.speedMps,
       timestampMs: sample.timestampMs,
     );
-    _agentPosition = stabilized.position;
+    _moveAgent(stabilized.position);
+    // Raw fix, like course over ground: calibrating the step length against
+    // positions the steps themselves have already moved would be circular.
+    _stepCalibration.onFix(sample.position, sample.accuracyM);
 
     if (stabilized.stationary) {
       _worstStationaryShiftM = math.max(_worstStationaryShiftM, stabilized.shiftM);
-    }
-
-    final current = _frame;
-    if (current == null || current.needsReanchor(stabilized.position)) {
-      _frame = EnuFrame(stabilized.position);
-      _frameAnchoredAtMs = DateTime.now().millisecondsSinceEpoch;
-      // Every cached metre is measured from the old origin. Keeping them would
-      // offset the whole raster by however far the agent walked.
-      _healthField = null;
     }
 
     _rebuildOverlay(value.copyWith(
@@ -478,9 +510,6 @@ class ArController extends ValueNotifier<ArUiState> {
     }());
   }
 
-  /// Drops the agent about 127 m south-west of the plot, a plausible road arrival.
-  static LatLng _simulationStartFor(Plot plot) => EnuFrame(plot.centroid).toLatLng(const Enu(-90.0, -90.0));
-
   @override
   set value(ArUiState newValue) {
     if (_disposed) return;
@@ -493,6 +522,7 @@ class ArController extends ValueNotifier<ArUiState> {
     _sensors.location.location.removeListener(_onLocationChanged);
     _sensors.pose.pose.removeListener(_onPoseChanged);
     _sensors.pose.headingStatus.removeListener(_onHeadingStatusChanged);
+    _acceleration?.cancel();
     frame.dispose();
     super.dispose();
   }

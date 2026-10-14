@@ -8,9 +8,8 @@ import '../platform/native_platform.dart';
 
 /// Where the agent is.
 ///
-/// Kept behind an interface for the same reason `PoseSource` is: simulation
-/// mode substitutes a joystick for the GNSS receiver without any code above
-/// this line knowing.
+/// Kept behind an interface so the sensor plumbing can be swapped - a test
+/// fake, or another receiver - without any code above this line knowing.
 abstract interface class LocationSource {
   /// Null until the first fix arrives.
   ValueListenable<LocationSample?> get location;

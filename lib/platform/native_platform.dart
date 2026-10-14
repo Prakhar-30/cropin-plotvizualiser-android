@@ -62,11 +62,17 @@ class NativePlatform {
   static const MethodChannel _methods = MethodChannel('$_prefix/platform');
   static const EventChannel _rotation = EventChannel('$_prefix/rotation');
   static const EventChannel _location = EventChannel('$_prefix/location');
+  static const EventChannel _acceleration = EventChannel('$_prefix/acceleration');
 
   late final Stream<RotationSample> rotationSamples =
       _rotation.receiveBroadcastStream().map(_toRotation).handleError(_log);
 
   late final Stream<RawFix> fixes = _location.receiveBroadcastStream().map(_toFix).handleError(_log);
+
+  /// Accelerometer magnitude in m/s², gravity included, stamped on the fixes'
+  /// clock: `(magnitude, timestampMs)`.
+  late final Stream<(double, int)> acceleration =
+      _acceleration.receiveBroadcastStream().map(_toAcceleration).handleError(_log);
 
   /// The rear camera's geometry for a preview of [previewAspect], or the
   /// flagged fallback when the characteristics cannot be read.
@@ -139,6 +145,11 @@ class NativePlatform {
       isCarrier: map['carrier']! as bool,
       matrix: Mat3.fromRowMajor([for (final v in m) (v! as num).toDouble()]),
     );
+  }
+
+  static (double, int) _toAcceleration(Object? event) {
+    final values = event! as List<Object?>;
+    return ((values[1]! as num).toDouble(), (values[0]! as num).toInt());
   }
 
   static RawFix _toFix(Object? event) {

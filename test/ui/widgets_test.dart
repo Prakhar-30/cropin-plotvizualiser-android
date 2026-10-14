@@ -36,7 +36,7 @@ void main() {
     expect(find.text('gyro-carried  75s since fix'), findsOneWidget);
   });
 
-  testWidgets('the detail screen offers simulation only when it is available', (tester) async {
+  testWidgets('the detail screen shows the plot and opens the finder', (tester) async {
     const plot = Plot(
       id: 'PLT-1',
       name: 'North field',
@@ -54,14 +54,13 @@ void main() {
       createdAt: '2026-08-01T10:00:00Z',
       syncedAtMs: 0,
     );
-    bool? simulatedTapped;
+    var opened = false;
     await tester.pumpWidget(MaterialApp(
       theme: growTheme(),
       home: PlotDetailScreen(
         plot: plot,
         distanceM: 1530,
-        simulationAvailable: true,
-        onFindPlot: (simulated) => simulatedTapped = simulated,
+        onFindPlot: () => opened = true,
       ),
     ));
     expect(find.text('North field'), findsOneWidget);
@@ -70,8 +69,8 @@ void main() {
     expect(find.text('3'), findsOneWidget, reason: 'three corners, not counting the closing repeat');
     expect(find.text('2026-08-01'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('Simulate'));
-    await tester.tap(find.text('Simulate'));
-    expect(simulatedTapped, isTrue);
+    expect(find.text('Simulate'), findsNothing);
+    await tester.tap(find.text('Find this plot'));
+    expect(opened, isTrue);
   });
 }

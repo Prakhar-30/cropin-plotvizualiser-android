@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:plot_finder/plot_finder.dart';
@@ -20,7 +19,6 @@ Future<void> main() async {
         apiBaseUrl: defaultApiBaseUrl,
         // The Kotlin app's file name, so installing over it keeps its cache.
         databaseName: 'plotfinder.db',
-        enableSimulation: kDebugMode,
         restoreOrientations: [DeviceOrientation.portraitUp],
       ),
     ),

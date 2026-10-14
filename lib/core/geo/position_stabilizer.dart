@@ -28,10 +28,11 @@ import 'enu.dart';
 ///    fix that admits it is poor is automatically trusted less, with no threshold
 ///    to tune.
 ///
-/// Nothing here does dead reckoning between fixes. Integrating accelerometers on
-/// a hand-held phone drifts metres within seconds, which would trade a visible
-/// jitter for an invisible bias - much worse for a boundary someone is about to
-/// argue over.
+/// Between fixes the estimate is moved by counted steps (see [onStep]) - not by
+/// integrating accelerometers, which on a hand-held phone drifts metres within
+/// seconds and would trade a visible jitter for an invisible bias. A step is a
+/// discrete, bounded displacement: its length error is a scale factor, its
+/// direction error is the heading error, and GNSS corrects both over time.
 
 /// Below this ground speed the agent counts as standing still.
 const double stationarySpeedMps = 0.35;
@@ -41,6 +42,38 @@ const double _stationaryProcessNoiseMps = 0.02;
 
 /// Assumed rate of true position change while walking, a brisk pace.
 const double _walkingProcessNoiseMps = 1.6;
+
+/// The same while walking with steps being counted. The steps already carry the
+/// motion, so what is left to model is only what they miss - a mis-sized or
+/// uncounted step - and a third of a metre a second covers that.
+const double _steppingProcessNoiseMps = 0.5;
+
+/// Per-step position uncertainty, as a fraction of the step's length. Covers
+/// a step-length error of ~20% and a few degrees of heading error.
+const double _stepUncertaintyFraction = 0.3;
+
+/// While walking on counted steps, poor fixes are trusted this many times less
+/// (in standard deviation) once they are worse than [_poorFixFromM].
+///
+/// A filter like this one treats every fix as an independent measurement. Under
+/// a roof or a canopy they are nothing of the kind: the receiver sits on the
+/// same multipath reflection for tens of seconds, so ten fixes carry roughly
+/// the information of one. Believing all ten makes the filter overconfident and
+/// it drags a correctly-stepped walk back towards the stuck fix - in the field
+/// test that is the overlay losing a quarter of every metre walked. Good fixes,
+/// in the open, keep their full weight: they are what corrects the step length.
+const double _poorFixInflation = 3.0;
+const double _poorFixFromM = 6.0;
+const double _poorFixFullM = 10.0;
+
+/// With steps being counted, no step for this long means standing still.
+///
+/// This replaces Doppler speed as the motion cue whenever steps are available.
+/// Doppler is excellent in the open and useless under a roof or a canopy,
+/// where it reads near zero while the agent walks - which held the estimate
+/// still and made the boundary recede as they approached it. Two steps at a
+/// slow walk take about 1.5 s.
+const int _stepStillnessMs = 1500;
 
 /// Floor on the accuracy a fix is allowed to claim.
 ///
@@ -162,6 +195,13 @@ class PositionStabilizer {
   bool _stationary = false;
   bool get stationary => _stationary;
 
+  /// When the last counted step landed, on the fixes' clock; 0 before any.
+  int _lastStepMs = 0;
+
+  /// True once a step has been counted: from then on steps, not Doppler,
+  /// decide whether the agent is moving.
+  bool get countingSteps => _lastStepMs != 0;
+
   /// Current 1-sigma horizontal uncertainty, metres. Zero before the first fix.
   double get uncertaintyM => math.sqrt((_varEast + _varNorth) / 2.0);
 
@@ -197,13 +237,15 @@ class PositionStabilizer {
     // --- predict -------------------------------------------------------
     // Constant-position model: the estimate does not move on its own, only
     // its uncertainty grows, at the rate the motion state implies.
-    final processNoiseMps = _stationary ? _stationaryProcessNoiseMps : _walkingProcessNoiseMps;
+    final processNoiseMps = _stationary
+        ? _stationaryProcessNoiseMps
+        : (countingSteps ? _steppingProcessNoiseMps : _walkingProcessNoiseMps);
     final growth = (processNoiseMps * dtS) * (processNoiseMps * dtS);
     _varEast += growth;
     _varNorth += growth;
 
     // --- gate ----------------------------------------------------------
-    final trusted = _trustedAccuracy(accuracyM);
+    final trusted = _trustedAccuracy(accuracyM) * (countingSteps && !_stationary ? _fixInflation(accuracyM) : 1.0);
     final measurementVariance = trusted * trusted;
     final innovationE = measured.east - _east;
     final innovationN = measured.north - _north;
@@ -235,11 +277,42 @@ class PositionStabilizer {
     return _publish(active, rejectedOutlier: false);
   }
 
+  /// Moves the estimate by one counted step.
+  ///
+  /// The drawn position moves by exactly the same amount, at once, rather than
+  /// chasing it through the slew limiter: a step is the agent really moving,
+  /// and the overlay has to keep pace with the camera or the plot appears to
+  /// slide away as they approach it. The slew still governs GNSS corrections,
+  /// which is what it is for.
+  ///
+  /// [timestampMs] must be on the same clock as the fixes. Returns null before
+  /// the first fix, when there is no position to step from.
+  StabilizedPosition? onStep({required double lengthM, required double headingDeg, required int timestampMs}) {
+    final existing = _frame;
+    if (existing == null || lengthM <= 0) return null;
+    final active = existing.needsReanchor(_estimateLatLng(existing)) ? _reanchor(existing) : existing;
+
+    final h = toRadians(headingDeg);
+    final dEast = lengthM * math.sin(h);
+    final dNorth = lengthM * math.cos(h);
+    _east += dEast;
+    _north += dNorth;
+    _renderEast += dEast;
+    _renderNorth += dNorth;
+
+    final sigma = _stepUncertaintyFraction * lengthM;
+    _varEast += sigma * sigma;
+    _varNorth += sigma * sigma;
+
+    _lastStepMs = timestampMs;
+    _stationary = false;
+    return _publish(active, rejectedOutlier: false, atMs: timestampMs);
+  }
+
   /// Forgets everything.
   ///
   /// Called when the agent's position changes discontinuously for a reason that
-  /// is *not* measurement noise - starting a session, or the simulator being
-  /// teleported. Such a jump is not an observation to be filtered against the
+  /// is *not* measurement noise - starting a session, for instance. Such a jump is not an observation to be filtered against the
   /// old estimate; the old estimate no longer refers to anything.
   void reset() {
     _frame = null;
@@ -249,6 +322,7 @@ class PositionStabilizer {
     _stationary = false;
     _renderSeeded = false;
     _lastPublishMs = 0;
+    _lastStepMs = 0;
   }
 
   StabilizedPosition _seed(LatLng position, double accuracyM, int timestampMs) {
@@ -350,10 +424,20 @@ class PositionStabilizer {
   /// noise that displacement is measured with - below that, "moved" and "did
   /// not move" are indistinguishable and standing still is the safer reading.
   bool _isStationary(double? speedMps, Enu measured, double dtS) {
+    if (countingSteps) return _lastFixMs - _lastStepMs > _stepStillnessMs;
     if (speedMps != null) return speedMps < _stationarySpeedMps;
     if (dtS <= 0.0) return _stationary;
     final displacement = hypot(measured.east - _east, measured.north - _north);
     return displacement / dtS < _stationarySpeedMps;
+  }
+
+  /// 1 for a good fix, rising to [_poorFixInflation] across 6-10 m reported
+  /// accuracy. Smooth, so a fix hovering around the threshold does not make the
+  /// overlay jump between two weightings.
+  static double _fixInflation(double accuracyM) {
+    if (!accuracyM.isFinite) return _poorFixInflation;
+    final t = clampDouble((accuracyM - _poorFixFromM) / (_poorFixFullM - _poorFixFromM), 0.0, 1.0);
+    return 1.0 + (_poorFixInflation - 1.0) * t;
   }
 
   double _trustedAccuracy(double reported) =>

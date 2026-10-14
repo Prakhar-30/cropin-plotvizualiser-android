@@ -17,6 +17,7 @@ this log must match the code.
 | F7 | UI: theme, plot list, plot detail + sketch, AR screen, overlay painter, heading chip, simulation panel, permission gate | Every Compose screen has its Flutter counterpart |
 | F8 | Review pass and docs | README describes the Flutter build; no dead code |
 | F9 | Package as an embeddable Flutter plugin; standalone app moved to `example/` | A host app integrates with one dependency and one screen; CI green on Flutter 3.22 and stable |
+| F10 | First real-phone test: overlay receded while walking indoors. Step counting (PDR) fused into the position filter, step length calibrated from good GNSS; collapsible AR sheet; simulation removed | The indoor walk reproduced as a regression test and passing; research notes in `docs/research/ar-positioning.md` |
 
 **F9, packaging for a host app.** The aim was to add nothing that could break a
 host app's build: no third-party native dependencies (framework

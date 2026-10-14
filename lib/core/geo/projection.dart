@@ -239,7 +239,7 @@ Mat3 withHeading(Mat3 deviceToEnu, double desiredHeadingDeg) {
 
 /// Builds a device-to-ENU rotation from Euler angles.
 ///
-/// Used by simulation mode and by the tests. The live sensor path does **not**
+/// Used by the tests. The live sensor path does **not**
 /// go through here - it uses the rotation matrix directly, so this function's
 /// conventions only have to be self-consistent:
 ///

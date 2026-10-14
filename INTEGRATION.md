@@ -39,7 +39,6 @@ pages on your navigator, so system back behaves as everywhere else in your app.
 |---|---|---|
 | `apiBaseUrl` | `https://cropin-plot-visualizer-service-nu.vercel.app/` | The plot web tool's API (the deployed service). Release builds block cleartext HTTP, so use HTTPS |
 | `databaseName` | `plot_finder.db` | The offline cache's file in your app's databases directory |
-| `enableSimulation` | `false` | Debug joystick and error sliders. Never in a release build |
 | `restoreOrientations` | `[]` | Applied when the AR screen closes. See below |
 
 ## What it does to your build
