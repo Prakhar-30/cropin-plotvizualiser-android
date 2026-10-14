@@ -71,3 +71,14 @@ jobs:
           name: plot-finder-debug-apk
           path: example/build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 14
+      # The one to put on a phone: release mode, 64-bit ARM only (every
+      # current Android phone), so roughly a sixth of the debug APK's size.
+      # No simulation panel - that is debug-only. Signed with the debug key,
+      # which installs fine for testing but is not a Play Store build.
+      - name: Build release APK (arm64)
+        run: flutter build apk --release --target-platform android-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plot-finder-release-arm64-apk
+          path: example/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14

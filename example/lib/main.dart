@@ -5,10 +5,10 @@ import 'package:plot_finder/plot_finder.dart';
 
 /// The plot finder on its own, exactly as a host app would embed it.
 ///
-/// The API base URL is a compile-time define; it defaults to the emulator's
-/// route to a `plot-web` API running on the host machine:
+/// It talks to the deployed API unless a build says otherwise, e.g. for a
+/// local `npm run dev:api` seen from the emulator:
 ///
-///     flutter run --dart-define=PLOT_API_BASE_URL=http://192.168.1.20:4000/
+///     flutter run --dart-define=PLOT_API_BASE_URL=http://10.0.2.2:4000/
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
@@ -17,7 +17,7 @@ Future<void> main() async {
     debugShowCheckedModeBanner: false,
     home: PlotFinderScreen(
       config: PlotFinderConfig(
-        apiBaseUrl: String.fromEnvironment('PLOT_API_BASE_URL', defaultValue: 'http://10.0.2.2:4000/'),
+        apiBaseUrl: defaultApiBaseUrl,
         // The Kotlin app's file name, so installing over it keeps its cache.
         databaseName: 'plotfinder.db',
         enableSimulation: kDebugMode,

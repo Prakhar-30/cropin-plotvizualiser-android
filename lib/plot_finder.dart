@@ -12,4 +12,5 @@
 library;
 
 export 'config.dart' show PlotFinderConfig;
+export 'data/net/plot_api.dart' show defaultApiBaseUrl;
 export 'ui/plot_finder_screen.dart' show PlotFinderScreen, plotFinderSupported;

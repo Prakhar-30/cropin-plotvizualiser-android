@@ -29,16 +29,17 @@ abstract interface class PlotApi {
   Future<void> uploadTelemetry(List<TelemetryDto> rows);
 }
 
-/// Where the companion web tool's API lives.
+/// Where the companion web tool's API lives: the deployed service on Vercel,
+/// backed by Supabase.
 ///
 /// The app cannot create a plot of its own - boundaries come from the web tool
-/// and nowhere else - so an unreachable API means an empty list. 10.0.2.2 is
-/// only the emulator's route to the host; a real handset needs the dev
-/// machine's LAN address, or a deployed URL:
+/// and nowhere else - so an unreachable API means an empty list. To point a
+/// build at a local `npm run dev:api` instead (10.0.2.2 is the emulator's route
+/// to the host; a handset needs the machine's LAN address):
 ///
-///     flutter run --dart-define=PLOT_API_BASE_URL=http://192.168.1.20:4000/
+///     flutter run --dart-define=PLOT_API_BASE_URL=http://10.0.2.2:4000/
 const String defaultApiBaseUrl =
-    String.fromEnvironment('PLOT_API_BASE_URL', defaultValue: 'http://10.0.2.2:4000/');
+    String.fromEnvironment('PLOT_API_BASE_URL', defaultValue: 'https://cropin-plot-visualizer-service-nu.vercel.app/');
 
 /// [PlotApi] over plain `dart:io` HTTP.
 ///

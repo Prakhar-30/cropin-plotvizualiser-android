@@ -357,10 +357,10 @@ already carries the columns a boundary edit would need.
   maths assumes the screen frame the sensor matrix is remapped into).
 - `cd example && flutter run` for a debug build with simulation mode;
   `flutter build apk --release` there for a build without it.
-- API base URL is a compile-time define; it defaults to `http://10.0.2.2:4000/`,
-  the emulator's route to a `plot-web` API running on the host. A real handset
-  needs the dev machine's LAN address or a deployed URL:
-  `flutter run --dart-define=PLOT_API_BASE_URL=http://192.168.1.20:4000/`
+- The API base URL defaults to the deployed service,
+  `https://cropin-plot-visualizer-service-nu.vercel.app/`. To use a local `plot-web` API instead
+  (10.0.2.2 is the emulator's route to the host machine):
+  `flutter run --dart-define=PLOT_API_BASE_URL=http://10.0.2.2:4000/`
 - The example keeps the Kotlin build's applicationId and cache file, tables and
   schema version, so installing over it keeps the cached plots. Embedded, the
   cache file name is the host's choice.
