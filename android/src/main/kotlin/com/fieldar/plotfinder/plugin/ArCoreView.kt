@@ -139,7 +139,7 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
 
     override fun getView(): View = surface
 
-    fun setScene(scene: OverlayScene?) {
+    internal fun setScene(scene: OverlayScene?) {
         surface.queueEvent { overlay.setScene(scene) }
     }
 
