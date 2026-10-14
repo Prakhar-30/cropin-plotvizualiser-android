@@ -12,11 +12,13 @@ import '../../core/geo/projection.dart';
 import '../../core/heading/course_over_ground_detector.dart';
 import '../../core/heading/heading_model.dart';
 import '../../core/heading/landmark_snap.dart';
+import '../../core/heading/trajectory_aligner.dart';
 import '../../core/math_util.dart';
 import '../../core/motion/step_calibrator.dart';
 import '../../core/motion/step_detector.dart';
 import '../../core/render/health_geometry.dart';
 import '../../core/render/overlay_geometry.dart';
+import '../../core/render/plot_palette.dart';
 import '../../core/render/world_scene.dart';
 import '../../data/db/entities.dart';
 import '../../data/plot.dart';
@@ -30,12 +32,25 @@ import '../../pose/vio_pose_source.dart';
 /// the UI state made every one of those samples rebuild the whole screen: the
 /// chip, the health panel, the buttons and the camera box.
 class ArFrame {
-  const ArFrame(this.overlay, this.health);
+  const ArFrame(this.overlay, this.health, {this.guide});
 
   final PlotOverlay overlay;
 
+  /// The way to the access point, until the agent says they are standing on it.
+  final AccessGuide? guide;
+
   /// The crop-health raster, already projected. Null when the layer is off.
   final HealthOverlay? health;
+}
+
+/// Where the access point is from here: how far, and how far to turn.
+class AccessGuide {
+  const AccessGuide(this.distanceM, this.relativeBearingDeg);
+
+  final double distanceM;
+
+  /// Negative is to the left of where the camera points.
+  final double relativeBearingDeg;
 }
 
 /// Everything on the AR screen except the per-frame geometry - see [ArFrame].
@@ -193,6 +208,10 @@ class ArController extends ValueNotifier<ArUiState> {
   DevicePose _pose = DevicePose.unknown;
 
   final CourseOverGroundDetector _courseOverGround = CourseOverGroundDetector();
+
+  /// Direction from the walk itself, on the ARCore path. See [TrajectoryAligner].
+  final TrajectoryAligner _aligner = TrajectoryAligner();
+  bool _wasTracking = false;
 
   /// Smooths the agent's position so a stationary agent gets a stationary
   /// overlay, and moves it with each counted step so a walking agent's overlay
@@ -369,6 +388,8 @@ class ArController extends ValueNotifier<ArUiState> {
       visualFailed.value = true;
       return;
     }
+    if (_wasTracking && !status.tracking) _aligner.reset();
+    _wasTracking = status.tracking;
     final fov = status.horizontalFovDeg;
     final viewport = _viewport;
     final current = _intrinsics;
@@ -386,16 +407,30 @@ class ArController extends ValueNotifier<ArUiState> {
     }
   }
 
-  /// "I am standing at the access point": the strongest absolute correction
-  /// the agent can give.
+  /// How far the agent appears to be from the access point, when that is far
+  /// enough - and the position good enough - to be worth asking "are you
+  /// sure?" before taking their word for it. Null when the tap is plausible.
+  ///
+  /// Indoors, or wherever GNSS is tens of metres out, this stays null: a
+  /// receiver that unsure cannot contradict someone standing on the spot.
+  double? accessPointDistanceIfDoubtful() {
+    final plot = value.plot;
+    final agent = _agentPosition;
+    if (plot == null || agent == null) return null;
+    final distance = distanceM(agent, plot.accessPoint);
+    final doubt = math.max(25.0, 2.5 * _stabilizer.uncertaintyM);
+    return distance > doubt ? distance : null;
+  }
+
+  /// "I'm at the access point": the one action this screen asks for.
   ///
   /// GNSS under a roof or beside a tree line is several metres out, and close
   /// to a boundary a few metres is the difference between the line in front of
-  /// you and the line beside you. The access point is a surveyed point the agent
-  /// can physically stand on, so standing there and saying so replaces the
-  /// receiver's opinion outright. From then on ARCore carries every step from
-  /// that exact spot, and GNSS is weighted ten times down so it cannot walk the
-  /// pin away.
+  /// you and the line beside you. The access point is a surveyed point the
+  /// agent can physically stand on, so standing there and saying so replaces
+  /// the receiver's opinion outright. On the ARCore path it also becomes the
+  /// anchor of the walk alignment, so every step away from it refines the
+  /// direction, with nothing more to tap.
   void pinToAccessPoint() {
     final plot = value.plot;
     if (plot == null) return;
@@ -406,11 +441,36 @@ class ArController extends ValueNotifier<ArUiState> {
     }
     final pinned = _stabilizer.pinTo(plot.accessPoint, timestampMs: now);
     _moveAgent(pinned.position);
+    if (_vio?.sessionPosition case final session?) {
+      _aligner.anchor(session, plot.accessPoint);
+      _lockFromWalk();
+    }
+    final locked = _sensors.pose.headingStatus.value.confidence != HeadingConfidence.unreliable;
+    final gpsUsable = (_lastLocation?.accuracyM ?? double.infinity) <= maxAlignmentFixAccuracyM;
     _rebuildOverlay(value.copyWith(
       pinned: true,
       stationary: true,
-      message: () => 'Position set to the access point',
+      accuracyM: _stabilizer.uncertaintyM,
+      message: () => locked
+          ? 'At the access point - plot placed'
+          : gpsUsable
+              ? 'At the access point - walk a few steps to set direction'
+              : 'At the access point - GPS weak here, direction is from the compass',
     ));
+  }
+
+  /// Offers the walk alignment to the heading, when it is good enough and
+  /// better than what the heading already has.
+  void _lockFromWalk() {
+    final vio = _vio;
+    if (vio == null) return;
+    final fit = _aligner.solve();
+    if (fit == null || fit.errorDeg > maxAlignmentErrorDeg) return;
+    final current = vio.headingStatus.value;
+    final unlocked = current.confidence == HeadingConfidence.unreliable;
+    if (!unlocked && fit.errorDeg > current.expectedErrorDeg + 0.5) return;
+    vio.applyYawOffset(fit.yawOffsetDeg, HeadingSource.courseOverGround, errorDeg: fit.errorDeg);
+    if (unlocked) value = value.copyWith(message: () => 'Direction set from your walk');
   }
 
   /// Landmark snap: the agent has the crosshair on the plot's access point.
@@ -432,14 +492,18 @@ class ArController extends ValueNotifier<ArUiState> {
       value = value.copyWith(message: () => 'Waiting for a location fix');
       return;
     }
+    // Too close comes first: standing on the access point, there is nothing
+    // to aim at, whatever the position is worth.
+    final range = distanceM(agent, plot.accessPoint);
+    if (range < minSnapDistanceM) {
+      value = value.copyWith(message: () => 'Step 10 m away from the access point, aim at it, then tap');
+      return;
+    }
     // A bearing from an uncertain position is only as good as the position:
     // ±15 m at 14 m away is ±47°. Refuse rather than lock a guess.
     final uncertainty = _stabilizer.uncertaintyM;
-    final range = distanceM(agent, plot.accessPoint);
-    if (range > 0 && toDegrees(math.atan2(uncertainty, range)) > maxSnapPositionErrorDeg) {
-      value = value.copyWith(
-        message: () => 'Location ±${uncertainty.round()} m - stand at the access point and tap "I\'m here" first',
-      );
+    if (toDegrees(math.atan2(uncertainty, range)) > maxSnapPositionErrorDeg) {
+      value = value.copyWith(message: () => 'GPS too weak here (±${uncertainty.round()} m). Use "I\'m at the access point" first');
       return;
     }
     final intrinsics = _intrinsics;
@@ -447,10 +511,7 @@ class ArController extends ValueNotifier<ArUiState> {
         crosshairXPx != null && intrinsics != null ? horizontalAngleOffsetDeg(crosshairXPx, intrinsics) : 0.0;
 
     final heading = headingFromLandmarkSnap(agent, plot.accessPoint, offsetDeg);
-    if (heading == null) {
-      value = value.copyWith(message: () => 'Too close to aim - step 10 m away first');
-      return;
-    }
+    if (heading == null) return;
     _sensors.pose.applyHeadingFix(heading, HeadingSource.landmarkSnap);
     value = value.copyWith(message: () => 'Heading locked');
   }
@@ -512,8 +573,19 @@ class ArController extends ValueNotifier<ArUiState> {
     // movement, which is precisely the signal course-over-ground measures;
     // feeding it filtered positions would shorten every segment and bias the
     // bearing towards whatever the filter already believed.
-    final locked = _courseOverGround.add(sample);
-    if (locked != null) _sensors.pose.applyHeadingFix(locked, HeadingSource.courseOverGround);
+    //
+    // On the ARCore path the walk alignment does the same job better - any
+    // path, not just straight ones - so the two are not left to fight.
+    final vio = _vio;
+    if (vio == null) {
+      final locked = _courseOverGround.add(sample);
+      if (locked != null) _sensors.pose.applyHeadingFix(locked, HeadingSource.courseOverGround);
+    } else if (value.visualTracking) {
+      if (vio.sessionPosition case final session?) {
+        _aligner.addFix(session, sample.position, sample.accuracyM);
+        _lockFromWalk();
+      }
+    }
 
     final stabilized = _stabilizer.update(
       position: sample.position,
@@ -532,7 +604,8 @@ class ArController extends ValueNotifier<ArUiState> {
     }
 
     _rebuildOverlay(value.copyWith(
-      accuracyM: sample.accuracyM,
+      // Once pinned, the receiver's ±90 m is not the position's error any more.
+      accuracyM: pinned ? math.min(sample.accuracyM, _stabilizer.uncertaintyM) : sample.accuracyM,
       hasFix: true,
       stationary: stabilized.stationary,
       pinned: pinned,
@@ -567,8 +640,12 @@ class ArController extends ValueNotifier<ArUiState> {
       origin: plot.centroid,
       cells: health?.cells ?? const [],
       layer: layer,
-      tintArgb: overlayTintArgb(confidence, plot.colourIndex),
-      alpha: overlayConfidenceAlpha(confidence),
+      // Always the plot's own colour, never the grey of the sensor path: in a
+      // white office or under a pale sky a grey translucent wall is simply
+      // invisible, and an agent who cannot see the plot cannot judge it. The
+      // heading chip carries the confidence instead.
+      tintArgb: plotColour(plot.colourIndex).argb,
+      alpha: math.max(0.85, overlayConfidenceAlpha(confidence)),
     );
     unawaited(_container.platform.arSetScene(scene.toMessage()));
   }
@@ -624,7 +701,7 @@ class ArController extends ValueNotifier<ArUiState> {
         eyeHeight: _vio?.eyeHeightM ?? eyeHeightM,
       );
       final health = _buildHealth(state, frame, agent, _pose.deviceToEnu, intrinsics);
-      this.frame.value = ArFrame(overlay, health);
+      this.frame.value = ArFrame(overlay, health, guide: state.pinned ? null : _guide(plot, agent));
 
       final edge = overlay.edgeDistanceM.toInt();
       final hidden = health?.hiddenCellCount ?? 0;
@@ -635,6 +712,11 @@ class ArController extends ValueNotifier<ArUiState> {
     _syncScene(state);
     if (!identical(state, value)) value = state;
   }
+
+  AccessGuide _guide(Plot plot, LatLng agent) => AccessGuide(
+        distanceM(agent, plot.accessPoint),
+        angleDifferenceDeg(_pose.headingDeg, bearingDeg(agent, plot.accessPoint)),
+      );
 
   /// Projects the health raster against the same eye and frame as the boundary.
   ///
@@ -716,6 +798,10 @@ class ArController extends ValueNotifier<ArUiState> {
     _sensors.pose.pose.removeListener(_onPoseChanged);
     _sensors.pose.headingStatus.removeListener(_onHeadingStatusChanged);
     _vio?.status.removeListener(_onVisualStatusChanged);
+    if (value.visual) {
+      unawaited(_container.platform.arSetScene(null));
+      unawaited(_container.platform.arSetPlacement(null));
+    }
     _acceleration?.cancel();
     visualFailed.dispose();
     frame.dispose();

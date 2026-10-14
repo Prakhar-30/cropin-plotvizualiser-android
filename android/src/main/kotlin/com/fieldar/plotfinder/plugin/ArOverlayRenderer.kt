@@ -127,6 +127,10 @@ internal class ArOverlayRenderer {
         program = GLES20.glCreateProgram().also { p ->
             GLES20.glAttachShader(p, compile(GLES20.GL_VERTEX_SHADER, VERTEX))
             GLES20.glAttachShader(p, compile(GLES20.GL_FRAGMENT_SHADER, FRAGMENT))
+            // Position on attribute 0: some drivers draw nothing when attribute
+            // 0 is a disabled array, and colour is often a constant here.
+            GLES20.glBindAttribLocation(p, 0, "a_Position")
+            GLES20.glBindAttribLocation(p, 1, "a_Color")
             GLES20.glLinkProgram(p)
         }
         aPosition = GLES20.glGetAttribLocation(program, "a_Position")
@@ -265,7 +269,6 @@ internal class ArOverlayRenderer {
         GLES20.glUniform2f(uUvX, uvTransform[2] - uvTransform[0], uvTransform[3] - uvTransform[1])
         GLES20.glUniform2f(uUvY, uvTransform[4] - uvTransform[0], uvTransform[5] - uvTransform[1])
         GLES20.glUniform1i(uUseDepth, if (depthActive) 1 else 0)
-        GLES20.glUniform1f(uGhost, GHOST_ALPHA)
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, depthTexture)
         GLES20.glUniform1i(uDepth, 0)
@@ -276,6 +279,7 @@ internal class ArOverlayRenderer {
 
         // Ground first - cells, then the plot fill and its outline - because
         // everything else stands on it.
+        GLES20.glUniform1f(uGhost, SURFACE_GHOST)
         if (cellCount > 0) {
             fade(0f, CELL_FADE_START_M, CELL_FADE_FLOOR)
             GLES20.glUniform1f(uAlpha, s.alpha)
@@ -296,13 +300,14 @@ internal class ArOverlayRenderer {
             // Walls farthest first: translucent panels composited in ring order
             // let the far side paint over the near one, which reads as a fold.
             sortEdges(cameraX, cameraZ)
-            fade(WALL_FADE_END_M, WALL_FADE_START_M, 0f)
+            fade(WALL_FADE_END_M, WALL_FADE_START_M, WALL_FADE_FLOOR)
             color(tintR, tintG, tintB, s.wallAlpha * s.alpha)
             for (i in edgeOrder) drawArrays(wallVerts!!, null, GLES20.GL_TRIANGLES, i * 6, 6)
 
             // Rails and posts last, over every panel, each on a dark backing so
             // they read against bright sky and pale soil alike.
             fade(WALL_FADE_END_M, WALL_FADE_START_M, MIN_RAIL_OPACITY)
+            GLES20.glUniform1f(uGhost, LINE_GHOST)
             lineWidth(11f)
             color(0.04f, 0.06f, 0.08f, 0.5f * s.alpha)
             drawArrays(railVerts!!, null, GLES20.GL_LINES, 0, edgeCount * 2)
@@ -423,8 +428,16 @@ internal class ArOverlayRenderer {
     }
 
     private companion object {
-        /** Opacity left on an overlay fragment that something real stands in front of. */
-        const val GHOST_ALPHA = 0.22f
+        /**
+         * Opacity left on overlay that something real stands in front of. Lines
+         * keep more than surfaces: the rail is how the boundary is found, and
+         * it must stay findable through a crop row or a passer-by.
+         */
+        const val SURFACE_GHOST = 0.35f
+        const val LINE_GHOST = 0.6f
+
+        /** Walls never fade below this, so a boundary 3 m away is still a wall. */
+        const val WALL_FADE_FLOOR = 0.3f
 
         const val WALL_FADE_START_M = 8f
         const val WALL_FADE_END_M = 1.5f
@@ -488,11 +501,13 @@ internal class ArOverlayRenderer {
                     vec2 bytes = texture2D(u_Depth, uv).rg;
                     float real = (bytes.r * 255.0 + bytes.g * 255.0 * 256.0) / 1000.0;
                     if (real > 0.0) {
-                        // Depth is noisier with range, so the tolerance grows
-                        // with it: the ground fill lying on a measured floor
-                        // must not flicker in and out.
-                        float tolerance = 0.25 + 0.08 * v_ViewDepth;
-                        float hidden = clamp((v_ViewDepth - real - tolerance) / (0.5 * tolerance), 0.0, 1.0);
+                        // Only something clearly in front occludes: nearer than
+                        // 80% of the overlay's distance starts to, nearer than
+                        // 60% fully does. A person 2 m away hides a boundary at
+                        // 16 m; the crop row just inside the boundary, or the
+                        // floor the fill lies on, does not.
+                        float ratio = real / max(v_ViewDepth, 0.01);
+                        float hidden = clamp((0.8 - ratio) / 0.2, 0.0, 1.0);
                         visible = mix(1.0, u_Ghost, hidden);
                     }
                 }

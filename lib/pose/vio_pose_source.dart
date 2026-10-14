@@ -121,6 +121,7 @@ class VioPoseSource implements PoseSource {
   /// smoothed instead: the compass sets where north is, ARCore carries every
   /// turn of the hand.
   double? _magneticDeg;
+  double? _lastCarrierDeg;
   double? _smoothedMagneticOffsetDeg;
   int _lastSmoothingMs = 0;
 
@@ -161,8 +162,16 @@ class VioPoseSource implements PoseSource {
   }
 
   @override
-  void applyHeadingFix(double bearingDeg, HeadingSource source) {
-    _fusion.onFix(bearingDeg, source, _clockMs());
+  void applyHeadingFix(double bearingDeg, HeadingSource source, {double? errorDeg}) {
+    _fusion.onFix(bearingDeg, source, _clockMs(), errorDeg: errorDeg);
+  }
+
+  /// Sets the yaw that takes ARCore's session onto the earth directly, as the
+  /// trajectory alignment measures it, rather than as a camera bearing.
+  void applyYawOffset(double yawOffsetDeg, HeadingSource source, {required double errorDeg}) {
+    final carrier = _lastCarrierDeg;
+    if (carrier == null) return;
+    _fusion.onFix(normalizeDeg(carrier + yawOffsetDeg), source, _clockMs(), errorDeg: errorDeg);
   }
 
   void _armWatchdog() {
@@ -197,6 +206,7 @@ class VioPoseSource implements PoseSource {
 
     final now = _clockMs();
     final carrier = frame.carrierHeadingDeg;
+    _lastCarrierDeg = carrier;
     _fusion.onCarrierHeading(carrier, now);
     final fused = _fusion.estimate(now);
     final estimate = fused.confidence == HeadingConfidence.unreliable ? _compassEstimate(fused, carrier, now) : fused;

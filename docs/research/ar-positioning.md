@@ -227,6 +227,57 @@ position uncertainty alone would put more than 20° of error into the bearing
 (±15 m at 14 m is ±47°). In that case it asks the agent to stand on the access
 point and tap "I'm here" first.
 
+## Fourth test: one action, direction from the walk
+
+Feedback: two buttons (aim, and "I'm here") made no sense to a field agent,
+whose job has only two moments: walk to the plot, then look at it. The guards
+were also confusing. One of them asked a pinned agent standing on the access
+point to "stand at the access point first", because it checked position error
+before checking that the agent was too close to aim at all. The plot was also
+invisible: with no heading lock it was drawn grey at about 12% opacity, and
+occlusion faded it further, in a white office.
+
+**The flow is now one action.**
+
+1. *Getting there.* A pill under the heading chip points to the access point
+   and shows the distance. Meanwhile, without any tap, the app fits ARCore's
+   tracked path to the GNSS fixes taken along it (`TrajectoryAligner`, a
+   weighted 2-D Procrustes fit). This is the yaw-initialisation step of
+   VIO-GNSS systems such as GVINS and VINS-Fusion [14][15]. Unlike the old
+   course-over-ground lock it needs no straight walk: the tracked path
+   supplies the shape, so any route counts, and accuracy grows with the
+   lever arm. A winding 60 m approach with ±5 m fixes sets the direction to a
+   few degrees.
+2. *At the plot.* "I'm at the access point" fixes the position exactly and
+   anchors the fit there. Every step into the plot then refines the
+   direction, and from a pinned point about 35 m of walking is enough.
+
+**Guards, in order, each with one plain sentence:**
+
+- Tapping "I'm at the access point" while GPS confidently says you are more
+  than 25 m away (and more than 2.5× its own error) asks once: "GPS puts you
+  about 120 m away", with *Not yet* and *Yes, I'm here*. Where GPS is weak,
+  indoors for example, it never asks, because a receiver that unsure cannot
+  contradict someone standing on the spot.
+- After pinning, one line says what happens next: plot placed, *walk a few
+  steps to set direction*, or *GPS weak here, direction is from the compass*.
+- Aiming is now a fallback inside the expanded sheet, for when GPS is too weak
+  for the walk to work. It checks "too close" before "position too
+  uncertain".
+
+**Visibility:** on the ARCore path the plot always keeps its own colour at 85%
+or more of full strength. The heading chip, not a grey wash, now says how far
+to trust it. Occlusion starts only when something is nearer than 80% of the
+overlay's distance (fully at 60%), so a person at 2 m hides a boundary at 16 m
+but the floor under the fill and the crop just inside the boundary do not.
+Occluded lines keep 60% of their opacity and surfaces 35%. Walls no longer fade
+to nothing up close.
+
+**Indoors** GNSS is ±50–100 m, so the walk alignment deliberately ignores it
+(fixes worse than 15 m are dropped). Direction then comes from the compass
+until the agent aims at the access point. In open fields, the intended use,
+the walk sets it.
+
 ## Sources
 
 1. Azuma, *A Survey of Augmented Reality* (1997) — [PDF](https://sreal.ucf.edu/wp-content/uploads/2017/02/Azuma1998.pdf)

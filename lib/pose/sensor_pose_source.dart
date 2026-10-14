@@ -68,8 +68,8 @@ class SensorPoseSource implements PoseSource {
   }
 
   @override
-  void applyHeadingFix(double bearingDeg, HeadingSource source) {
-    _fusion.onFix(bearingDeg, source, _clockMs());
+  void applyHeadingFix(double bearingDeg, HeadingSource source, {double? errorDeg}) {
+    _fusion.onFix(bearingDeg, source, _clockMs(), errorDeg: errorDeg);
     _publish();
   }
 

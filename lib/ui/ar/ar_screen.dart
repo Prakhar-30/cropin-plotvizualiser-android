@@ -119,6 +119,27 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
     controller.dispose();
   }
 
+  /// Takes the agent's word that they are on the access point - unless GPS is
+  /// good enough to say they plainly are not, in which case it asks once.
+  Future<void> _confirmAccessPoint(ArController controller) async {
+    final distance = controller.accessPointDistanceIfDoubtful();
+    if (distance != null) {
+      final sure = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Are you at the access point?'),
+          content: Text('GPS puts you about ${distance.round()} m away. Follow the arrow to reach it.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Not yet')),
+            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text("Yes, I'm here")),
+          ],
+        ),
+      );
+      if (sure != true || !mounted || !identical(controller, _controller)) return;
+    }
+    controller.pinToAccessPoint();
+  }
+
   Future<void> _installArCore() async {
     final answer = await widget.container.platform.arInstall();
     if (!mounted || answer == 'failed') return;
@@ -289,6 +310,7 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                       ],
                     ),
                   ),
+                  _GuidePill(frame: controller.frame),
                   if (state.visual && !state.visualTracking)
                     _TrackingBanner(failure: state.trackingFailure)
                   else if (!arcore && _arCoreInstallable)
@@ -305,7 +327,7 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                 onDismissMessage: controller.dismissMessage,
                 onSelectHealth: controller.setHealthLayer,
                 onSnap: controller.snapToAccessPoint,
-                onPin: controller.pinToAccessPoint,
+                onPin: () => _confirmAccessPoint(controller),
               ),
             ),
           ],
@@ -429,7 +451,7 @@ class _BottomSheetState extends State<_BottomSheet> {
               _MessageBanner(message: message, onDismiss: widget.onDismissMessage),
               const SizedBox(height: 10),
             ],
-            if (plot != null) _Actions(pinned: state.pinned, onSnap: widget.onSnap, onPin: widget.onPin),
+            if (plot != null) _PrimaryAction(pinned: state.pinned, onPressed: widget.onPin),
             if (plot != null && _expanded) ...[
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
@@ -453,6 +475,18 @@ class _BottomSheetState extends State<_BottomSheet> {
                   ],
                 ),
               ],
+              // A fallback, not a step: where GPS is too weak for the walk to
+              // set the direction - indoors, mostly - aiming at the access
+              // point from 10 m off can.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(foregroundColor: PlotFinderColors.mutedText, padding: EdgeInsets.zero),
+                  onPressed: widget.onSnap,
+                  icon: const Icon(Icons.gps_fixed, size: 16),
+                  label: const Text('Direction off? Aim at the access point and tap'),
+                ),
+              ),
             ],
           ],
         ),
@@ -461,47 +495,79 @@ class _BottomSheetState extends State<_BottomSheet> {
   }
 }
 
-/// Aim and lock the heading; stand here and fix the position.
-class _Actions extends StatelessWidget {
-  const _Actions({required this.pinned, required this.onSnap, required this.onPin});
+/// The one thing the agent is asked to do: say when they are standing on the
+/// access point. Everything else - direction included - follows from it and
+/// from the walk.
+class _PrimaryAction extends StatelessWidget {
+  const _PrimaryAction({required this.pinned, required this.onPressed});
 
   final bool pinned;
-  final VoidCallback onSnap;
-  final VoidCallback onPin;
+  final VoidCallback onPressed;
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          Expanded(
-            child: Tooltip(
-              message: 'Put the crosshair on the access point, then tap',
-              child: FilledButton.icon(
-                style: cameraPrimaryButtonStyle(),
-                onPressed: onSnap,
-                icon: const Icon(Icons.gps_fixed, size: 18),
-                label: const Text('Aim & lock'),
+  Widget build(BuildContext context) {
+    final icon = Icon(pinned ? Icons.where_to_vote : Icons.my_location, size: 20);
+    final label = Text(pinned ? 'At the access point' : "I'm at the access point");
+    if (pinned) {
+      return OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          side: const BorderSide(color: PlotFinderColors.sheetDivider),
+          minimumSize: const Size.fromHeight(48),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+        ),
+        onPressed: onPressed,
+        icon: icon,
+        label: label,
+      );
+    }
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        style: cameraPrimaryButtonStyle(),
+        onPressed: onPressed,
+        icon: icon,
+        label: label,
+      ),
+    );
+  }
+}
+
+/// Which way, and how far, to the access point - until the agent is there.
+class _GuidePill extends StatelessWidget {
+  const _GuidePill({required this.frame});
+
+  final ValueListenable<ArFrame?> frame;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<ArFrame?>(
+        valueListenable: frame,
+        builder: (context, current, _) {
+          final guide = current?.guide;
+          if (guide == null) return const SizedBox.shrink();
+          final near = guide.distanceM < 10;
+          return Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(color: PlotFinderColors.scrim, borderRadius: BorderRadius.circular(20)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Transform.rotate(
+                    angle: guide.relativeBearingDeg * math.pi / 180.0,
+                    child: const Icon(Icons.navigation, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    near ? 'Access point is here' : 'Access point · ${guide.distanceM.round()} m',
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                ],
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Tooltip(
-              message: 'Tap while standing on the access point',
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: BorderSide(color: pinned ? PlotFinderColors.warning : PlotFinderColors.sheetDivider),
-                  minimumSize: const Size(0, 48),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-                ),
-                onPressed: onPin,
-                icon: Icon(pinned ? Icons.where_to_vote : Icons.my_location, size: 18),
-                label: Text(pinned ? 'Pinned' : "I'm here"),
-              ),
-            ),
-          ),
-        ],
+          );
+        },
       );
 }
 

@@ -91,5 +91,7 @@ abstract interface class PoseSource {
   /// Pins the heading to a computed true bearing, as a landmark snap does.
   /// [bearingDeg] is the bearing of the camera axis, crosshair offset already
   /// subtracted.
-  void applyHeadingFix(double bearingDeg, HeadingSource source);
+  ///
+  /// [errorDeg], when known, replaces the source's typical error on the chip.
+  void applyHeadingFix(double bearingDeg, HeadingSource source, {double? errorDeg});
 }

@@ -35,6 +35,10 @@ class HeadingFusion {
   double _offsetAtFixDeg = 0.0;
 
   HeadingSource? _fixSource;
+
+  /// The fix's own error estimate, when it came with one; otherwise the
+  /// source's typical error is used.
+  double? _fixErrorDeg;
   int _fixAtMs = 0;
   int _lastMagneticUpdateMs = 0;
 
@@ -53,7 +57,8 @@ class HeadingFusion {
   }
 
   /// A walk lock or a landmark snap. This is the only thing that sets a heading.
-  void onFix(double headingDeg, HeadingSource source, int atMs) {
+  void onFix(double headingDeg, HeadingSource source, int atMs, {double? errorDeg}) {
+    _fixErrorDeg = errorDeg;
     final carrier = _carrierDeg;
     _offsetDeg = carrier == null ? 0.0 : angleDifferenceDeg(carrier, headingDeg);
     _offsetAtFixDeg = _offsetDeg;
@@ -102,7 +107,7 @@ class HeadingFusion {
         source: source,
         confidence: confidence,
         ageMs: ageMs,
-        expectedErrorDeg: source.typicalErrorDeg + drift,
+        expectedErrorDeg: (_fixErrorDeg ?? source.typicalErrorDeg) + drift,
       );
     }
 

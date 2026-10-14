@@ -224,11 +224,9 @@ class PlotFinderPlugin :
     }
 
     fun detachArView(view: ArCoreView) {
-        if (arView !== view) return
-        arView = null
-        // One AR screen's plot must not flash up in the next one's first frame.
-        arScene = null
-        arPlacement = null
+        // The scene is kept: if Flutter recreates the view, the new one must
+        // still draw the plot. Dart clears it when the AR screen closes.
+        if (arView === view) arView = null
     }
 
     fun emitArFrame(frame: DoubleArray) {
