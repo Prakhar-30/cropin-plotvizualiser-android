@@ -249,7 +249,7 @@ point and tap "I'm here" first.
 17. Google, *ARCore fundamental concepts: motion tracking* — [developers.google.com](https://developers.google.com/ar/develop/fundamentals)
 
 18. Holloway, *Registration Error Analysis for Augmented Reality*, Presence 6(4), 1997 — [MIT Press](https://direct.mit.edu/pvar/article/6/4/413/58397)
-19. Cutting & Vishton, *Perceiving layout and knowing distances* (occlusion as the dominant depth cue at all ranges), 1995 — [PDF](https://www.cs.ucf.edu/~sumant/publications/Cutting_Vishton_1995.pdf)
+19. Cutting & Vishton, *Perceiving Layout and Knowing Distances*, in Epstein & Rogers (eds.), *Perception of Space and Motion*, Academic Press, 1995 (occlusion as the one depth cue effective at every range)
 20. Google, *ARCore Depth API* — [developers.google.com](https://developers.google.com/ar/develop/depth)
 21. Du et al., *DepthLab: Real-time 3D Interaction with Depth Maps for Mobile Augmented Reality*, UIST 2020 — [ACM](https://dl.acm.org/doi/10.1145/3379337.3415881)
 22. Livingston et al., *Resolving Multiple Occluded Layers in Augmented Reality*, ISMAR 2003 — [IEEE](https://ieeexplore.ieee.org/document/1240688)
