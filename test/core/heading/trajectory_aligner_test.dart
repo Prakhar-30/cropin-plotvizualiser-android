@@ -29,7 +29,9 @@ void main() {
     for (final p in walk(30)) {
       aligner.addFix(p, truthOf(p, 37), 4);
     }
-    expect(aligner.solve()!.yawOffsetDeg, closeTo(37.0, 1e-6));
+    // Not to 1e-6: the fixes pass through two metric frames 25 m apart, whose
+    // east-west scales differ in the seventh digit.
+    expect(aligner.solve()!.yawOffsetDeg, closeTo(37.0, 1e-3));
   });
 
   test('a winding 60 m approach with 5 m fixes sets the direction without a tap', () {
