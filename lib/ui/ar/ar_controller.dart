@@ -12,10 +12,12 @@ import '../../core/geo/projection.dart';
 import '../../core/heading/course_over_ground_detector.dart';
 import '../../core/heading/heading_model.dart';
 import '../../core/heading/landmark_snap.dart';
+import '../../core/math_util.dart';
 import '../../core/motion/step_calibrator.dart';
 import '../../core/motion/step_detector.dart';
 import '../../core/render/health_geometry.dart';
 import '../../core/render/overlay_geometry.dart';
+import '../../core/render/world_scene.dart';
 import '../../data/db/entities.dart';
 import '../../data/plot.dart';
 import '../../pose/pose_source.dart';
@@ -55,6 +57,7 @@ class ArUiState {
     this.visualTracking = false,
     this.trackingFailure = ArTrackingFailure.none,
     this.pinned = false,
+    this.depthActive = false,
   });
 
   final Plot? plot;
@@ -94,6 +97,9 @@ class ArUiState {
   /// The agent has declared their position at the access point.
   final bool pinned;
 
+  /// ARCore depth is hiding the overlay behind nearer objects.
+  final bool depthActive;
+
   /// The layer actually drawn, after the heading veto.
   ///
   /// A boundary drawn on a bad heading is wrong about where a fence is, and the
@@ -125,6 +131,7 @@ class ArUiState {
     bool? visualTracking,
     ArTrackingFailure? trackingFailure,
     bool? pinned,
+    bool? depthActive,
   }) =>
       ArUiState(
         plot: plot == null ? this.plot : plot(),
@@ -143,6 +150,7 @@ class ArUiState {
         visualTracking: visualTracking ?? this.visualTracking,
         trackingFailure: trackingFailure ?? this.trackingFailure,
         pinned: pinned ?? this.pinned,
+        depthActive: depthActive ?? this.depthActive,
       );
 }
 
@@ -367,8 +375,14 @@ class ArController extends ValueNotifier<ArUiState> {
     if (fov != null && viewport != null && (current == null || (current.horizontalFovDeg - fov).abs() > 0.05)) {
       _setIntrinsics(viewport.$1, viewport.$2, fov);
     }
-    if (status.tracking != value.visualTracking || status.failure != value.trackingFailure) {
-      value = value.copyWith(visualTracking: status.tracking, trackingFailure: status.failure);
+    if (status.tracking != value.visualTracking ||
+        status.failure != value.trackingFailure ||
+        status.depthActive != value.depthActive) {
+      value = value.copyWith(
+        visualTracking: status.tracking,
+        trackingFailure: status.failure,
+        depthActive: status.depthActive,
+      );
     }
   }
 
@@ -387,7 +401,7 @@ class ArController extends ValueNotifier<ArUiState> {
     if (plot == null) return;
     final now = _lastLocation?.timestampMs;
     if (now == null) {
-      value = value.copyWith(message: () => 'Waiting for a GNSS fix before pinning');
+      value = value.copyWith(message: () => 'Waiting for a location fix');
       return;
     }
     final pinned = _stabilizer.pinTo(plot.accessPoint, timestampMs: now);
@@ -395,9 +409,7 @@ class ArController extends ValueNotifier<ArUiState> {
     _rebuildOverlay(value.copyWith(
       pinned: true,
       stationary: true,
-      message: () => value.visual
-          ? 'Position pinned to the access point. Walk on - the boundary stays put.'
-          : 'Position pinned to the access point',
+      message: () => 'Position set to the access point',
     ));
   }
 
@@ -409,9 +421,25 @@ class ArController extends ValueNotifier<ArUiState> {
   void snapToAccessPoint({double? crosshairXPx}) {
     final plot = value.plot;
     if (plot == null) return;
-    final agent = _lastLocation?.position;
+    // From the position the overlay is drawn from, never the raw fix. The
+    // snap's promise is "the access point lands under the crosshair", and it
+    // only keeps it if the bearing is taken from the same point the plot is
+    // projected from. Taken from the raw fix - ±90 m indoors - every tap
+    // computed a different bearing from a different wild position, and
+    // tapping repeatedly walked the plot round the agent in a circle.
+    final agent = _agentPosition;
     if (agent == null) {
-      value = value.copyWith(message: () => 'Waiting for a GNSS fix before snapping');
+      value = value.copyWith(message: () => 'Waiting for a location fix');
+      return;
+    }
+    // A bearing from an uncertain position is only as good as the position:
+    // ±15 m at 14 m away is ±47°. Refuse rather than lock a guess.
+    final uncertainty = _stabilizer.uncertaintyM;
+    final range = distanceM(agent, plot.accessPoint);
+    if (range > 0 && toDegrees(math.atan2(uncertainty, range)) > maxSnapPositionErrorDeg) {
+      value = value.copyWith(
+        message: () => 'Location ±${uncertainty.round()} m - stand at the access point and tap "I\'m here" first',
+      );
       return;
     }
     final intrinsics = _intrinsics;
@@ -420,13 +448,11 @@ class ArController extends ValueNotifier<ArUiState> {
 
     final heading = headingFromLandmarkSnap(agent, plot.accessPoint, offsetDeg);
     if (heading == null) {
-      value = value.copyWith(
-        message: () => 'Too close to the access point to snap - aim at something further off',
-      );
+      value = value.copyWith(message: () => 'Too close to aim - step 10 m away first');
       return;
     }
     _sensors.pose.applyHeadingFix(heading, HeadingSource.landmarkSnap);
-    value = value.copyWith(message: () => 'Heading pinned to the access point');
+    value = value.copyWith(message: () => 'Heading locked');
   }
 
   /// Cycles off - problem areas - all cells.
@@ -516,6 +542,55 @@ class ArController extends ValueNotifier<ArUiState> {
   void _onPoseChanged() {
     _pose = _sensors.pose.pose.value;
     _rebuildOverlay();
+    _syncPlacement();
+  }
+
+  /// What the native renderer was last given, to send only real changes.
+  Object? _sentSceneKey;
+  WorldPlacement? _sentPlacement;
+
+  /// Sends the plot geometry to the ARCore renderer when what it draws has
+  /// changed: the plot, the health layer or raster, or the heading confidence
+  /// that sets its colour.
+  void _syncScene(ArUiState state) {
+    if (!state.visual) return;
+    final plot = state.plot;
+    if (plot == null) return;
+    final confidence = state.headingStatus?.confidence ?? HeadingConfidence.unreliable;
+    final layer = state.effectiveHealthLayer;
+    final health = state.health;
+    final key = (plot.id, layer, identityHashCode(health), confidence, plot.colourIndex);
+    if (key == _sentSceneKey) return;
+    _sentSceneKey = key;
+    final scene = buildWorldScene(
+      ring: plot.ring,
+      origin: plot.centroid,
+      cells: health?.cells ?? const [],
+      layer: layer,
+      tintArgb: overlayTintArgb(confidence, plot.colourIndex),
+      alpha: overlayConfidenceAlpha(confidence),
+    );
+    unawaited(_container.platform.arSetScene(scene.toMessage()));
+  }
+
+  /// Tells the ARCore renderer where the plot stands in its session.
+  ///
+  /// Only when the geo-registration moves - a pin, a heading lock, a drift
+  /// correction. Walking does not change it: the agent's position and
+  /// ARCore's camera move together.
+  void _syncPlacement() {
+    final vio = _vio;
+    final plot = value.plot;
+    final agent = _agentPosition;
+    if (vio == null || plot == null || agent == null) return;
+    final session = vio.sessionPosition;
+    final yaw = vio.yawOffsetDeg;
+    if (session == null || yaw == null) return;
+    final next = placePlot(plotOrigin: plot.centroid, agent: agent, sessionCamera: session, yawOffsetDeg: yaw);
+    final sent = _sentPlacement;
+    if (sent != null && next.isCloseTo(sent)) return;
+    _sentPlacement = next;
+    unawaited(_container.platform.arSetPlacement(next.toList()));
   }
 
   void _onHeadingStatusChanged() {
@@ -546,6 +621,7 @@ class ArController extends ValueNotifier<ArUiState> {
         deviceToEnu: _pose.deviceToEnu,
         intrinsics: intrinsics,
         gnssAccuracyM: state.accuracyM,
+        eyeHeight: _vio?.eyeHeightM ?? eyeHeightM,
       );
       final health = _buildHealth(state, frame, agent, _pose.deviceToEnu, intrinsics);
       this.frame.value = ArFrame(overlay, health);
@@ -556,6 +632,7 @@ class ArController extends ValueNotifier<ArUiState> {
         state = state.copyWith(mode: overlay.mode, edgeDistanceM: edge, hiddenCellCount: hidden);
       }
     }
+    _syncScene(state);
     if (!identical(state, value)) value = state;
   }
 

@@ -256,6 +256,7 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                               confidence: state.headingStatus?.confidence ?? HeadingConfidence.unreliable,
                               accuracyM: state.accuracyM,
                               devicePixelRatio: dpr,
+                              drawGeometry: !arcore,
                             ),
                           ),
                         ),
@@ -365,13 +366,13 @@ class _ArAppBar extends StatelessWidget {
   }
 }
 
-/// Message, crop health, access point and snap - collapsible.
+/// Message, the two positioning actions, crop health - collapsible.
 ///
-/// Expanded it carries everything; collapsed it shrinks to one line - the
-/// layer in use and the pin-heading action - so the camera gets the screen.
-/// The agent needs the full sheet when setting up and the full view while
-/// walking, and they switch between the two many times a visit, so it is one
-/// tap or one flick on the handle either way.
+/// The two actions - aim at the access point to lock the heading, stand on it
+/// to fix the position - sit side by side and stay visible when the sheet is
+/// collapsed: they are what the agent reaches for while walking, and the
+/// collapsed sheet is how they walk. Expanding adds the health layer and the
+/// access point's note, nothing more.
 class _BottomSheet extends StatefulWidget {
   const _BottomSheet({
     required this.state,
@@ -392,7 +393,7 @@ class _BottomSheet extends StatefulWidget {
 }
 
 class _BottomSheetState extends State<_BottomSheet> {
-  bool _expanded = true;
+  bool _expanded = false;
 
   void _toggle() => setState(() => _expanded = !_expanded);
 
@@ -423,66 +424,35 @@ class _BottomSheetState extends State<_BottomSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            _SheetHandle(
-              expanded: _expanded,
-              summary: plot == null ? null : 'Crop health · ${state.healthLayer.label}',
-              onTap: _toggle,
-              onDragEnd: _onDragEnd,
-              onSnap: plot == null || _expanded ? null : widget.onSnap,
-            ),
+            _SheetHandle(expanded: _expanded, onTap: _toggle, onDragEnd: _onDragEnd),
             if (message != null) ...[
               _MessageBanner(message: message, onDismiss: widget.onDismissMessage),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
             ],
+            if (plot != null) _Actions(pinned: state.pinned, onSnap: widget.onSnap, onPin: widget.onPin),
             if (plot != null && _expanded) ...[
-              _HealthControls(state: state, onSelect: widget.onSelectHealth),
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: Divider(height: 1, color: PlotFinderColors.sheetDivider),
               ),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: const BoxDecoration(color: Color(0x2EF59E0B), shape: BoxShape.circle),
-                    child: const Icon(Icons.flag_outlined, size: 16, color: PlotFinderColors.warning),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Access point', style: TextStyle(color: PlotFinderColors.mutedText, fontSize: 12)),
-                        const SizedBox(height: 2),
-                        Text(
-                          landmark.isEmpty ? 'no landmark note recorded' : landmark,
-                          style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.43),
-                        ),
-                      ],
+              _HealthControls(state: state, onSelect: widget.onSelectHealth),
+              if (landmark.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Icon(Icons.flag_outlined, size: 16, color: PlotFinderColors.warning),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        landmark,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 13),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                style: cameraPrimaryButtonStyle(),
-                onPressed: widget.onSnap,
-                icon: const Icon(Icons.gps_fixed, size: 18),
-                label: const Text('Aim at it and tap to pin heading'),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: PlotFinderColors.sheetDivider),
-                  minimumSize: const Size.fromHeight(44),
+                  ],
                 ),
-                onPressed: widget.onPin,
-                icon: Icon(state.pinned ? Icons.where_to_vote : Icons.my_location, size: 18),
-                label: Text(state.pinned ? 'Pinned here - tap again to re-pin' : "I'm standing at the access point"),
-              ),
+              ],
             ],
           ],
         ),
@@ -491,77 +461,80 @@ class _BottomSheetState extends State<_BottomSheet> {
   }
 }
 
-/// The grab handle, and when collapsed the one-line summary beside it.
-///
-/// The whole strip is the hit target, not the 36 px bar: a field agent is
-/// holding the phone up with one hand, often in gloves or the sun.
+/// Aim and lock the heading; stand here and fix the position.
+class _Actions extends StatelessWidget {
+  const _Actions({required this.pinned, required this.onSnap, required this.onPin});
+
+  final bool pinned;
+  final VoidCallback onSnap;
+  final VoidCallback onPin;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Expanded(
+            child: Tooltip(
+              message: 'Put the crosshair on the access point, then tap',
+              child: FilledButton.icon(
+                style: cameraPrimaryButtonStyle(),
+                onPressed: onSnap,
+                icon: const Icon(Icons.gps_fixed, size: 18),
+                label: const Text('Aim & lock'),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Tooltip(
+              message: 'Tap while standing on the access point',
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: pinned ? PlotFinderColors.warning : PlotFinderColors.sheetDivider),
+                  minimumSize: const Size(0, 48),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                ),
+                onPressed: onPin,
+                icon: Icon(pinned ? Icons.where_to_vote : Icons.my_location, size: 18),
+                label: Text(pinned ? 'Pinned' : "I'm here"),
+              ),
+            ),
+          ),
+        ],
+      );
+}
+
+/// The grab handle. The whole strip is the hit target, not the 36 px bar: a
+/// field agent is holding the phone up with one hand, often in gloves or the
+/// sun.
 class _SheetHandle extends StatelessWidget {
-  const _SheetHandle({
-    required this.expanded,
-    required this.summary,
-    required this.onTap,
-    required this.onDragEnd,
-    required this.onSnap,
-  });
+  const _SheetHandle({required this.expanded, required this.onTap, required this.onDragEnd});
 
   final bool expanded;
-  final String? summary;
   final VoidCallback onTap;
   final GestureDragEndCallback onDragEnd;
 
-  /// Shown only when collapsed: the one action worth keeping one tap away.
-  final VoidCallback? onSnap;
-
   @override
-  Widget build(BuildContext context) {
-    final summary = this.summary;
-    return Semantics(
-      button: true,
-      label: expanded ? 'Collapse panel' : 'Expand panel',
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        onVerticalDragEnd: onDragEnd,
-        child: Padding(
-          padding: EdgeInsets.only(top: 10, bottom: expanded ? 12 : 4),
-          child: Column(
-            children: [
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(color: const Color(0xFF3A4A53), borderRadius: BorderRadius.circular(2)),
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        label: expanded ? 'Collapse panel' : 'Show crop health',
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          onVerticalDragEnd: onDragEnd,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 10),
+            child: Center(
+              child: Icon(
+                expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+                color: PlotFinderColors.mutedText,
+                size: 22,
               ),
-              if (!expanded && summary != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.expand_less, color: PlotFinderColors.mutedText, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          summary,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                      if (onSnap != null)
-                        IconButton(
-                          tooltip: 'Aim at the access point and tap to pin heading',
-                          onPressed: onSnap,
-                          color: Colors.white,
-                          icon: const Icon(Icons.gps_fixed),
-                        ),
-                    ],
-                  ),
-                ),
-            ],
+            ),
           ),
         ),
-      ),
-    );
-  }
+      );
 }
 
 class _MessageBanner extends StatelessWidget {
@@ -628,11 +601,11 @@ class _TrackingBanner extends StatelessWidget {
   final ArTrackingFailure failure;
 
   String get _advice => switch (failure) {
-        ArTrackingFailure.insufficientLight => 'Too dark to track - find more light',
-        ArTrackingFailure.excessiveMotion => 'Moving too fast - slow down',
-        ArTrackingFailure.insufficientFeatures => 'Point the camera at the ground or objects with texture',
+        ArTrackingFailure.insufficientLight => 'Too dark to track',
+        ArTrackingFailure.excessiveMotion => 'Slow down',
+        ArTrackingFailure.insufficientFeatures => 'Point at the ground or textured objects',
         ArTrackingFailure.cameraUnavailable => 'Camera in use by another app',
-        _ => 'Starting motion tracking - move the phone slowly side to side',
+        _ => 'Move the phone slowly side to side',
       };
 
   @override
@@ -647,7 +620,7 @@ class _InstallArCoreBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) => _Banner(
         icon: Icons.view_in_ar,
-        text: 'Install Google Play Services for AR to keep the boundary locked in place',
+        text: 'Install AR services to lock the overlay in place',
         action: TextButton(
           onPressed: onInstall,
           style: TextButton.styleFrom(foregroundColor: Colors.white),
@@ -747,6 +720,11 @@ class _ModeBadge extends StatelessWidget {
             '${state.edgeDistanceM} m to edge',
             style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
           ),
+          if (state.depthActive)
+            const Text(
+              'occlusion on',
+              style: TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
+            ),
           if (!state.hasFix)
             const Text(
               'waiting for GNSS',

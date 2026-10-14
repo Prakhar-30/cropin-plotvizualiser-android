@@ -77,8 +77,10 @@ plugins, because the plugins cannot hand them over faithfully:
   Services, so location adds no native dependency to clash with a host app's.
 - **ARCore motion tracking** (visual-inertial odometry - not the Geospatial
   API), when Google Play Services for AR is installed. ARCore owns the camera
-  then: the native side draws its preview on a `GLSurfaceView` platform view
-  and streams the camera pose and projection to Dart once a frame.
+  then: the native side draws its preview on a `GLSurfaceView` platform view,
+  draws the plot itself in the same GL frame (so it cannot lag the image),
+  finds the floor from ARCore's planes and, where the Depth API is available,
+  lets nearer people, trees and walls hide the boundary.
 
 The Flutter camera plugin chooses its own preview size, often 16:9 from a 4:3
 sensor, which crops the axis that spans a portrait screen. `CameraGeometry`

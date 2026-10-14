@@ -68,4 +68,20 @@ void main() {
     final f = ArCoreFrame.fromList(frame());
     expect(cameraHeadingDeg(withHeading(f.deviceToArEnu, 90.0)), closeTo(90.0, 1e-9));
   });
+
+  test('the floor and depth flags decode, and older frames without them still do', () {
+    final f = ArCoreFrame.fromList([...frame(ty: 1.4), -0.1, 1, 1]);
+    expect(f.floorY, closeTo(-0.1, 1e-12));
+    expect(f.floorDetected, isTrue);
+    expect(f.depthActive, isTrue);
+    expect(f.eyeHeightM, closeTo(1.5, 1e-12));
+
+    final unknown = ArCoreFrame.fromList([...frame(), double.nan, 0, 0]);
+    expect(unknown.floorY, isNull);
+    expect(unknown.eyeHeightM, isNull);
+
+    final legacy = ArCoreFrame.fromList(frame());
+    expect(legacy.floorDetected, isFalse);
+    expect(legacy.depthActive, isFalse);
+  });
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
@@ -13,7 +14,14 @@ import 'pose_source.dart';
 
 /// What visual tracking is doing right now, for the UI and the overlay.
 class VioStatus {
-  const VioStatus({required this.tracking, required this.failure, this.horizontalFovDeg, this.failed = false});
+  const VioStatus({
+    required this.tracking,
+    required this.failure,
+    this.horizontalFovDeg,
+    this.failed = false,
+    this.floorDetected = false,
+    this.depthActive = false,
+  });
 
   final bool tracking;
   final ArTrackingFailure failure;
@@ -22,6 +30,12 @@ class VioStatus {
   /// arrived for [VioPoseSource.frameTimeout]. The screen falls back to the
   /// sensors when this is set; it is never cleared.
   final bool failed;
+
+  /// ARCore found the real floor, so the plot lies on it.
+  final bool floorDetected;
+
+  /// Depth is being measured, so nearer objects hide the overlay.
+  final bool depthActive;
 
   /// Of the preview as ARCore shows it; null before the first frame.
   final double? horizontalFovDeg;
@@ -32,10 +46,12 @@ class VioStatus {
       other.tracking == tracking &&
       other.failure == failure &&
       other.horizontalFovDeg == horizontalFovDeg &&
-      other.failed == failed;
+      other.failed == failed &&
+      other.floorDetected == floorDetected &&
+      other.depthActive == depthActive;
 
   @override
-  int get hashCode => Object.hash(tracking, failure, horizontalFovDeg, failed);
+  int get hashCode => Object.hash(tracking, failure, horizontalFovDeg, failed, floorDetected, depthActive);
 }
 
 /// Pose from ARCore motion tracking, with the heading pinned to true north by
@@ -58,7 +74,7 @@ class VioPoseSource implements PoseSource {
     HeadingFusion? fusion,
     int Function()? clockMs,
     this.frameTimeout = const Duration(seconds: 6),
-  })  : _fusion = fusion ?? HeadingFusion(),
+  })  : _fusion = fusion ?? HeadingFusion(visualHeadingConfig),
         _clockMs = clockMs ?? monotonicMs {
     _headingStatus = ValueNotifier(HeadingStatus.from(_fusion.estimate(_clockMs())));
   }
@@ -87,6 +103,27 @@ class VioPoseSource implements PoseSource {
   StreamSubscription<RotationSample>? _magnetic;
   Enu? _lastPosition;
 
+  /// Where ARCore had the camera in its session frame, at the last tracked
+  /// frame. Null while not tracking.
+  Enu? get sessionPosition => _lastPosition;
+
+  /// True heading minus session heading at the last tracked frame - the yaw
+  /// that takes ARCore's arbitrary frame onto the earth.
+  double? get yawOffsetDeg => _lastPosition == null ? null : _yawOffsetDeg;
+  double _yawOffsetDeg = 0.0;
+
+  /// The camera's measured height above the ground; null before tracking.
+  double? get eyeHeightM => _eyeHeightM;
+  double? _eyeHeightM;
+
+  /// Before any lock the compass is all there is, but used raw it would shake
+  /// a world-placed plot with every reading. Its offset from ARCore's yaw is
+  /// smoothed instead: the compass sets where north is, ARCore carries every
+  /// turn of the hand.
+  double? _magneticDeg;
+  double? _smoothedMagneticOffsetDeg;
+  int _lastSmoothingMs = 0;
+
   @override
   ValueListenable<DevicePose> get pose => _pose;
 
@@ -105,7 +142,10 @@ class VioPoseSource implements PoseSource {
     // heading - so the magnetic rotation vector keeps flowing. The game vector
     // is ignored: ARCore is the carrier now.
     _magnetic ??= _platform.rotationSamples.listen((sample) {
-      if (!sample.isGame) _fusion.onMagneticHeading(cameraHeadingDeg(sample.matrix), _clockMs());
+      if (sample.isGame) return;
+      final heading = cameraHeadingDeg(sample.matrix);
+      _magneticDeg = heading;
+      _fusion.onMagneticHeading(heading, _clockMs());
     });
   }
 
@@ -145,6 +185,8 @@ class VioPoseSource implements PoseSource {
       tracking: frame.tracking,
       failure: frame.failure,
       horizontalFovDeg: frame.horizontalFovDeg,
+      floorDetected: frame.floorDetected,
+      depthActive: frame.depthActive,
     );
     if (!frame.tracking) {
       // Motion across a tracking gap is not measured, only guessed - and
@@ -156,13 +198,16 @@ class VioPoseSource implements PoseSource {
     final now = _clockMs();
     final carrier = frame.carrierHeadingDeg;
     _fusion.onCarrierHeading(carrier, now);
-    final estimate = _fusion.estimate(now);
+    final fused = _fusion.estimate(now);
+    final estimate = fused.confidence == HeadingConfidence.unreliable ? _compassEstimate(fused, carrier, now) : fused;
     final corrected = withHeading(frame.deviceToArEnu, estimate.headingDeg);
 
+    final offset = angleDifferenceDeg(carrier, estimate.headingDeg);
+    _yawOffsetDeg = offset;
+    _eyeHeightM = frame.eyeHeightM;
     final last = _lastPosition;
     _lastPosition = frame.position;
     if (last != null) {
-      final offset = angleDifferenceDeg(carrier, estimate.headingDeg);
       final moved = arEnuToEnu(
         Enu(frame.position.east - last.east, frame.position.north - last.north),
         offset,
@@ -179,4 +224,41 @@ class VioPoseSource implements PoseSource {
     );
     _headingStatus.value = HeadingStatus.from(estimate);
   }
+
+  HeadingEstimate _compassEstimate(HeadingEstimate fused, double carrier, int now) {
+    final magnetic = _magneticDeg;
+    if (magnetic == null) return fused;
+    final target = angleDifferenceDeg(carrier, magnetic);
+    final previous = _smoothedMagneticOffsetDeg;
+    final dtS = _lastSmoothingMs == 0 ? 0.0 : (now - _lastSmoothingMs) / 1000.0;
+    _lastSmoothingMs = now;
+    final alpha = 1.0 - math.exp(-dtS / _compassSmoothingS);
+    final smoothed = previous == null ? target : normalizeDeg(previous + alpha * angleDifferenceDeg(previous, target));
+    _smoothedMagneticOffsetDeg = smoothed;
+    return HeadingEstimate(
+      headingDeg: normalizeDeg(carrier + smoothed),
+      source: fused.source,
+      confidence: fused.confidence,
+      ageMs: fused.ageMs,
+      expectedErrorDeg: fused.expectedErrorDeg,
+    );
+  }
 }
+
+/// Time constant for the pre-lock compass offset, seconds.
+const double _compassSmoothingS = 3.0;
+
+/// Heading behaviour when ARCore carries the yaw.
+///
+/// ARCore's yaw is visually tracked and drifts well under a degree a minute, so
+/// a lock stays good for the whole visit - there is no reason to let it lapse
+/// back to the compass after three minutes, which on the sensor path is what
+/// made the plot swing round mid-visit. And the compass gets no authority over
+/// a lock at all: indoors and beside steel it is the least reliable thing on
+/// the phone, and a slow trim towards it rotated the whole plot about the
+/// agent while they stood still.
+const HeadingConfig visualHeadingConfig = HeadingConfig(
+  lockFreshMs: 30 * 60 * 1000,
+  lockTtlMs: 4 * 60 * 60 * 1000,
+  maxMagneticDriftCorrectionDeg: 0.0,
+);

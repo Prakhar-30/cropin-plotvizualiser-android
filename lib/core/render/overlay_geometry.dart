@@ -185,7 +185,8 @@ List<ScreenPoint> projectVisible(List<Vec3> points, CameraIntrinsics intrinsics)
 /// Builds the overlay for one plot.
 ///
 /// All geometry sits on the ground plane, taken as the device's own altitude
-/// minus a fixed eye height. There is no terrain model and no attempt at one: a
+/// minus [eyeHeight] - measured by ARCore when it has found the floor, a fixed
+/// assumption otherwise. There is no terrain model and no attempt at one: a
 /// wrong elevation would tilt the whole shape, and on the flat farmland this is
 /// built for, assuming level ground is both simpler and closer to true.
 PlotOverlay buildPlotOverlay({
@@ -196,14 +197,15 @@ PlotOverlay buildPlotOverlay({
   required Mat3 deviceToEnu,
   required CameraIntrinsics intrinsics,
   required double gnssAccuracyM,
+  double eyeHeight = eyeHeightM,
 }) {
   final enuToDevice = deviceToEnu.transpose();
-  const groundUp = -eyeHeightM;
+  final groundUp = -eyeHeight;
 
   final ringGround = openRing([for (final p in ring) frame.toEnu(p, groundUp)]);
 
   // The camera. It sits at the agent's own position, at up = 0, which puts it
-  // eyeHeightM above the ground plane the boundary is drawn on. Everything
+  // eyeHeight above the ground plane the boundary is drawn on. Everything
   // projected below is measured from here, never from the frame origin.
   final eye = frame.toEnu(agent);
 

@@ -154,6 +154,79 @@ does not make the plot swim. VIO also needs texture: a uniform crop canopy
 filling the frame, or glare, can drop tracking. When that happens a banner says
 why, and the steps take over until tracking returns.
 
+## Third field test: corners swim, people are painted over, aim walks in circles
+
+ARCore was tracking, but three problems remained:
+
+1. **The red ground area's corner slid whenever the phone turned a little.**
+2. **A boundary 14–16 m away was painted over a person sitting 2 m away**, so it
+   looked near, not 16 m off.
+3. **Each tap on Aim moved the plot further right**; repeated taps took it
+   right round the agent.
+
+### 1. Swimming corners: latency, not tracking
+
+Azuma's survey and Holloway's error analysis both name end-to-end latency as
+the largest source of *dynamic* registration error in video see-through AR:
+whatever is drawn with an older pose than the image under it slides during
+motion and settles when the motion stops [1][18]. That matches what was seen.
+ARCore drew the camera image natively, but the overlay went through the event
+channel and the next Flutter frame, one or two frames behind. At 30°/s of
+hand motion that is 1–2°, a visible slide at 3 m.
+
+The fix is the one every AR SDK uses: render the virtual content in the same
+frame as the camera image, with that frame's own view and projection matrices.
+The boundary, fill, posts and health cells are now drawn by
+`ArOverlayRenderer.kt` inside ARCore's GL frame. Dart sends the plot geometry
+once and its geo-placement only when the registration changes (a pin, a heading
+lock, a drift correction). Walking does not change the placement, because the
+agent's position and ARCore's camera move together. Flutter draws only text:
+the label, hotspot ranks, the off-screen arrow and the crosshair.
+
+Two smaller contributors were fixed at the same time:
+
+- **The ground is now ARCore's measured floor** (the lowest horizontal plane at
+  least 0.8 m below the phone), not "1.6 m below wherever the phone is". Before
+  this, raising or lowering the phone moved the drawn ground with it.
+- **No compass after a lock.** On the sensor path the magnetometer may trim a
+  carried heading by up to 10°, and a lock lapses back to the compass after
+  three minutes. With ARCore carrying the yaw, which drifts well under a degree
+  a minute, both only did harm indoors, rotating the plot about a standing
+  agent. Before any lock, the compass offset from ARCore's yaw is smoothed over
+  3 s, so a compass-placed plot does not shake.
+
+### 2. Occlusion: depth, with an X-ray ghost
+
+Correct occlusion is the strongest depth cue there is. Without it, a far
+boundary drawn over a near person reads as being in front of them [19]. ARCore's
+Depth API estimates per-pixel depth from motion on ordinary single-camera
+phones, and DepthLab shows it used for exactly this kind of per-fragment
+occlusion test [20][21]. Each overlay fragment is compared with the measured
+depth at its pixel. A tolerance that grows with range absorbs depth noise, so
+ground surfaces lying on the measured floor do not flicker.
+
+Hiding occluded overlay outright would be wrong in the field: the crop is
+nearer than the ground the plot is drawn on, so the boundary would vanish
+inside the field it encloses. The X-ray literature resolves this by drawing
+occluded content faintly instead of removing it [22][23]. Occluded fragments
+keep 22% of their opacity: a person in front visibly hides the boundary, and
+the boundary is still findable through the crop. Depth only works to about
+8 m. Beyond that a fragment has no measurement and is drawn normally, which is
+the right answer for open farmland. On phones without depth support the
+overlay draws as before, and the badge shows "occlusion on" only when depth
+is active.
+
+### 3. Aim walking in circles
+
+The landmark snap took the bearing from the **raw** GNSS fix to the access
+point, while the plot was drawn from the **filtered** (or pinned) position. At
+±91 m indoors each tap used a different wild position, so each tap gave a
+different heading. The snap now uses the same position the plot is drawn from,
+so a second tap with the camera still is a no-op. It also refuses when the
+position uncertainty alone would put more than 20° of error into the bearing
+(±15 m at 14 m is ±47°). In that case it asks the agent to stand on the access
+point and tap "I'm here" first.
+
 ## Sources
 
 1. Azuma, *A Survey of Augmented Reality* (1997) — [PDF](https://sreal.ucf.edu/wp-content/uploads/2017/02/Azuma1998.pdf)
@@ -174,6 +247,13 @@ why, and the steps take over until tracking returns.
 15. Qin et al., *A General Optimization-based Framework for Global Pose Estimation with Multiple Sensors* (VINS-Fusion) — [arXiv 1901.03642](https://arxiv.org/abs/1901.03642)
 16. Esri, *Display scenes in augmented reality: world-scale AR* — [ArcGIS Maps SDKs](https://developers.arcgis.com/kotlin/scenes-3d/display-scenes-in-augmented-reality/)
 17. Google, *ARCore fundamental concepts: motion tracking* — [developers.google.com](https://developers.google.com/ar/develop/fundamentals)
+
+18. Holloway, *Registration Error Analysis for Augmented Reality*, Presence 6(4), 1997 — [MIT Press](https://direct.mit.edu/pvar/article/6/4/413/58397)
+19. Cutting & Vishton, *Perceiving layout and knowing distances* (occlusion as the dominant depth cue at all ranges), 1995 — [PDF](https://www.cs.ucf.edu/~sumant/publications/Cutting_Vishton_1995.pdf)
+20. Google, *ARCore Depth API* — [developers.google.com](https://developers.google.com/ar/develop/depth)
+21. Du et al., *DepthLab: Real-time 3D Interaction with Depth Maps for Mobile Augmented Reality*, UIST 2020 — [ACM](https://dl.acm.org/doi/10.1145/3379337.3415881)
+22. Livingston et al., *Resolving Multiple Occluded Layers in Augmented Reality*, ISMAR 2003 — [IEEE](https://ieeexplore.ieee.org/document/1240688)
+23. Avery, Sandor, Thomas, *Improving Spatial Perception for Augmented Reality X-Ray Vision*, IEEE VR 2009 — [IEEE](https://ieeexplore.ieee.org/document/4811002)
 
 The numbers quoted are the authors' own results from their test conditions,
 not general benchmarks.

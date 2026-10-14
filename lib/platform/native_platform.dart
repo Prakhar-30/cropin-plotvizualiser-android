@@ -107,6 +107,25 @@ class NativePlatform {
     }
   }
 
+  /// Hands the plot geometry to the native renderer; null clears it.
+  Future<void> arSetScene(Map<String, Object>? scene) async {
+    try {
+      await _methods.invokeMethod<void>('arScene', scene);
+    } on Object {
+      // No ARCore view on this platform.
+    }
+  }
+
+  /// Where the plot sits in ARCore's session, as `[a, b, c, d, tEast, tNorth]`;
+  /// null hides it.
+  Future<void> arSetPlacement(List<double>? placement) async {
+    try {
+      await _methods.invokeMethod<void>('arPlacement', placement);
+    } on Object {
+      // No ARCore view on this platform.
+    }
+  }
+
   Future<void> arPause() => _invokeQuietly('arPause');
 
   Future<void> arResume() => _invokeQuietly('arResume');

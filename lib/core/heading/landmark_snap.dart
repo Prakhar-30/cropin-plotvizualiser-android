@@ -13,6 +13,11 @@ import '../geo/enu.dart';
 /// heading to something worse than the compass.
 const double minSnapDistanceM = 10.0;
 
+/// The most bearing error the agent's own position uncertainty may put into a
+/// snap, degrees. Beyond this the snap is refused: at ±15 m of position and
+/// 14 m of range, the "lock" would be a ±47° guess shown as ±3°.
+const double maxSnapPositionErrorDeg = 20.0;
+
 /// True heading for the camera, or null when the feature is too close to aim at.
 ///
 /// [crosshairOffsetDeg] is the crosshair's horizontal angle from the optical

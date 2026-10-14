@@ -68,6 +68,8 @@ class PlotFinderPlugin :
     private var arFrames: EventChannel? = null
     private var arFrameSink: EventChannel.EventSink? = null
     private var arView: ArCoreView? = null
+    private var arScene: OverlayScene? = null
+    private var arPlacement: FloatArray? = null
 
     private var activity: ActivityPluginBinding? = null
     private var pendingPermission: MethodChannel.Result? = null
@@ -103,6 +105,20 @@ class PlotFinderPlugin :
                     "openAppSettings" -> result.success(openAppSettings())
                     "arCoreAvailability" -> result.success(arCoreAvailability())
                     "arInstall" -> result.success(requestArCoreInstall())
+                    "arScene" -> {
+                        arScene = OverlayScene.from(call.arguments)
+                        arView?.setScene(arScene)
+                        result.success(null)
+                    }
+                    "arPlacement" -> {
+                        arPlacement = when (val v = call.arguments) {
+                            is DoubleArray -> FloatArray(v.size) { v[it].toFloat() }
+                            is List<*> -> FloatArray(v.size) { (v[it] as Number).toFloat() }
+                            else -> null
+                        }
+                        arView?.setPlacement(arPlacement)
+                        result.success(null)
+                    }
                     "arPause" -> {
                         arView?.pause()
                         result.success(null)
@@ -201,10 +217,18 @@ class PlotFinderPlugin :
 
     fun attachArView(view: ArCoreView) {
         arView = view
+        // The scene usually arrives before the view: the plot loads while the
+        // platform view is still being created.
+        view.setScene(arScene)
+        view.setPlacement(arPlacement)
     }
 
     fun detachArView(view: ArCoreView) {
-        if (arView === view) arView = null
+        if (arView !== view) return
+        arView = null
+        // One AR screen's plot must not flash up in the next one's first frame.
+        arScene = null
+        arPlacement = null
     }
 
     fun emitArFrame(frame: DoubleArray) {

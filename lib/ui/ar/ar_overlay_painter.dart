@@ -8,6 +8,7 @@ import '../../core/heading/heading_model.dart';
 import '../../core/render/health_geometry.dart';
 import '../../core/render/overlay_geometry.dart';
 import '../../core/render/plot_palette.dart';
+import '../../core/render/world_scene.dart';
 import '../theme.dart';
 import 'ar_controller.dart';
 
@@ -35,6 +36,7 @@ class ArOverlayPainter extends CustomPainter {
     required this.confidence,
     required this.accuracyM,
     required this.devicePixelRatio,
+    this.drawGeometry = true,
   }) : super(repaint: frame);
 
   final ValueListenable<ArFrame?> frame;
@@ -47,7 +49,11 @@ class ArOverlayPainter extends CustomPainter {
   final double accuracyM;
   final double devicePixelRatio;
 
-  static const Color _unreliableColour = Color(0xFF9CA3AF);
+  /// False on the ARCore path, where the boundary, fill and health cells are
+  /// drawn natively in the camera's own GL frame. This canvas then carries
+  /// only what is text or screen furniture: the label, hotspot ranks, the
+  /// off-screen arrow and the crosshair.
+  final bool drawGeometry;
   static const Color _labelBackground = Color(0xCC0B0F14);
 
   /// Dark backing for strokes that must survive any background.
@@ -74,33 +80,30 @@ class ArOverlayPainter extends CustomPainter {
     // is plot 4, not plot 5", which is a claim about which boundary you are
     // looking at, and that claim is only ever as good as the heading it was
     // drawn with.
-    final trusted = confidence != HeadingConfidence.unreliable;
-    final tint = trusted ? Color(plotColour(colourIndex).argb) : _unreliableColour;
+    final tint = Color(overlayTintArgb(confidence, colourIndex));
 
     // Three tiers. HOLDING is only a nudge: an agent inspecting a small plot
     // walks around it, never across, so a whole visit runs carried. The chip
     // states the source, the age and the expected error in degrees, which is
     // more specific than a dimmer ever was. The dimming marks the genuinely
     // untrustworthy case.
-    final alpha = switch (confidence) {
-      HeadingConfidence.locked => 1.0,
-      HeadingConfidence.holding => 0.85,
-      HeadingConfidence.unreliable => 0.45,
-    };
+    final alpha = overlayConfidenceAlpha(confidence);
 
-    // The raster goes down before anything else, because it lies on the ground
-    // and everything else stands on it.
     final health = current.health;
-    if (health != null) _drawHealthPatches(canvas, health, alpha);
+    if (drawGeometry) {
+      // The raster goes down before anything else, because it lies on the
+      // ground and everything else stands on it.
+      if (health != null) _drawHealthPatches(canvas, health, alpha);
 
-    // Walls next, in both modes: they are the boundary.
-    _drawWalls(canvas, overlay, tint, alpha);
+      // Walls next, in both modes: they are the boundary.
+      _drawWalls(canvas, overlay, tint, alpha);
 
-    switch (overlay.mode) {
-      case RenderMode.far:
-        _drawFarMode(canvas, overlay, tint, alpha);
-      case RenderMode.near:
-        _drawNearMode(canvas, overlay, tint, alpha);
+      switch (overlay.mode) {
+        case RenderMode.far:
+          _drawFarMode(canvas, overlay, tint, alpha);
+        case RenderMode.near:
+          _drawNearMode(canvas, overlay, tint, alpha);
+      }
     }
 
     // Hotspot markers stand above the walls on purpose: the marker is a
@@ -322,5 +325,6 @@ class ArOverlayPainter extends CustomPainter {
       oldDelegate.confidence != confidence ||
       oldDelegate.accuracyM != accuracyM ||
       oldDelegate.colourIndex != colourIndex ||
-      oldDelegate.devicePixelRatio != devicePixelRatio;
+      oldDelegate.devicePixelRatio != devicePixelRatio ||
+      oldDelegate.drawGeometry != drawGeometry;
 }

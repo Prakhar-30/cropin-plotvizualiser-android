@@ -14,6 +14,7 @@ import android.view.View
 import com.google.ar.core.Config
 import com.google.ar.core.Coordinates2d
 import com.google.ar.core.Frame
+import com.google.ar.core.Plane
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingFailureReason
 import com.google.ar.core.TrackingState
@@ -33,21 +34,22 @@ class ArCoreViewFactory(private val plugin: PlotFinderPlugin) : PlatformViewFact
 /**
  * The camera preview and visual-inertial tracking, from one ARCore session.
  *
- * Only ARCore's *motion tracking* is used: the on-device visual-inertial
- * odometry that follows the phone through space from the camera image and the
- * IMU. No Geospatial API, no Street View, no network - none of what the README
- * rules out for farmland. Plane finding, light estimation and depth are all
- * off, so the session does as little as tracking allows.
+ * ARCore is used for three on-device things, none needing a network or Street
+ * View - none of what the README rules out for farmland:
+ *  - **motion tracking**, the visual-inertial odometry that follows the phone
+ *    through space from the camera image and the IMU;
+ *  - **horizontal planes**, only to find the real floor, so the plot lies on
+ *    the ground rather than at an assumed 1.6 m below the phone;
+ *  - **depth**, where the device supports it, so people, trees and walls in
+ *    front of the boundary hide it.
  *
- * What it gives the Dart side, once a frame:
- *  - the display-oriented camera pose in ARCore's world frame - where the
- *    phone is and how it is turned, to centimetres, as it walks;
- *  - the projection the preview is actually shown with, so the overlay is
- *    drawn with exactly the field of view of the picture under it.
+ * The plot itself is drawn here, by [ArOverlayRenderer], in the same GL frame
+ * as the camera image and with that frame's own camera matrices - so it cannot
+ * lag the picture. Dart supplies the plot geometry once and its geo-placement
+ * whenever that changes; Flutter draws only the label and chrome on top.
  *
- * ARCore owns the camera while this view exists, so the camera plugin is not
- * started alongside it. The preview is drawn here, on a GLSurfaceView, and
- * Flutter composites its overlay canvas on top.
+ * What it gives the Dart side, once a frame: the camera pose, the projection,
+ * the floor height and whether depth is active.
  */
 class ArCoreView(private val context: Context, private val plugin: PlotFinderPlugin) :
     PlatformView,
@@ -55,13 +57,16 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
 
     private val surface = GLSurfaceView(context).apply {
         preserveEGLContextOnPause = true
-        setEGLContextClientVersion(2)
+        // ES 3 for the two-byte depth texture; every ARCore device has it.
+        setEGLContextClientVersion(3)
         setEGLConfigChooser(8, 8, 8, 8, 16, 0)
         setRenderer(this@ArCoreView)
         renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
     }
 
     private val background = BackgroundRenderer()
+    private val overlay = ArOverlayRenderer()
+    private val view = FloatArray(16)
     private val main = Handler(Looper.getMainLooper())
     private val projection = FloatArray(16)
 
@@ -70,6 +75,18 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
     @Volatile private var viewportHeight = 0
     @Volatile private var geometryDirty = true
     private var paused = true
+    private var depthEnabled = false
+
+    /** Where the plot sits in the session; see [ArOverlayRenderer.draw]. */
+    @Volatile private var placement: FloatArray? = null
+
+    /**
+     * The ground's height in ARCore's world. Until a floor plane is found it
+     * is assumed [ASSUMED_EYE_HEIGHT_M] below where the phone first tracked.
+     */
+    private var floorY = Float.NaN
+    private var floorDetected = false
+    private var frameCount = 0L
 
     init {
         session = openSession()
@@ -82,10 +99,16 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
             val config = Config(s).apply {
                 focusMode = Config.FocusMode.AUTO
                 updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
-                planeFindingMode = Config.PlaneFindingMode.DISABLED
+                planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
                 lightEstimationMode = Config.LightEstimationMode.DISABLED
+                depthMode = if (s.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
+                    Config.DepthMode.AUTOMATIC
+                } else {
+                    Config.DepthMode.DISABLED
+                }
             }
             s.configure(config)
+            depthEnabled = config.depthMode == Config.DepthMode.AUTOMATIC
         }
     } catch (e: Exception) {
         Log.w(TAG, "ARCore session unavailable", e)
@@ -116,6 +139,14 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
 
     override fun getView(): View = surface
 
+    fun setScene(scene: OverlayScene?) {
+        surface.queueEvent { overlay.setScene(scene) }
+    }
+
+    fun setPlacement(next: FloatArray?) {
+        placement = next
+    }
+
     override fun dispose() {
         plugin.detachArView(this)
         pause()
@@ -128,6 +159,7 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         background.create()
+        overlay.create()
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -149,6 +181,18 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
             s.setCameraTextureName(background.textureId)
             val frame = s.update()
             background.draw(frame)
+            val camera = frame.camera
+            if (camera.trackingState == TrackingState.TRACKING) {
+                val pose = camera.pose
+                updateFloor(s, pose.ty())
+                overlay.updateDepth(frame, depthEnabled)
+                camera.getViewMatrix(view, 0)
+                camera.getProjectionMatrix(projection, 0, NEAR_M, FAR_M)
+                overlay.draw(
+                    view, projection, placement, floorY, pose.tx(), pose.tz(),
+                    viewportWidth, viewportHeight,
+                )
+            }
             emit(frame)
         } catch (e: Exception) {
             // One bad frame - a camera hiccup, a session mid-pause - is not
@@ -158,8 +202,34 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
     }
 
     /**
+     * Finds the floor: the lowest upward-facing plane a reasonable way below
+     * the phone. Tables and benches are planes too, which is why it is the
+     * lowest one and not the nearest. Checked twice a second - plane lists do
+     * not change faster than that.
+     */
+    private fun updateFloor(s: Session, cameraY: Float) {
+        if (floorY.isNaN()) floorY = cameraY - ASSUMED_EYE_HEIGHT_M
+        if (frameCount++ % 15L != 0L) return
+        var lowest = Float.NaN
+        for (plane in s.getAllTrackables(Plane::class.java)) {
+            if (plane.trackingState != TrackingState.TRACKING) continue
+            if (plane.subsumedBy != null) continue
+            if (plane.type != Plane.Type.HORIZONTAL_UPWARD_FACING) continue
+            if (plane.extentX * plane.extentZ < MIN_FLOOR_AREA_M2) continue
+            val y = plane.centerPose.ty()
+            if (y > cameraY - MIN_FLOOR_DROP_M) continue
+            if (lowest.isNaN() || y < lowest) lowest = y
+        }
+        if (lowest.isNaN()) return
+        // Eased in rather than jumped to, so a refined plane estimate does not
+        // make the whole plot hop.
+        floorY = if (floorDetected) floorY + 0.3f * (lowest - floorY) else lowest
+        floorDetected = true
+    }
+
+    /**
      * Sends `[state, timestampMs, tx, ty, tz, qx, qy, qz, qw, p0, p5, width,
-     * height, failure]` to Dart. One flat array, because it crosses the channel
+     * height, failure, floorY, floorDetected, depthActive]` to Dart. One flat array, because it crosses the channel
      * thirty times a second.
      *
      * The timestamp is elapsedRealtime, the clock the location fixes use.
@@ -167,7 +237,7 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
     private fun emit(frame: Frame) {
         val camera = frame.camera
         val pose = camera.displayOrientedPose
-        camera.getProjectionMatrix(projection, 0, 0.1f, 300f)
+        camera.getProjectionMatrix(projection, 0, NEAR_M, FAR_M)
         val t = pose.translation
         val q = pose.rotationQuaternion
         val event = doubleArrayOf(
@@ -182,6 +252,9 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
             projection[0].toDouble(), projection[5].toDouble(),
             viewportWidth.toDouble(), viewportHeight.toDouble(),
             failureCode(camera.trackingFailureReason).toDouble(),
+            if (floorY.isNaN()) Double.NaN else floorY.toDouble(),
+            if (floorDetected) 1.0 else 0.0,
+            if (overlay.depthActive) 1.0 else 0.0,
         )
         main.post { plugin.emitArFrame(event) }
     }
@@ -202,6 +275,11 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
 
     private companion object {
         const val TAG = "PlotFinder"
+        const val NEAR_M = 0.1f
+        const val FAR_M = 500f
+        const val ASSUMED_EYE_HEIGHT_M = 1.6f
+        const val MIN_FLOOR_DROP_M = 0.8f
+        const val MIN_FLOOR_AREA_M2 = 0.25f
     }
 }
 

@@ -39,6 +39,9 @@ class ArCoreFrame {
     required this.deviceToArEnu,
     required this.horizontalFovDeg,
     required this.failure,
+    this.floorY,
+    this.floorDetected = false,
+    this.depthActive = false,
   });
 
   /// Decodes the flat array `ArCoreView.emit` sends.
@@ -51,6 +54,9 @@ class ArCoreFrame {
       deviceToArEnu: arWorldToEnu * q.toMat3(),
       horizontalFovDeg: horizontalFovFromProjection(v[9]),
       failure: ArTrackingFailure.values[v[13].toInt().clamp(0, ArTrackingFailure.values.length - 1)],
+      floorY: v.length > 14 && v[14].isFinite ? v[14] : null,
+      floorDetected: v.length > 15 && v[15] > 0.5,
+      depthActive: v.length > 16 && v[16] > 0.5,
     );
   }
 
@@ -66,6 +72,20 @@ class ArCoreFrame {
   /// Across the view's width, as the preview is actually shown.
   final double horizontalFovDeg;
   final ArTrackingFailure failure;
+
+  /// Height of the ground in ARCore's world (its y, which is [Enu.up] here).
+  /// A detected floor plane when [floorDetected], otherwise an assumption.
+  final double? floorY;
+  final bool floorDetected;
+
+  /// ARCore's Depth API is producing depth, so the overlay is occluded.
+  final bool depthActive;
+
+  /// How high the camera is above the ground, metres; null before tracking.
+  double? get eyeHeightM => switch (floorY) {
+        final floor? => position.up - floor,
+        null => null,
+      };
 
   /// Compass-style heading of the camera in the session's arbitrary frame.
   double get carrierHeadingDeg => cameraHeadingDeg(deviceToArEnu);

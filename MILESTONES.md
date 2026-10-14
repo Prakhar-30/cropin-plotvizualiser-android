@@ -19,6 +19,7 @@ this log must match the code.
 | F9 | Package as an embeddable Flutter plugin; standalone app moved to `example/` | A host app integrates with one dependency and one screen; CI green on Flutter 3.22 and stable |
 | F10 | First real-phone test: overlay receded while walking indoors. Step counting (PDR) fused into the position filter, step length calibrated from good GNSS; collapsible AR sheet; simulation removed | The indoor walk reproduced as a regression test and passing; research notes in `docs/research/ar-positioning.md` |
 | F11 | Second phone test: boundary shifted sideways on approach. ARCore motion tracking (VIO) as the pose and motion source, GNSS de-weighted to drift correction, access-point position pin, fallback to sensors + steps | A stuck ±15 m indoor receiver moves the drawn position < 1 m sideways over a tracked 10 m approach (regression test) |
+| F12 | Third phone test: corners swam on small hand motion, a 16 m boundary was painted over a person 2 m away, repeated Aim taps rotated the plot in a circle. Overlay drawn natively in ARCore's GL frame (no latency), floor from ARCore planes, depth occlusion with X-ray ghosting, no compass after a lock under ARCore, Aim uses the drawn position and refuses when position error swamps the bearing; Aim / I'm here always visible in the sheet | Placement maths tested as the inverse of the motion rotation; triangulation, scene and decoding tests |
 
 **F9, packaging for a host app.** The aim was to add nothing that could break a
 host app's build: no third-party native dependencies (framework
