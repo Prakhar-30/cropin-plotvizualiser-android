@@ -66,6 +66,28 @@ const double _poorFixInflation = 3.0;
 const double _poorFixFromM = 6.0;
 const double _poorFixFullM = 10.0;
 
+/// While visual tracking carries the motion, every fix is trusted this many
+/// times less (in standard deviation). Visual-inertial odometry is accurate to
+/// centimetres over tens of metres; GNSS is accurate to metres. Letting GNSS
+/// pull at full weight would put back exactly the swimming the visual tracking
+/// removes, so it is left to correct only slow drift - minutes, not seconds.
+const double _visualFixInflation = 3.0;
+
+/// After the agent pins their position at a known point, fixes are trusted
+/// this many times less again: the pin is the best absolute position this
+/// session will get, and a receiver under a roof must not walk it away.
+const double _pinnedFixInflation = 10.0;
+
+/// Process noise while visual tracking carries the motion: what is left to
+/// model is the tracker's own drift, about a centimetre or two per metre.
+const double _visualProcessNoiseMps = 0.05;
+
+/// Visual motion faster than this counts as moving, for the still/moving cue.
+const double _visualMovingMps = 0.3;
+
+/// Visual motion older than this, on the fixes' clock, means tracking is gone.
+const int _visualTimeoutMs = 2000;
+
 /// With steps being counted, no step for this long means standing still.
 ///
 /// This replaces Doppler speed as the motion cue whenever steps are available.
@@ -137,6 +159,18 @@ const double _renderSlewWalkingMps = 2.0;
 /// noise, not for hiding the truth.
 const double _renderSnapM = 10.0;
 
+/// The bound while visual tracking carries the motion, walking or not.
+///
+/// The camera's real motion reaches the drawn position directly, through
+/// [PositionStabilizer.onVisualMotion], so whatever is left between the drawn
+/// position and the estimate is a GNSS drift correction - and a drift
+/// correction must not be visible as the boundary sliding sideways while the
+/// agent walks up to it. A slow walk is about 1 m/s; this is a twentieth of
+/// that, so a metre of disagreement is absorbed over twenty seconds - slower
+/// even than the stationary bound, because here the camera is known to be
+/// tracked and every bit of the gap is the receiver's.
+const double _renderSlewVisualMps = 0.05;
+
 /// What the stabiliser believes, and how sure it is.
 class StabilizedPosition {
   const StabilizedPosition({
@@ -195,12 +229,25 @@ class PositionStabilizer {
   bool _stationary = false;
   bool get stationary => _stationary;
 
-  /// When the last counted step landed, on the fixes' clock; 0 before any.
+  /// When the last counted step - or visually tracked movement - happened, on
+  /// the fixes' clock; 0 before any.
   int _lastStepMs = 0;
 
-  /// True once a step has been counted: from then on steps, not Doppler,
-  /// decide whether the agent is moving.
+  /// True once a step or visual movement has been seen: from then on they, not
+  /// Doppler, decide whether the agent is moving.
   bool get countingSteps => _lastStepMs != 0;
+
+  /// When the last visual-tracking update arrived; 0 before any.
+  int _lastVisualMs = 0;
+  int _lastVisualMotionMs = 0;
+
+  /// True while visual tracking is feeding [onVisualMotion].
+  bool get visualTracking => _lastVisualMs != 0 && _lastFixMs - _lastVisualMs < _visualTimeoutMs;
+
+  bool _pinned = false;
+
+  /// True after [pinTo], until a reset or a relocation abandons the pin.
+  bool get pinned => _pinned;
 
   /// Current 1-sigma horizontal uncertainty, metres. Zero before the first fix.
   double get uncertaintyM => math.sqrt((_varEast + _varNorth) / 2.0);
@@ -239,13 +286,17 @@ class PositionStabilizer {
     // its uncertainty grows, at the rate the motion state implies.
     final processNoiseMps = _stationary
         ? _stationaryProcessNoiseMps
-        : (countingSteps ? _steppingProcessNoiseMps : _walkingProcessNoiseMps);
+        : visualTracking
+            ? _visualProcessNoiseMps
+            : (countingSteps ? _steppingProcessNoiseMps : _walkingProcessNoiseMps);
     final growth = (processNoiseMps * dtS) * (processNoiseMps * dtS);
     _varEast += growth;
     _varNorth += growth;
 
     // --- gate ----------------------------------------------------------
-    final trusted = _trustedAccuracy(accuracyM) * (countingSteps && !_stationary ? _fixInflation(accuracyM) : 1.0);
+    final trusted = _trustedAccuracy(accuracyM) *
+        (countingSteps && !_stationary ? _fixInflation(accuracyM) : 1.0) *
+        (_pinned ? _pinnedFixInflation : (visualTracking ? _visualFixInflation : 1.0));
     final measurementVariance = trusted * trusted;
     final innovationE = measured.east - _east;
     final innovationN = measured.north - _north;
@@ -261,7 +312,9 @@ class PositionStabilizer {
         // genuinely relocated agent is believed within a few seconds.
         return _publish(active, rejectedOutlier: true);
       }
-      // Persistent disagreement means the estimate, not the fix, is wrong.
+      // Persistent disagreement means the estimate, not the fix, is wrong -
+      // and a pin that disagrees with that many fixes has been left behind.
+      _pinned = false;
       return _seed(position, accuracyM, timestampMs);
     }
     _rejections = 0;
@@ -288,24 +341,63 @@ class PositionStabilizer {
   /// [timestampMs] must be on the same clock as the fixes. Returns null before
   /// the first fix, when there is no position to step from.
   StabilizedPosition? onStep({required double lengthM, required double headingDeg, required int timestampMs}) {
+    if (lengthM <= 0) return null;
+    final h = toRadians(headingDeg);
+    _lastStepMs = timestampMs;
+    _stationary = false;
+    return _move(lengthM * math.sin(h), lengthM * math.cos(h), _stepUncertaintyFraction * lengthM, timestampMs);
+  }
+
+  /// Moves the estimate by the camera's displacement as visual-inertial
+  /// tracking measured it, in true east-north metres.
+  ///
+  /// Like a step, it moves the drawn position by the same amount at once. Unlike
+  /// a step it is measured rather than modelled - no step length, no assumption
+  /// that the agent walks where they look - so it carries only a centimetre or
+  /// two of uncertainty per metre, and while it flows GNSS is reduced to a slow
+  /// drift correction. That is the whole point: the boundary stays standing
+  /// where it is as the agent walks up to it.
+  StabilizedPosition? onVisualMotion({required double dEast, required double dNorth, required int timestampMs}) {
+    final previous = _lastVisualMs;
+    _lastVisualMs = timestampMs;
+    final distance = hypot(dEast, dNorth);
+    final dtS = previous == 0 ? 0.0 : (timestampMs - previous) / 1000.0;
+    if (dtS > 0 && distance / dtS > _visualMovingMps) {
+      _lastStepMs = timestampMs;
+      _lastVisualMotionMs = timestampMs;
+      _stationary = false;
+    }
+    return _move(dEast, dNorth, 0.02 * distance + 0.001, timestampMs);
+  }
+
+  /// When visual tracking last saw the agent moving; 0 before any.
+  int get lastVisualMotionMs => _lastVisualMotionMs;
+
+  /// Declares that the agent is standing exactly at [position].
+  ///
+  /// For the moment the agent reaches a known point - the plot's access point,
+  /// a surveyed corner - and says so. That point is worth more than any fix a
+  /// phone will get there: it replaces the estimate outright, the drawn
+  /// position jumps to it (the agent asked for that), and from then on fixes
+  /// count ten times less, so a receiver several metres off cannot walk the
+  /// overlay away from the point the agent is standing on.
+  StabilizedPosition pinTo(LatLng position, {required int timestampMs, double accuracyM = 1.0}) {
+    final published = _seed(position, accuracyM, timestampMs, varianceFloorM: accuracyM);
+    _pinned = true;
+    return published;
+  }
+
+  StabilizedPosition? _move(double dEast, double dNorth, double sigma, int timestampMs) {
     final existing = _frame;
-    if (existing == null || lengthM <= 0) return null;
+    if (existing == null) return null;
     final active = existing.needsReanchor(_estimateLatLng(existing)) ? _reanchor(existing) : existing;
 
-    final h = toRadians(headingDeg);
-    final dEast = lengthM * math.sin(h);
-    final dNorth = lengthM * math.cos(h);
     _east += dEast;
     _north += dNorth;
     _renderEast += dEast;
     _renderNorth += dNorth;
-
-    final sigma = _stepUncertaintyFraction * lengthM;
     _varEast += sigma * sigma;
     _varNorth += sigma * sigma;
-
-    _lastStepMs = timestampMs;
-    _stationary = false;
     return _publish(active, rejectedOutlier: false, atMs: timestampMs);
   }
 
@@ -323,14 +415,17 @@ class PositionStabilizer {
     _renderSeeded = false;
     _lastPublishMs = 0;
     _lastStepMs = 0;
+    _lastVisualMs = 0;
+    _lastVisualMotionMs = 0;
+    _pinned = false;
   }
 
-  StabilizedPosition _seed(LatLng position, double accuracyM, int timestampMs) {
+  StabilizedPosition _seed(LatLng position, double accuracyM, int timestampMs, {double? varianceFloorM}) {
     final fresh = EnuFrame(position);
     _frame = fresh;
     _east = 0.0;
     _north = 0.0;
-    final accuracy = _trustedAccuracy(accuracyM);
+    final accuracy = varianceFloorM ?? _trustedAccuracy(accuracyM);
     _varEast = accuracy * accuracy;
     _varNorth = accuracy * accuracy;
     _lastFixMs = timestampMs;
@@ -409,7 +504,10 @@ class PositionStabilizer {
       return;
     }
 
-    final limit = (_stationary ? _renderSlewStationaryMps : _renderSlewWalkingMps) * dtS;
+    final rate = visualTracking
+        ? _renderSlewVisualMps
+        : (_stationary ? _renderSlewStationaryMps : _renderSlewWalkingMps);
+    final limit = rate * dtS;
     if (limit >= gap) {
       _renderEast = _east;
       _renderNorth = _north;
@@ -424,6 +522,7 @@ class PositionStabilizer {
   /// noise that displacement is measured with - below that, "moved" and "did
   /// not move" are indistinguishable and standing still is the safer reading.
   bool _isStationary(double? speedMps, Enu measured, double dtS) {
+    if (visualTracking) return _lastFixMs - _lastVisualMotionMs > _stepStillnessMs;
     if (countingSteps) return _lastFixMs - _lastStepMs > _stepStillnessMs;
     if (speedMps != null) return speedMps < _stationarySpeedMps;
     if (dtS <= 0.0) return _stationary;

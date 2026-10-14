@@ -7,6 +7,7 @@ import 'location/location_source.dart';
 import 'platform/native_platform.dart';
 import 'pose/pose_source.dart';
 import 'pose/sensor_pose_source.dart';
+import 'pose/vio_pose_source.dart';
 
 /// Hand-rolled dependency wiring.
 ///
@@ -45,7 +46,14 @@ class AppContainer {
   LocationSource createLocationSource() => FusedLocationSource(platform);
 
   /// Builds the pose and location pair for one AR session.
-  Sensors createSensors() => Sensors(pose: SensorPoseSource(platform), location: createLocationSource());
+  ///
+  /// [visual] selects ARCore motion tracking for the pose - only when the AR
+  /// screen has confirmed ARCore is installed and is showing its camera view.
+  /// Otherwise the rotation sensors and counted steps carry it, as before.
+  Sensors createSensors({bool visual = false}) => Sensors(
+        pose: visual ? VioPoseSource(platform) : SensorPoseSource(platform),
+        location: createLocationSource(),
+      );
 }
 
 class Sensors {

@@ -18,12 +18,13 @@ this log must match the code.
 | F8 | Review pass and docs | README describes the Flutter build; no dead code |
 | F9 | Package as an embeddable Flutter plugin; standalone app moved to `example/` | A host app integrates with one dependency and one screen; CI green on Flutter 3.22 and stable |
 | F10 | First real-phone test: overlay receded while walking indoors. Step counting (PDR) fused into the position filter, step length calibrated from good GNSS; collapsible AR sheet; simulation removed | The indoor walk reproduced as a regression test and passing; research notes in `docs/research/ar-positioning.md` |
+| F11 | Second phone test: boundary shifted sideways on approach. ARCore motion tracking (VIO) as the pose and motion source, GNSS de-weighted to drift correction, access-point position pin, fallback to sensors + steps | A stuck ±15 m indoor receiver moves the drawn position < 1 m sideways over a tracked 10 m approach (regression test) |
 
 **F9, packaging for a host app.** The aim was to add nothing that could break a
 host app's build: no third-party native dependencies (framework
 `LocationManager` instead of Play Services location, native permission
 requests instead of `permission_handler`), wide Dart version ranges, no
-Flutter API newer than 3.22, minSdk 21, no `<uses-feature required>` in the
+Flutter API newer than 3.22, no `<uses-feature required>` in the
 merged manifest, namespaced channels, portrait locked only while the AR screen
 is open, and a configurable cache file name. Integration is described in
 `INTEGRATION.md`.

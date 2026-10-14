@@ -45,8 +45,12 @@ pages on your navigator, so system back behaves as everywhere else in your app.
 
 Designed to change as little as possible:
 
-- **No third-party native dependencies.** The Kotlin uses only the Android
-  framework and the Flutter embedding. Location comes from the framework's
+- **One native dependency: ARCore (`com.google.ar:core`).** Only its
+  on-device motion tracking is used - no Geospatial API, no cloud, no API
+  key. It is declared `optional` in the manifest, so the app installs and
+  runs everywhere; on phones without Google Play Services for AR the AR
+  screen falls back to the rotation sensors and step counting. Otherwise the
+  Kotlin uses only the Android framework and the Flutter embedding. Location comes from the framework's
   `LocationManager` (its fused provider on Android 12+, GPS before that) rather
   than Google Play Services, so it cannot force a different
   `play-services-location` version on your app - 20.x and 21.x are
@@ -57,8 +61,10 @@ Designed to change as little as possible:
   `sqflite >=2.2.0 <3.0.0`, `path >=1.8.0 <2.0.0`.
 - **Flutter 3.22 or newer.** CI runs analysis and every test on 3.22.3 and on
   the current stable release.
-- **minSdk 21.** The plugin does not raise your app's minimum; newer APIs are
-  guarded at runtime.
+- **minSdk 24,** ARCore's own floor. Newer APIs are guarded at runtime. If
+  your app still supports Android 5-6 (API 21-23), override it with
+  `tools:overrideLibrary="com.fieldar.plotfinder.plugin, com.google.ar.core"`
+  and gate the entry point on `Build.VERSION.SDK_INT >= 24`.
 - **Your Gradle, AGP and Kotlin versions are used.** The plugin builds with its
   JVM target set in a form that works from Kotlin 1.8 to 2.x.
 - **Manifest:** adds `CAMERA`, `ACCESS_FINE_LOCATION`,

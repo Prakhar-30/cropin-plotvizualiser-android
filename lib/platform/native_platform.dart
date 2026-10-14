@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../core/geo/arcore_pose.dart';
 import '../core/geo/camera_geometry.dart';
 import '../core/geo/linear.dart';
 
@@ -63,11 +64,60 @@ class NativePlatform {
   static const EventChannel _rotation = EventChannel('$_prefix/rotation');
   static const EventChannel _location = EventChannel('$_prefix/location');
   static const EventChannel _acceleration = EventChannel('$_prefix/acceleration');
+  static const EventChannel _arFrames = EventChannel('$_prefix/arframes');
+
+  /// The platform view ARCore draws the camera into.
+  static const String arViewType = '$_prefix/arview';
 
   late final Stream<RotationSample> rotationSamples =
       _rotation.receiveBroadcastStream().map(_toRotation).handleError(_log);
 
   late final Stream<RawFix> fixes = _location.receiveBroadcastStream().map(_toFix).handleError(_log);
+
+  /// One ARCore frame per camera image while an AR view is on screen.
+  ///
+  /// Errors are passed through, not logged away: an ARCore session that could
+  /// not open is what tells the AR screen to fall back to the sensors.
+  late final Stream<ArCoreFrame> arFrames = _arFrames
+      .receiveBroadcastStream()
+      .map((event) => ArCoreFrame.fromList([for (final v in event! as List<Object?>) (v! as num).toDouble()]));
+
+  /// Whether ARCore motion tracking can run here: `supported`,
+  /// `not_installed`, `unsupported`. Waits out ARCore's own `checking` answer
+  /// for up to two seconds, then treats it as unsupported.
+  Future<String> arCoreAvailability() async {
+    for (var attempt = 0; attempt < 10; attempt++) {
+      try {
+        final answer = await _methods.invokeMethod<String>('arCoreAvailability') ?? 'unsupported';
+        if (answer != 'checking') return answer;
+      } on Object {
+        return 'unsupported';
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    return 'unsupported';
+  }
+
+  /// Starts the Play Store install of Google Play Services for AR.
+  Future<String> arInstall() async {
+    try {
+      return await _methods.invokeMethod<String>('arInstall') ?? 'failed';
+    } on Object {
+      return 'failed';
+    }
+  }
+
+  Future<void> arPause() => _invokeQuietly('arPause');
+
+  Future<void> arResume() => _invokeQuietly('arResume');
+
+  Future<void> _invokeQuietly(String method) async {
+    try {
+      await _methods.invokeMethod<void>(method);
+    } on Object {
+      // No AR view to pause or resume.
+    }
+  }
 
   /// Accelerometer magnitude in m/s², gravity included, stamped on the fixes'
   /// clock: `(magnitude, timestampMs)`.

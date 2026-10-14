@@ -312,4 +312,90 @@ void main() {
   test('a step before the first fix has nowhere to step from', () {
     expect(PositionStabilizer().onStep(lengthM: 0.7, headingDeg: 0.0, timestampMs: 1000), isNull);
   });
+
+  group('visual tracking', () {
+    /// The field report: indoors, ±15 m fixes scattered around one multipath
+    /// spot 8 m east of the truth, agent walking 10 m north to the boundary
+    /// while ARCore tracks every centimetre at 30 Hz.
+    ({LatLng truth, LatLng drawn, double worstSideways}) walkWithVio({bool pin = false}) {
+      final stabilizer = PositionStabilizer();
+      final random = math.Random(3);
+      final stuck = offset(origin, 8.0, 0.0);
+      stabilizer.update(position: stuck, accuracyM: 15.0, speedMps: 0.0, timestampMs: 1000);
+      var truth = origin;
+      if (pin) {
+        stabilizer.pinTo(origin, timestampMs: 1000);
+      }
+      final start = stabilizer.onVisualMotion(dEast: 0.0, dNorth: 0.0, timestampMs: 1000)!.position;
+      var drawn = start;
+      var worstSideways = 0.0;
+      var t = 1000;
+      // 10 m at 1 m/s, 30 frames a second, a fix every second.
+      for (var frame = 1; frame <= 300; frame++) {
+        t += 33;
+        const step = 1.0 / 30.0;
+        truth = offset(truth, 0.0, step);
+        drawn = stabilizer.onVisualMotion(dEast: 0.0, dNorth: step, timestampMs: t)!.position;
+        if (frame % 30 == 0) {
+          final fix = offset(stuck, noise(random, 10.0), noise(random, 10.0));
+          drawn = stabilizer.update(position: fix, accuracyM: 15.0, speedMps: 0.0, timestampMs: t).position;
+        }
+        worstSideways = math.max(worstSideways, frameEast(start, drawn).abs());
+      }
+      return (truth: truth, drawn: drawn, worstSideways: worstSideways);
+    }
+
+    test('walking up to the plot, the drawn position follows the camera, not the stuck fix', () {
+      final run = walkWithVio();
+      final start = offset(origin, 8.0, 0.0);
+      // It walked the full 10 m north with the camera, near enough...
+      expect(frameNorth(start, run.drawn), closeTo(10.0, 0.6));
+      // ...and the receiver's pull sideways and backwards stayed under a
+      // metre over the whole approach: drift correction, not swimming.
+      expect(run.worstSideways, lessThan(1.0));
+    });
+
+    test('pinning at the access point puts the agent there and holds it against the receiver', () {
+      final run = walkWithVio(pin: true);
+      expect(distanceM(run.truth, run.drawn), lessThan(0.6));
+    });
+
+    test('pinTo moves the drawn position at once and marks it pinned', () {
+      final stabilizer = PositionStabilizer();
+      stabilizer.update(position: offset(origin, 12.0, 0.0), accuracyM: 15.0, speedMps: 0.0, timestampMs: 1000);
+      final pinned = stabilizer.pinTo(origin, timestampMs: 1000);
+      expect(distanceM(pinned.position, origin), lessThan(0.01));
+      expect(stabilizer.pinned, isTrue);
+      stabilizer.reset();
+      expect(stabilizer.pinned, isFalse);
+    });
+
+    test('visual motion counts as moving; a still camera reads as standing', () {
+      final stabilizer = PositionStabilizer();
+      stabilizer.update(position: origin, accuracyM: 5.0, speedMps: 0.0, timestampMs: 1000);
+      var t = 1000;
+      for (var i = 0; i < 30; i++) {
+        t += 33;
+        stabilizer.onVisualMotion(dEast: 0.03, dNorth: 0.0, timestampMs: t);
+      }
+      expect(stabilizer.visualTracking, isTrue);
+      stabilizer.update(position: origin, accuracyM: 5.0, speedMps: 0.0, timestampMs: t);
+      expect(stabilizer.stationary, isFalse);
+      for (var i = 0; i < 90; i++) {
+        t += 33;
+        stabilizer.onVisualMotion(dEast: 0.0, dNorth: 0.0, timestampMs: t);
+      }
+      stabilizer.update(position: origin, accuracyM: 5.0, speedMps: 1.2, timestampMs: t);
+      expect(stabilizer.stationary, isTrue);
+    });
+
+    test('visual motion before the first fix has nowhere to move from', () {
+      expect(PositionStabilizer().onVisualMotion(dEast: 1.0, dNorth: 0.0, timestampMs: 1000), isNull);
+    });
+  });
 }
+
+double frameEast(LatLng from, LatLng to) =>
+    (to.lng - from.lng) * math.cos(toRadians(from.lat)) * metresPerDegLngAtEquator;
+
+double frameNorth(LatLng from, LatLng to) => (to.lat - from.lat) * metresPerDegLat;

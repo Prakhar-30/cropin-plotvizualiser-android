@@ -105,6 +105,55 @@ low-texture scenes (a uniform crop canopy, glare) can drop tracking. That makes
 it an upgrade with PDR as the fallback, not a replacement. `PoseSource` is
 already the seam for it.
 
+## Second field test: the boundary slides sideways on approach
+
+Same indoor setting, steps now counted. The boundary no longer receded, but as
+the agent closed in it slid sideways from frame to frame. The chip read heading
+*HOLDING* and the receiver ±15 m.
+
+Close to a boundary, small position errors turn into large angles on screen. At
+3 m range, 1 m of position error is about 18° of apparent shift. Under a roof
+every GNSS fix moved the estimate by a fraction of its 10–15 m scatter, and the
+step model added its own length and direction error. Both were visible.
+
+What the literature does about it:
+
+- **Use VIO for the relative motion and GNSS for the absolute position only.**
+  Schall et al. fuse GNSS, inertial and vision for outdoor AR so that the
+  responsive visual tracker carries the frame-to-frame pose while GNSS anchors
+  it [13]. GVINS and VINS-Fusion formalise the same split as a factor graph:
+  VIO is locally accurate but drifts, GNSS is globally consistent but noisy,
+  and the GNSS term only corrects the slow drift [14][15].
+- **Commercial geo-AR does the same, plus a manual correction.** Esri's
+  world-scale AR guidance: "take an initial position from device GNSS, let the
+  user adjust the overlay, and then use ARCore or ARKit to track relative
+  motion" [16].
+- **ARCore's motion tracking needs texture and light.** It tracks feature
+  points in the camera image together with the IMU. It reports why it has lost
+  tracking: too dark, too fast, or too little texture [17].
+
+### What is now in the app
+
+| Piece | Where | Notes |
+|---|---|---|
+| ARCore session and preview | `android/.../ArCoreView.kt` | Motion tracking only: plane finding, light estimation and depth are off, and there is no Geospatial API or network. A `GLSurfaceView` platform view (hybrid composition) draws the camera image, and each frame sends the display-oriented camera pose and projection to Dart |
+| Frame conversion | `lib/core/geo/arcore_pose.dart` | ARCore's Y-up world becomes yaw-arbitrary ENU (east = x, north = −z). The overlay's FOV is taken from the projection ARCore actually renders with, so it matches the picture underneath |
+| Pose source | `lib/pose/vio_pose_source.dart` | ARCore's yaw is the heading fusion's carrier, in place of the game rotation vector. Walk lock and landmark snap still pin it to true north. Each frame's displacement is rotated into true ENU |
+| Fusion | `PositionStabilizer.onVisualMotion` | Visual displacement moves the estimate **and** the drawn position on the same frame. While it flows, fixes count 3× less (in σ) and process noise drops to 5 cm/s. The drawn position absorbs GNSS corrections at no more than 5 cm/s |
+| Position pin | `PositionStabilizer.pinTo`, "I'm standing at the access point" | Replaces the estimate with the surveyed access point. Fixes then count a further 10× less, so a receiver several metres off cannot pull the pin away |
+| Fallback | `ArScreen` | Without ARCore, or if its session fails or sends no frames for 6 s, the screen falls back to the camera plugin, rotation sensors and counted steps. Steps are ignored while ARCore tracks, so motion is never counted twice |
+
+Regression test: a ±15 m receiver scattered around a point 8 m to one side, a
+10 m tracked approach. The drawn position follows the camera to within 0.6 m
+and moves under 1 m sideways over the whole walk. With the pin it ends within
+0.6 m of the truth.
+
+**What it does not fix.** Heading still comes from walk lock, landmark snap or
+the magnetometer. A wrong heading rotates the whole plot about the agent; it
+does not make the plot swim. VIO also needs texture: a uniform crop canopy
+filling the frame, or glare, can drop tracking. When that happens a banner says
+why, and the steps take over until tracking returns.
+
 ## Sources
 
 1. Azuma, *A Survey of Augmented Reality* (1997) — [PDF](https://sreal.ucf.edu/wp-content/uploads/2017/02/Azuma1998.pdf)
@@ -119,6 +168,12 @@ already the seam for it.
 10. Robust step detection with low-cost MEMS accelerometers (patent) — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11808605)
 11. *Cross-View Visual Geo-Localization for Outdoor Augmented Reality* — [arXiv 2303.15676](https://arxiv.org/pdf/2303.15676)
 12. Chen et al., *Sensor-Aware Recognition and Tracking for Wide-Area AR on Mobile Phones*, *Sensors* 2015 — [PMC4721767](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4721767/)
+
+13. Schall et al., *Global Pose Estimation using Multi-Sensor Fusion for Outdoor Augmented Reality*, ISMAR 2009 — [IEEE](https://ieeexplore.ieee.org/document/5336489)
+14. Cao, Lu, Shen, *GVINS: Tightly Coupled GNSS–Visual–Inertial Fusion for Smooth and Consistent State Estimation*, IEEE T-RO 2022 — [arXiv 2103.07899](https://arxiv.org/abs/2103.07899)
+15. Qin et al., *A General Optimization-based Framework for Global Pose Estimation with Multiple Sensors* (VINS-Fusion) — [arXiv 1901.03642](https://arxiv.org/abs/1901.03642)
+16. Esri, *Display scenes in augmented reality: world-scale AR* — [ArcGIS Maps SDKs](https://developers.arcgis.com/kotlin/scenes-3d/display-scenes-in-augmented-reality/)
+17. Google, *ARCore fundamental concepts: motion tracking* — [developers.google.com](https://developers.google.com/ar/develop/fundamentals)
 
 The numbers quoted are the authors' own results from their test conditions,
 not general benchmarks.

@@ -29,6 +29,7 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
+import com.google.ar.core.ArCoreApk
 
 /**
  * The few things the Dart side needs from Android that no Flutter plugin hands
@@ -64,6 +65,9 @@ class PlotFinderPlugin :
     private var rotation: EventChannel? = null
     private var location: EventChannel? = null
     private var acceleration: EventChannel? = null
+    private var arFrames: EventChannel? = null
+    private var arFrameSink: EventChannel.EventSink? = null
+    private var arView: ArCoreView? = null
 
     private var activity: ActivityPluginBinding? = null
     private var pendingPermission: MethodChannel.Result? = null
@@ -97,6 +101,16 @@ class PlotFinderPlugin :
                     "hasPermissions" -> result.success(hasPermissions())
                     "requestPermissions" -> requestPermissions(result)
                     "openAppSettings" -> result.success(openAppSettings())
+                    "arCoreAvailability" -> result.success(arCoreAvailability())
+                    "arInstall" -> result.success(requestArCoreInstall())
+                    "arPause" -> {
+                        arView?.pause()
+                        result.success(null)
+                    }
+                    "arResume" -> {
+                        arView?.resume()
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -106,6 +120,18 @@ class PlotFinderPlugin :
         acceleration = EventChannel(messenger, "$CHANNEL/acceleration").apply {
             setStreamHandler(AccelerationHandler())
         }
+        arFrames = EventChannel(messenger, "$CHANNEL/arframes").apply {
+            setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                    arFrameSink = events
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    arFrameSink = null
+                }
+            })
+        }
+        binding.platformViewRegistry.registerViewFactory("$CHANNEL/arview", ArCoreViewFactory(this))
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -116,6 +142,8 @@ class PlotFinderPlugin :
         rotation?.setStreamHandler(null)
         location?.setStreamHandler(null)
         acceleration?.setStreamHandler(null)
+        arFrames?.setStreamHandler(null)
+        arFrameSink = null
         methods = null
         rotation = null
         location = null
@@ -135,6 +163,56 @@ class PlotFinderPlugin :
     override fun onDetachedFromActivity() {
         activity?.removeRequestPermissionsResultListener(this)
         activity = null
+    }
+
+    // --- ARCore ----------------------------------------------------------------
+
+    /**
+     * Whether this phone can run ARCore motion tracking, as one of
+     * `supported`, `not_installed`, `unsupported` or `checking`.
+     *
+     * `checking` is ARCore's own answer while it is still asking Play
+     * Services; the Dart side asks again shortly.
+     */
+    private fun arCoreAvailability(): String = runCatching {
+        val availability = ArCoreApk.getInstance().checkAvailability(context)
+        when {
+            availability.isTransient -> "checking"
+            availability == ArCoreApk.Availability.SUPPORTED_INSTALLED -> "supported"
+            availability.isSupported -> "not_installed"
+            else -> "unsupported"
+        }
+    }.getOrDefault("unsupported")
+
+    /**
+     * Opens Google Play Services for AR's install flow. Returns `requested`
+     * when the Play Store screen was shown, `installed` when nothing was
+     * needed, `failed` otherwise. The AR screen is re-opened afterwards.
+     */
+    private fun requestArCoreInstall(): String {
+        val host = activity?.activity ?: return "failed"
+        return runCatching {
+            when (ArCoreApk.getInstance().requestInstall(host, true)) {
+                ArCoreApk.InstallStatus.INSTALLED -> "installed"
+                else -> "requested"
+            }
+        }.getOrDefault("failed")
+    }
+
+    fun attachArView(view: ArCoreView) {
+        arView = view
+    }
+
+    fun detachArView(view: ArCoreView) {
+        if (arView === view) arView = null
+    }
+
+    fun emitArFrame(frame: DoubleArray) {
+        arFrameSink?.success(frame)
+    }
+
+    fun emitArError(message: String) {
+        arFrameSink?.error("arcore", message, null)
     }
 
     // --- permissions -----------------------------------------------------------

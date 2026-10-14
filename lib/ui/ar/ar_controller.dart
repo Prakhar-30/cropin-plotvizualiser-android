@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import '../../app_container.dart';
+import '../../core/geo/arcore_pose.dart';
 import '../../core/geo/enu.dart';
 import '../../core/geo/linear.dart';
 import '../../core/geo/position_stabilizer.dart';
@@ -18,6 +19,7 @@ import '../../core/render/overlay_geometry.dart';
 import '../../data/db/entities.dart';
 import '../../data/plot.dart';
 import '../../pose/pose_source.dart';
+import '../../pose/vio_pose_source.dart';
 
 /// What the overlay canvas draws for one pose sample.
 ///
@@ -49,6 +51,10 @@ class ArUiState {
     this.healthLayer = HealthLayer.stress,
     this.healthSyncing = false,
     this.message,
+    this.visual = false,
+    this.visualTracking = false,
+    this.trackingFailure = ArTrackingFailure.none,
+    this.pinned = false,
   });
 
   final Plot? plot;
@@ -75,6 +81,18 @@ class ArUiState {
   final HealthLayer healthLayer;
   final bool healthSyncing;
   final String? message;
+
+  /// ARCore motion tracking carries the pose and the motion this session.
+  final bool visual;
+
+  /// ARCore is tracking right now. While it is not, counted steps stand in.
+  final bool visualTracking;
+
+  /// Why ARCore is not tracking, when it is not.
+  final ArTrackingFailure trackingFailure;
+
+  /// The agent has declared their position at the access point.
+  final bool pinned;
 
   /// The layer actually drawn, after the heading veto.
   ///
@@ -104,6 +122,9 @@ class ArUiState {
     HealthLayer? healthLayer,
     bool? healthSyncing,
     String? Function()? message,
+    bool? visualTracking,
+    ArTrackingFailure? trackingFailure,
+    bool? pinned,
   }) =>
       ArUiState(
         plot: plot == null ? this.plot : plot(),
@@ -118,23 +139,43 @@ class ArUiState {
         healthLayer: healthLayer ?? this.healthLayer,
         healthSyncing: healthSyncing ?? this.healthSyncing,
         message: message == null ? this.message : message(),
+        visual: visual,
+        visualTracking: visualTracking ?? this.visualTracking,
+        trackingFailure: trackingFailure ?? this.trackingFailure,
+        pinned: pinned ?? this.pinned,
       );
 }
 
 /// Runs one AR session: pose in, overlay out, telemetry recorded.
 class ArController extends ValueNotifier<ArUiState> {
-  ArController(this._container, this._plotId)
-      : _sensors = _container.createSensors(),
-        super(const ArUiState()) {
+  /// [visual] runs the session on ARCore motion tracking; the AR screen sets
+  /// it only once it knows ARCore is installed and its camera view is shown.
+  ArController(this._container, this._plotId, {bool visual = false})
+      : _sensors = _container.createSensors(visual: visual),
+        super(ArUiState(visual: visual)) {
     _sensors.location.location.addListener(_onLocationChanged);
     _sensors.pose.pose.addListener(_onPoseChanged);
     _sensors.pose.headingStatus.addListener(_onHeadingStatusChanged);
+    final vio = _vio;
+    if (vio != null) {
+      vio.onMotion = _onVisualMotion;
+      vio.status.addListener(_onVisualStatusChanged);
+    }
     _load();
   }
 
   final AppContainer _container;
   final String _plotId;
   final Sensors _sensors;
+
+  /// The ARCore pose source, when this session runs on one.
+  VioPoseSource? get _vio => switch (_sensors.pose) {
+        final VioPoseSource vio => vio,
+        _ => null,
+      };
+
+  /// True once ARCore has failed outright; the screen restarts on the sensors.
+  final ValueNotifier<bool> visualFailed = ValueNotifier(false);
 
   /// The geometry to draw, updated at sensor rate. The canvas listens to this
   /// alone; see [ArFrame].
@@ -163,6 +204,10 @@ class ArController extends ValueNotifier<ArUiState> {
   EnuFrame? _frame;
 
   CameraIntrinsics? _intrinsics;
+
+  /// The overlay box in logical pixels, kept so the intrinsics can be rebuilt
+  /// when ARCore reports the field of view its preview is really shown with.
+  (int, int)? _viewport;
   LocationSample? _lastLocation;
 
   /// The health raster in metres, built once per frame anchor.
@@ -219,6 +264,7 @@ class ArController extends ValueNotifier<ArUiState> {
   /// pocket would otherwise keep a 1 Hz high-accuracy fix and two 50 Hz sensor
   /// streams running for nothing.
   void pause() {
+    if (value.visual) unawaited(_container.platform.arPause());
     _sensors.pose.stop();
     _sensors.location.stop();
     _acceleration?.cancel();
@@ -228,6 +274,7 @@ class ArController extends ValueNotifier<ArUiState> {
   }
 
   void resume() {
+    if (value.visual) unawaited(_container.platform.arResume());
     _sensors.pose.start();
     _sensors.location.start();
     _acceleration ??= _container.platform.acceleration.listen((sample) {
@@ -246,6 +293,9 @@ class ArController extends ValueNotifier<ArUiState> {
   /// until they look where they are going again.
   void _onStep(DetectedStep step) {
     if (_pose.timestampMs == 0) return;
+    // While ARCore tracks, it measures the motion the steps would only model;
+    // counting both would move the agent twice.
+    if (value.visualTracking) return;
     final heading = _pose.headingDeg;
     _stepCalibration.onStep(step, heading);
     final stepped = _stabilizer.onStep(
@@ -272,8 +322,18 @@ class ArController extends ValueNotifier<ArUiState> {
   }
 
   /// The viewport is only known once the camera box has been laid out.
+  ///
+  /// On ARCore the field of view passed here is a placeholder until the first
+  /// frame reports the one its projection actually uses - see
+  /// [_onVisualStatusChanged].
   void onViewportMeasured(int widthPx, int heightPx, double horizontalFovDeg) {
     if (widthPx <= 0 || heightPx <= 0) return;
+    _viewport = (widthPx, heightPx);
+    final fov = _vio?.status.value.horizontalFovDeg ?? horizontalFovDeg;
+    _setIntrinsics(widthPx, heightPx, fov);
+  }
+
+  void _setIntrinsics(int widthPx, int heightPx, double horizontalFovDeg) {
     final next = CameraIntrinsics(
       horizontalFovDeg: horizontalFovDeg,
       viewportWidthPx: widthPx,
@@ -285,6 +345,60 @@ class ArController extends ValueNotifier<ArUiState> {
     }
     _intrinsics = next;
     _rebuildOverlay();
+  }
+
+  /// One frame of ARCore-measured camera motion, already in true east-north.
+  void _onVisualMotion(double dEast, double dNorth, int timestampMs) {
+    final moved = _stabilizer.onVisualMotion(dEast: dEast, dNorth: dNorth, timestampMs: timestampMs);
+    if (moved == null) return;
+    _moveAgent(moved.position);
+    // The pose listener redraws on this same frame; no rebuild here.
+  }
+
+  void _onVisualStatusChanged() {
+    final status = _vio!.status.value;
+    if (status.failed) {
+      visualFailed.value = true;
+      return;
+    }
+    final fov = status.horizontalFovDeg;
+    final viewport = _viewport;
+    final current = _intrinsics;
+    if (fov != null && viewport != null && (current == null || (current.horizontalFovDeg - fov).abs() > 0.05)) {
+      _setIntrinsics(viewport.$1, viewport.$2, fov);
+    }
+    if (status.tracking != value.visualTracking || status.failure != value.trackingFailure) {
+      value = value.copyWith(visualTracking: status.tracking, trackingFailure: status.failure);
+    }
+  }
+
+  /// "I am standing at the access point": the strongest absolute correction
+  /// the agent can give.
+  ///
+  /// GNSS under a roof or beside a tree line is several metres out, and close
+  /// to a boundary a few metres is the difference between the line in front of
+  /// you and the line beside you. The access point is a surveyed point the agent
+  /// can physically stand on, so standing there and saying so replaces the
+  /// receiver's opinion outright. From then on ARCore carries every step from
+  /// that exact spot, and GNSS is weighted ten times down so it cannot walk the
+  /// pin away.
+  void pinToAccessPoint() {
+    final plot = value.plot;
+    if (plot == null) return;
+    final now = _lastLocation?.timestampMs;
+    if (now == null) {
+      value = value.copyWith(message: () => 'Waiting for a GNSS fix before pinning');
+      return;
+    }
+    final pinned = _stabilizer.pinTo(plot.accessPoint, timestampMs: now);
+    _moveAgent(pinned.position);
+    _rebuildOverlay(value.copyWith(
+      pinned: true,
+      stationary: true,
+      message: () => value.visual
+          ? 'Position pinned to the access point. Walk on - the boundary stays put.'
+          : 'Position pinned to the access point',
+    ));
   }
 
   /// Landmark snap: the agent has the crosshair on the plot's access point.
@@ -385,6 +499,7 @@ class ArController extends ValueNotifier<ArUiState> {
     // Raw fix, like course over ground: calibrating the step length against
     // positions the steps themselves have already moved would be circular.
     _stepCalibration.onFix(sample.position, sample.accuracyM);
+    final pinned = _stabilizer.pinned;
 
     if (stabilized.stationary) {
       _worstStationaryShiftM = math.max(_worstStationaryShiftM, stabilized.shiftM);
@@ -394,6 +509,7 @@ class ArController extends ValueNotifier<ArUiState> {
       accuracyM: sample.accuracyM,
       hasFix: true,
       stationary: stabilized.stationary,
+      pinned: pinned,
     ));
   }
 
@@ -522,7 +638,9 @@ class ArController extends ValueNotifier<ArUiState> {
     _sensors.location.location.removeListener(_onLocationChanged);
     _sensors.pose.pose.removeListener(_onPoseChanged);
     _sensors.pose.headingStatus.removeListener(_onHeadingStatusChanged);
+    _vio?.status.removeListener(_onVisualStatusChanged);
     _acceleration?.cancel();
+    visualFailed.dispose();
     frame.dispose();
     super.dispose();
   }

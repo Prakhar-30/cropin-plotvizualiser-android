@@ -41,9 +41,10 @@ android {
     }
 
     defaultConfig {
-        // As low as the code allows, so the plugin never raises a host app's
-        // minimum. Everything newer than this is guarded at runtime.
-        minSdk = 21
+        // ARCore's own floor. Lower than the plugin's other code needs, but a
+        // library cannot declare less than its dependencies without failing
+        // the host's manifest merge. Newer APIs are guarded at runtime.
+        minSdk = 24
     }
 }
 
@@ -57,5 +58,11 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     }
 }
 
-// No dependencies beyond the Android framework and the Flutter embedding, on
-// purpose - see PlotFinderPlugin.kt.
+// One native dependency, ARCore, for visual-inertial motion tracking - see
+// ArCoreView.kt. Declared optional in the manifest, so the host app still
+// installs and runs on phones without it; the plugin then falls back to the
+// sensor-only path. Nothing else beyond the Android framework and the Flutter
+// embedding - see PlotFinderPlugin.kt for why.
+dependencies {
+    implementation("com.google.ar:core:1.44.0")
+}

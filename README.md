@@ -74,7 +74,11 @@ plugins, because the plugins cannot hand them over faithfully:
   goes through as a null, so course over ground rejects the fix instead of
   reading it as "due north". Fixes come from the framework's `LocationManager`
   (its fused provider on Android 12+, GPS before that) rather than Google Play
-  Services, so the package has no native dependency to clash with a host app's.
+  Services, so location adds no native dependency to clash with a host app's.
+- **ARCore motion tracking** (visual-inertial odometry - not the Geospatial
+  API), when Google Play Services for AR is installed. ARCore owns the camera
+  then: the native side draws its preview on a `GLSurfaceView` platform view
+  and streams the camera pose and projection to Dart once a frame.
 
 The Flutter camera plugin chooses its own preview size, often 16:9 from a 4:3
 sensor, which crops the axis that spans a portrait screen. `CameraGeometry`
@@ -331,14 +335,23 @@ that is what the documentation and every tutorial suggests. It compiles, it
 reports sub-2 m accuracy, and in farmland with no Street View coverage it is
 wrong by 5–10 m with a 30–45° heading error.
 
-v0 is sensor-only on purpose: the far-field identification case needs no plane
-detection and no visual odometry, and ARCore triples the complexity of getting
-the first version on screen. `PoseSource` is the seam — an ARCore-backed
-implementation satisfies the same interface and nothing above it changes.
+v0 was sensor-only on purpose: the far-field identification case needs no
+plane detection and no visual odometry. The field test changed that: walking
+*up to* a boundary, a few metres of GNSS error is the difference between the
+line ahead and the line beside you, and the overlay visibly swam.
+
+So ARCore is now used for **motion tracking only** — on-device visual-inertial
+odometry, no Street View, no network. `VioPoseSource` implements the same
+`PoseSource` seam: ARCore's yaw becomes the heading fusion's carrier, its
+frame-to-frame displacement moves the position filter directly, and GNSS is
+weighted down to a slow drift correction. An "I'm standing at the access
+point" button pins the absolute position. Phones without ARCore keep the
+sensor path. Details and sources: `docs/research/ar-positioning.md`.
 
 ## Out of scope for v0
 
-Boundary correction by the agent, photo capture, audit forms, iOS, ARCore.
+Boundary correction by the agent, photo capture, audit forms, iOS, the
+ARCore Geospatial API.
 `PoseSource` and the cache schema are shaped so these drop in later — `PlotEntity`
 already carries the columns a boundary edit would need.
 

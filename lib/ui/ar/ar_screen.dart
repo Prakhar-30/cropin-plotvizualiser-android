@@ -2,16 +2,21 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../../app_container.dart';
+import '../../core/geo/arcore_pose.dart';
 import '../../core/geo/camera_geometry.dart';
 import '../../core/heading/heading_model.dart';
 import '../../core/render/health_geometry.dart';
 import '../../core/render/overlay_geometry.dart';
 import '../../core/render/plot_palette.dart';
 import '../../data/plot.dart';
+import '../../platform/native_platform.dart';
 import '../formatting.dart';
 import '../theme.dart';
 import 'ar_controller.dart';
@@ -20,10 +25,18 @@ import 'heading_chip.dart';
 
 /// Camera, overlay, heading chip, mode indicator, snap button.
 ///
-/// The preview and the canvas share one box sized to the camera's own aspect
-/// ratio. That is deliberate: a full-bleed preview would be cropped, and a
-/// cropped preview shows a narrower field of view than the characteristics
-/// report, which silently scales every projected point.
+/// Two ways to run, chosen when the screen opens:
+///
+///  - **ARCore** where Google Play Services for AR is installed. ARCore owns
+///    the camera, draws the preview full-screen and tracks the phone through
+///    space from the image and the IMU, so the overlay stays where it belongs
+///    as the agent walks. Its projection reports the field of view the preview
+///    is really shown with, so full-bleed is safe.
+///  - **Sensors** everywhere else: the camera plugin's preview and the rotation
+///    sensors plus counted steps. Here the preview and the canvas share one box
+///    sized to the camera's own aspect ratio, because a cropped preview shows a
+///    narrower field of view than the characteristics report, which would
+///    silently scale every projected point.
 class ArScreen extends StatefulWidget {
   const ArScreen({super.key, required this.container, required this.plotId});
 
@@ -34,8 +47,14 @@ class ArScreen extends StatefulWidget {
   State<ArScreen> createState() => _ArScreenState();
 }
 
+enum _Backend { checking, arcore, sensors }
+
 class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
-  late final ArController _controller;
+  ArController? _controller;
+  _Backend _backend = _Backend.checking;
+
+  /// ARCore could run here once Google Play Services for AR is installed.
+  bool _arCoreInstallable = false;
   CameraController? _camera;
   CameraGeometry _geometry = CameraGeometry.fallback;
   bool _cameraStarting = false;
@@ -49,17 +68,70 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
     // maths assumes the screen frame the sensor matrix is remapped into; the
     // rest of the host app keeps whatever orientations it allows.
     SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
-    _controller = ArController(widget.container, widget.plotId);
-    _controller.start();
-    unawaited(_startCamera());
+    unawaited(_chooseBackend());
+  }
+
+  Future<void> _chooseBackend() async {
+    final availability = await widget.container.platform.arCoreAvailability();
+    if (!mounted) return;
+    _arCoreInstallable = availability == 'not_installed';
+    _open(availability == 'supported' ? _Backend.arcore : _Backend.sensors);
+  }
+
+  void _open(_Backend backend) {
+    final controller = ArController(widget.container, widget.plotId, visual: backend == _Backend.arcore);
+    controller.visualFailed.addListener(_onVisualFailed);
+    controller.start();
+    setState(() {
+      _backend = backend;
+      _controller = controller;
+      _measured = null;
+    });
+    if (backend == _Backend.sensors) unawaited(_startCamera());
+  }
+
+  /// ARCore could not run after all - the session would not open, or never
+  /// produced a frame. Rather than leave the agent at a black screen, restart
+  /// on the sensors.
+  void _onVisualFailed() {
+    final failed = _controller;
+    if (failed == null || !failed.visualFailed.value || _backend != _Backend.arcore) return;
+    // Not from inside the notification: the controller being closed owns the
+    // notifier that is calling us.
+    scheduleMicrotask(() {
+      if (!mounted || !identical(failed, _controller)) return;
+      _closeController();
+      // The platform view leaves the tree on this rebuild, which releases
+      // ARCore's hold on the camera before the camera plugin asks for it.
+      setState(() => _backend = _Backend.checking);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _open(_Backend.sensors);
+      });
+    });
+  }
+
+  void _closeController() {
+    final controller = _controller;
+    _controller = null;
+    if (controller == null) return;
+    controller.visualFailed.removeListener(_onVisualFailed);
+    controller.stop();
+    controller.dispose();
+  }
+
+  Future<void> _installArCore() async {
+    final answer = await widget.container.platform.arInstall();
+    if (!mounted || answer == 'failed') return;
+    // The Play Store opens on top; reopening the AR screen afterwards picks
+    // the new install up.
+    setState(() => _arCoreInstallable = false);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setPreferredOrientations(widget.container.config.restoreOrientations);
-    _controller.stop();
-    _controller.dispose();
+    _closeController();
     unawaited(_camera?.dispose());
     super.dispose();
   }
@@ -69,8 +141,10 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
   /// every other app from the camera and drain the battery behind a lock screen.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) _controller.pause();
-    if (state == AppLifecycleState.resumed) _controller.resume();
+    if (state == AppLifecycleState.paused) _controller?.pause();
+    if (state == AppLifecycleState.resumed) _controller?.resume();
+    // ARCore's camera is paused and resumed with the controller.
+    if (_backend != _Backend.sensors) return;
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       final camera = _camera;
       _camera = null;
@@ -116,50 +190,66 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _reportViewport(int width, int height) {
+  void _reportViewport(ArController controller, int width, int height) {
     final next = (width, height, _geometry.portraitHorizontalFovDeg);
     if (next == _measured) return;
     _measured = next;
     // After layout, never during it: the controller rebuilds the overlay and
     // notifies listeners synchronously.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _controller.onViewportMeasured(width, height, next.$3);
+      if (mounted && identical(controller, _controller)) controller.onViewportMeasured(width, height, next.$3);
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final controller = _controller;
+    if (controller == null) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     final dpr = MediaQuery.devicePixelRatioOf(context);
+    final arcore = _backend == _Backend.arcore;
     return Scaffold(
       backgroundColor: Colors.black,
       body: ValueListenableBuilder<ArUiState>(
-        valueListenable: _controller,
+        valueListenable: controller,
         builder: (context, state, _) => Stack(
           children: [
             Positioned.fill(
               child: LayoutBuilder(builder: (context, constraints) {
-                // Largest box with the camera's aspect ratio that fits the
-                // screen, in whole logical pixels so the intrinsics describe
-                // exactly the box the overlay is painted in.
-                final aspect = _geometry.portraitAspect;
-                final fittedW = math.min(constraints.maxWidth, constraints.maxHeight * aspect).floorToDouble();
-                final fittedH = (fittedW / aspect).floorToDouble();
-                _reportViewport(fittedW.toInt(), fittedH.toInt());
+                // ARCore: the whole screen. Sensors: the largest box with the
+                // camera's aspect ratio that fits. Either way in whole logical
+                // pixels, so the intrinsics describe exactly the box the
+                // overlay is painted in.
+                final double boxW;
+                final double boxH;
+                if (arcore) {
+                  boxW = constraints.maxWidth.floorToDouble();
+                  boxH = constraints.maxHeight.floorToDouble();
+                } else {
+                  final aspect = _geometry.portraitAspect;
+                  boxW = math.min(constraints.maxWidth, constraints.maxHeight * aspect).floorToDouble();
+                  boxH = (boxW / aspect).floorToDouble();
+                }
+                _reportViewport(controller, boxW.toInt(), boxH.toInt());
                 return Center(
                   child: SizedBox(
-                    width: fittedW,
-                    height: fittedH,
+                    width: boxW,
+                    height: boxH,
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        _CameraBox(camera: _camera),
+                        if (arcore) const _ArCoreBox() else _CameraBox(camera: _camera),
                         // Its own layer: the canvas repaints at sensor rate,
                         // and without the boundary each repaint would drag the
                         // camera texture and the chrome along with it.
                         RepaintBoundary(
                           child: CustomPaint(
                             painter: ArOverlayPainter(
-                              frame: _controller.frame,
+                              frame: controller.frame,
                               plotId: state.plot?.id ?? '',
                               areaHectares: state.plot?.areaHectares ?? 0.0,
                               colourIndex: state.plot?.colourIndex ?? 0,
@@ -198,6 +288,10 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                       ],
                     ),
                   ),
+                  if (state.visual && !state.visualTracking)
+                    _TrackingBanner(failure: state.trackingFailure)
+                  else if (!arcore && _arCoreInstallable)
+                    _InstallArCoreBanner(onInstall: _installArCore),
                 ],
               ),
             ),
@@ -207,9 +301,10 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
               bottom: 0,
               child: _BottomSheet(
                 state: state,
-                onDismissMessage: _controller.dismissMessage,
-                onSelectHealth: _controller.setHealthLayer,
-                onSnap: _controller.snapToAccessPoint,
+                onDismissMessage: controller.dismissMessage,
+                onSelectHealth: controller.setHealthLayer,
+                onSnap: controller.snapToAccessPoint,
+                onPin: controller.pinToAccessPoint,
               ),
             ),
           ],
@@ -283,12 +378,14 @@ class _BottomSheet extends StatefulWidget {
     required this.onDismissMessage,
     required this.onSelectHealth,
     required this.onSnap,
+    required this.onPin,
   });
 
   final ArUiState state;
   final VoidCallback onDismissMessage;
   final ValueChanged<HealthLayer> onSelectHealth;
   final VoidCallback onSnap;
+  final VoidCallback onPin;
 
   @override
   State<_BottomSheet> createState() => _BottomSheetState();
@@ -374,6 +471,17 @@ class _BottomSheetState extends State<_BottomSheet> {
                 onPressed: widget.onSnap,
                 icon: const Icon(Icons.gps_fixed, size: 18),
                 label: const Text('Aim at it and tap to pin heading'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: PlotFinderColors.sheetDivider),
+                  minimumSize: const Size.fromHeight(44),
+                ),
+                onPressed: widget.onPin,
+                icon: Icon(state.pinned ? Icons.where_to_vote : Icons.my_location, size: 18),
+                label: Text(state.pinned ? 'Pinned here - tap again to re-pin' : "I'm standing at the access point"),
               ),
             ],
           ],
@@ -479,6 +587,96 @@ class _MessageBanner extends StatelessWidget {
               child: const Text('Dismiss'),
             ),
           ],
+        ),
+      );
+}
+
+/// ARCore's camera preview, drawn natively and composited under the overlay.
+///
+/// Hybrid composition: the GLSurfaceView sits in the Android view hierarchy
+/// and Flutter draws above it, which is what a SurfaceView needs to show at
+/// all, and keeps the camera image at full rate however busy the canvas is.
+class _ArCoreBox extends StatelessWidget {
+  const _ArCoreBox();
+
+  @override
+  Widget build(BuildContext context) {
+    if (defaultTargetPlatform != TargetPlatform.android) return const ColoredBox(color: Colors.black);
+    return PlatformViewLink(
+      viewType: NativePlatform.arViewType,
+      surfaceFactory: (context, controller) => AndroidViewSurface(
+        controller: controller as AndroidViewController,
+        gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+        hitTestBehavior: PlatformViewHitTestBehavior.transparent,
+      ),
+      onCreatePlatformView: (params) => PlatformViewsService.initExpensiveAndroidView(
+        id: params.id,
+        viewType: NativePlatform.arViewType,
+        layoutDirection: TextDirection.ltr,
+        creationParamsCodec: const StandardMessageCodec(),
+      )
+        ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
+        ..create(),
+    );
+  }
+}
+
+/// Shown while ARCore has lost tracking, with what to do about it.
+class _TrackingBanner extends StatelessWidget {
+  const _TrackingBanner({required this.failure});
+
+  final ArTrackingFailure failure;
+
+  String get _advice => switch (failure) {
+        ArTrackingFailure.insufficientLight => 'Too dark to track - find more light',
+        ArTrackingFailure.excessiveMotion => 'Moving too fast - slow down',
+        ArTrackingFailure.insufficientFeatures => 'Point the camera at the ground or objects with texture',
+        ArTrackingFailure.cameraUnavailable => 'Camera in use by another app',
+        _ => 'Starting motion tracking - move the phone slowly side to side',
+      };
+
+  @override
+  Widget build(BuildContext context) => _Banner(icon: Icons.motion_photos_paused, text: _advice);
+}
+
+class _InstallArCoreBanner extends StatelessWidget {
+  const _InstallArCoreBanner({required this.onInstall});
+
+  final VoidCallback onInstall;
+
+  @override
+  Widget build(BuildContext context) => _Banner(
+        icon: Icons.view_in_ar,
+        text: 'Install Google Play Services for AR to keep the boundary locked in place',
+        action: TextButton(
+          onPressed: onInstall,
+          style: TextButton.styleFrom(foregroundColor: Colors.white),
+          child: const Text('Install'),
+        ),
+      );
+}
+
+class _Banner extends StatelessWidget {
+  const _Banner({required this.icon, required this.text, this.action});
+
+  final IconData icon;
+  final String text;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Container(
+          padding: EdgeInsets.fromLTRB(12, 8, action == null ? 12 : 4, 8),
+          decoration: BoxDecoration(color: PlotFinderColors.sheet, borderRadius: BorderRadius.circular(10)),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: PlotFinderColors.warning),
+              const SizedBox(width: 10),
+              Expanded(child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.38))),
+              if (action case final action?) action,
+            ],
+          ),
         ),
       );
 }
