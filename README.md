@@ -1,4 +1,14 @@
-# plot-ar-android — AR plot finder
+# Plot Finder (Flutter) — AR plot finder
+
+> **This is the `flutter` branch.** The app has been rebuilt in Flutter, feature
+> for feature; `main` keeps the original Kotlin/Compose app. The algorithms, the
+> numbers and the reasoning below are unchanged by the port. How it was done is
+> logged milestone by milestone in [`MILESTONES.md`](MILESTONES.md).
+>
+> It is packaged as a **Flutter plugin** so another Flutter app can embed it with
+> one dependency and one screen - see [`INTEGRATION.md`](INTEGRATION.md). The
+> standalone app lives in `example/`.
+
 
 A field agent is dispatched to a farm plot, arrives at the nearest road, and is
 surrounded by visually identical fields. This app points the phone around, shows
@@ -19,41 +29,82 @@ Boundaries are drawn there and only there; this app is a reader.
 | | |
 |---|---|
 | **Phone only** | No external GNSS, no Bluetooth accessory, no RTK, no NTRIP, nothing installed in the field |
-| **Offline once cached** | Rural sites have no data. Every read is from Room; sync is an explicit, optional action |
+| **Offline once cached** | Rural sites have no data. Every read is from the local SQLite cache; sync is an explicit, optional action |
 | **No ARCore Geospatial API** | It depends on Google's Visual Positioning System, which needs Street View coverage farmland does not have — and it reports confident accuracy figures while silently falling back to raw GPS. See [Why not ARCore](#why-not-arcore) |
 
 ## Layout
 
 ```
-core/geo       ENU frame, pinhole projection, near-plane clipping, polygon distance
-core/heading   heading fusion, course-over-ground detection, landmark snap
-core/render    what to draw, in screen coordinates
-pose           PoseSource interface + sensor implementation
-location       LocationSource interface + fused location
-sim            debug-only simulated agent (implements both interfaces)
-data           Room cache, Retrofit sync, repositories
-ui             Compose screens: plot list, plot detail, AR view
+lib/core/geo       ENU frame, pinhole projection, near-plane clipping, polygon
+                   distance, position stabiliser, orientation smoother, camera FOV
+lib/core/heading   heading fusion, course-over-ground detection, landmark snap
+lib/core/render    what to draw, in screen coordinates
+lib/pose           PoseSource interface + sensor implementation
+lib/location       LocationSource interface + fused location
+lib/core/motion    step detection, step length, step-length calibration
+lib/data           sqflite cache, HTTP sync, repositories
+lib/platform       Dart end of the native channel, monotonic clock
+lib/ui             Flutter screens: plot list, plot detail, AR view
+lib/plot_finder.dart
+                   the public API: PlotFinderScreen, PlotFinderConfig
+android/src/main/kotlin
+                   the plugin's native side: rotation vectors, camera geometry,
+                   location, permissions, device info
+example/           the standalone app, which embeds the package like any host
 ```
 
-Everything under `core/` imports nothing from Android. That is what makes the
-maths that decides where the overlay lands testable on a plain JVM — and it is
-where the bugs in this kind of app actually live.
+Everything under `lib/core/` imports nothing but `dart:math`. That is what makes
+the maths that decides where the overlay lands testable with no device — and it
+is where the bugs in this kind of app actually live.
+
+### Why there is any Kotlin at all
+
+Three inputs are taken from Android directly rather than through Flutter
+plugins, because the plugins cannot hand them over faithfully:
+
+- **The two rotation vectors.** Plugins expose raw accelerometer, gyroscope and
+  magnetometer streams. Rebuilding Android's own `TYPE_GAME_ROTATION_VECTOR`
+  fusion from those in Dart would be a second, subtly different sensor fusion.
+  The native side only converts each sample to a rotation matrix and remaps it
+  to the display; smoothing and heading fusion stay in Dart.
+- **The camera's physical sensor size and focal length,** which set the FOV —
+  the scale factor on every projected point. The camera plugin does not expose
+  `CameraCharacteristics`.
+- **Fixes that admit when they have no bearing.** `Location.hasBearing()`
+  goes through as a null, so course over ground rejects the fix instead of
+  reading it as "due north". Fixes come from the framework's `LocationManager`
+  (its fused provider on Android 12+, GPS before that) rather than Google Play
+  Services, so location adds no native dependency to clash with a host app's.
+- **ARCore motion tracking** (visual-inertial odometry - not the Geospatial
+  API), when Google Play Services for AR is installed. ARCore owns the camera
+  then: the native side draws its preview on a `GLSurfaceView` platform view,
+  draws the plot itself in the same GL frame (so it cannot lag the image),
+  finds the floor from ARCore's planes and, where the Depth API is available,
+  lets nearer people, trees and walls hide the boundary.
+
+The Flutter camera plugin chooses its own preview size, often 16:9 from a 4:3
+sensor, which crops the axis that spans a portrait screen. `CameraGeometry`
+undoes that crop when it computes the FOV; the Kotlin app avoided the problem by
+sizing CameraX to the sensor.
 
 ## Running the tests
 
-`./gradlew test` runs them the normal way. On a machine with no Android SDK they
-can still be run directly:
-
 ```bash
-KOTLIN_HOME=~/kotlinc \
-JUNIT_CP="$HOME/jars/junit.jar:$HOME/jars/hamcrest.jar" \
-tools/run-core-tests.sh
+flutter test
 ```
 
-**125 tests**, every expected value hand-computed from the documented model
-rather than by calling the code back on itself. They cover the ENU frame,
-projection and clipping, the position and orientation filters, heading fusion,
-the overlay builders and the health raster — all on a plain JVM, no device.
+**159 tests.** Every Kotlin test was ported, with the same hand-computed expected values —
+derived from the documented model rather than by calling the code back on
+itself. They cover the ENU frame, projection and clipping, the position and
+orientation filters, heading fusion, the overlay builders, the health raster and
+the wire format, plus new tests for the preview-crop FOV correction, step
+counting and step-length calibration, walking indoors on poor GNSS, and a few
+widgets. None of them needs a device.
+
+CI (`.github/workflows/flutter.yml`) runs `flutter analyze` and `flutter test`
+on every push to this branch, on the current Flutter and on 3.22 (the oldest
+the package supports), then builds the example's debug APK and keeps it as a
+downloadable artifact of the run.
 
 ## Coordinate math
 
@@ -72,7 +123,7 @@ agent walks more than **50 m**.
 
 Projection rotates the world point into the camera frame using the device
 rotation matrix, then applies a pinhole projection with the camera's **actual**
-horizontal FOV from `CameraCharacteristics` — never a hardcoded 60°, which is
+horizontal FOV from `CameraCharacteristics` (corrected for the preview crop) — never a hardcoded 60°, which is
 wrong on most phones and scales every screen position. All plot geometry sits on
 the ground plane at the device's altitude minus a fixed 1.6 m eye height; there
 is no terrain model and no attempt at one.
@@ -131,7 +182,20 @@ own fix error would dominate the bearing.
 Two filters, because the two error sources behave differently and a single one
 cannot address both.
 
-**Position** — `core/geo/PositionStabilizer.kt`. A constant-position Kalman
+**Walking — counted steps.** The first real-phone test, walking nine metres
+towards a plot indoors, showed the boundary receding as the agent approached.
+Under a roof GNSS reports ~13 m accuracy and near-zero Doppler speed whatever
+the agent does, so the filter read them as standing still and froze the drawn
+position while the camera moved. Now `lib/core/motion` counts steps from the
+accelerometer (peak-valley on the magnitude, no extra permission), sizes each
+with Weinberg's model, and moves the estimate *and* the drawn position along
+the locked heading at once - pedestrian dead reckoning. Steps, not Doppler,
+decide when the agent is moving; poor fixes are de-weighted while walking on
+steps, because fixes under a roof are correlated, not independent; and good
+fixes outdoors both correct drift and calibrate the step length. Research
+behind it: [`docs/research/ar-positioning.md`](docs/research/ar-positioning.md).
+
+**Position** — `lib/core/geo/position_stabilizer.dart`. A constant-position Kalman
 filter per horizontal axis, gated by a zero-velocity detector; the standard
 pedestrian-navigation construction. Standing still the process noise is 2 cm/s,
 so the gain collapses and new fixes barely move the estimate; walking it opens to
@@ -155,7 +219,7 @@ The trade is deliberate: half a metre of standing bias bought in exchange for
 stillness. A boundary that sits still while being slightly out reads as correct;
 one that is unbiased and never settles reads as broken.
 
-**Orientation** — `core/geo/OrientationSmoother.kt`. This matters more than the
+**Orientation** — `lib/core/geo/orientation_smoother.dart`. This matters more than the
 position filter, because orientation error scales with range: at 50 m one degree
 of jitter swings a boundary 0.87 m sideways, at 150 m it is 2.6 m. Spherical
 interpolation between quaternions (never element-wise on matrices, which does not
@@ -253,7 +317,7 @@ Persistent, not optional:
 
 ## Telemetry
 
-One row per session in a local Room table, no UI: timestamp, plot id, lat/lng,
+One row per session in a local SQLite table, no UI: timestamp, plot id, lat/lng,
 reported horizontal accuracy, heading, heading source, heading confidence, render
 mode, anchor shift, session duration.
 
@@ -266,21 +330,6 @@ This is the point of shipping v0 — it produces the real accuracy distribution
 across the actual device fleet, which is what justifies (or kills) phase 2.
 Guessing at that from a spec is how teams buy RTK receivers they did not need.
 
-## Simulation mode
-
-Debug builds only. An on-screen joystick injects a fake location and heading in
-place of the real sensors, so the overlay can be driven around a synthetic plot
-from a desk. Sliders inject deliberate **GNSS error** and **heading error** so the
-failure modes reproduce on demand.
-
-It is also the demo: show the overlay sitting correctly on the plot, then dial
-heading error to 20° and watch it settle over the neighbouring field. That is the
-slide that explains why the heading architecture exists.
-
-`SimulationEngine` implements `LocationSource` *and* `PoseSource` from one piece
-of state, because they are two views of one simulated agent — two independent
-fakes would drift apart. Release builds contain no joystick and no sliders.
-
 ## Why not ARCore
 
 An agent asked for "AR boundaries" reaches for ARCore's Geospatial API, because
@@ -288,31 +337,51 @@ that is what the documentation and every tutorial suggests. It compiles, it
 reports sub-2 m accuracy, and in farmland with no Street View coverage it is
 wrong by 5–10 m with a 30–45° heading error.
 
-v0 is sensor-only on purpose: the far-field identification case needs no plane
-detection and no visual odometry, and ARCore triples the complexity of getting
-the first version on screen. `PoseSource` is the seam — an ARCore-backed
-implementation satisfies the same interface and nothing above it changes.
+v0 was sensor-only on purpose: the far-field identification case needs no
+plane detection and no visual odometry. The field test changed that: walking
+*up to* a boundary, a few metres of GNSS error is the difference between the
+line ahead and the line beside you, and the overlay visibly swam.
+
+So ARCore is now used for **motion tracking only** — on-device visual-inertial
+odometry, no Street View, no network. `VioPoseSource` implements the same
+`PoseSource` seam: ARCore's yaw becomes the heading fusion's carrier, its
+frame-to-frame displacement moves the position filter directly, and GNSS is
+weighted down to a slow drift correction. An "I'm standing at the access
+point" button pins the absolute position. Phones without ARCore keep the
+sensor path. Details and sources: `docs/research/ar-positioning.md`.
 
 ## Out of scope for v0
 
-Boundary correction by the agent, photo capture, audit forms, iOS, ARCore.
-`PoseSource` and the Room schema are shaped so these drop in later — `PlotEntity`
+Boundary correction by the agent, photo capture, audit forms, iOS, the
+ARCore Geospatial API.
+`PoseSource` and the cache schema are shaped so these drop in later — `PlotEntity`
 already carries the columns a boundary edit would need.
 
 ## Documentation
 
 | File | What |
 |---|---|
-| [`docs/builders-manual.html`](docs/builders-manual.html) | **The main document.** Problem statement, both halves of the system, all ten logics with their reasoning, full library inventory, 14 diagrams. Written for someone who has never seen the code. |
+| [`docs/builders-manual.html`](docs/builders-manual.html) | Written for the Kotlin app; every algorithm and number in it still holds for this port, but file names and libraries refer to `main`. **The main document.** Problem statement, both halves of the system, all ten logics with their reasoning, full library inventory, 14 diagrams. Written for someone who has never seen the code. |
 | [`MILESTONES.md`](MILESTONES.md) | The build log — what each milestone covered and what is outstanding. |
 | `docs/archive/` | Superseded drafts, kept for history. Not current. |
 
 ## Build notes
 
-- Kotlin, single app module, min SDK 26, portrait-locked (the overlay maths
-  assumes the screen frame the sensor matrix is remapped into).
-- API base URL is a `buildConfigField`; it defaults to `http://10.0.2.2:4000/`,
-  the emulator's route to a `plot-web` API running on the host.
+- Flutter, Android host in `android/`, min SDK 26, portrait-locked (the overlay
+  maths assumes the screen frame the sensor matrix is remapped into).
+- `cd example && flutter run` for a debug build; `flutter build apk --release`
+  there for the one to put on a phone.
+- The API base URL defaults to the deployed service,
+  `https://cropin-plot-visualizer-service-nu.vercel.app/`. To use a local `plot-web` API instead
+  (10.0.2.2 is the emulator's route to the host machine):
+  `flutter run --dart-define=PLOT_API_BASE_URL=http://10.0.2.2:4000/`
+- The example keeps the Kotlin build's applicationId and cache file, tables and
+  schema version, so installing over it keeps the cached plots. Embedded, the
+  cache file name is the host's choice.
 - The rotation matrix is remapped through `SensorManager.remapCoordinateSystem`
   for the display rotation, so a natural-landscape device does not render the
   whole overlay on its side.
+- **iOS is not wired up.** All of `lib/` is portable, but the plugin's native
+  side exists only for Android; on iOS the screen shows an "Android only"
+  notice. Support needs a Swift counterpart of `PlotFinderPlugin.kt`
+  (CoreMotion attitude, AVCaptureDevice field of view, CoreLocation course).
