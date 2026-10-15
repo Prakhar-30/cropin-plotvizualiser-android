@@ -32,12 +32,17 @@ import '../../pose/vio_pose_source.dart';
 /// the UI state made every one of those samples rebuild the whole screen: the
 /// chip, the health panel, the buttons and the camera box.
 class ArFrame {
-  const ArFrame(this.overlay, this.health, {this.guide});
+  const ArFrame(this.overlay, this.health, {this.guide, this.agent, this.headingDeg = 0.0});
 
   final PlotOverlay overlay;
 
   /// The way to the access point, until the agent says they are standing on it.
   final AccessGuide? guide;
+
+  /// Where the agent is drawn from, and which way the camera faces - for the
+  /// minimap's marker.
+  final LatLng? agent;
+  final double headingDeg;
 
   /// The crop-health raster, already projected. Null when the layer is off.
   final HealthOverlay? health;
@@ -701,7 +706,13 @@ class ArController extends ValueNotifier<ArUiState> {
         eyeHeight: _vio?.eyeHeightM ?? eyeHeightM,
       );
       final health = _buildHealth(state, frame, agent, _pose.deviceToEnu, intrinsics);
-      this.frame.value = ArFrame(overlay, health, guide: state.pinned ? null : _guide(plot, agent));
+      this.frame.value = ArFrame(
+        overlay,
+        health,
+        guide: state.pinned ? null : _guide(plot, agent),
+        agent: agent,
+        headingDeg: _pose.headingDeg,
+      );
 
       final edge = overlay.edgeDistanceM.toInt();
       final hidden = health?.hiddenCellCount ?? 0;

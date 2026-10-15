@@ -22,6 +22,7 @@ import '../theme.dart';
 import 'ar_controller.dart';
 import 'ar_overlay_painter.dart';
 import 'heading_chip.dart';
+import 'minimap.dart';
 
 /// Camera, overlay, heading chip, mode indicator, snap button.
 ///
@@ -318,16 +319,34 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                 ],
               ),
             ),
+            // The minimap rides on top of the sheet, so it never hides behind
+            // it and moves up and down as the sheet does.
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
-              child: _BottomSheet(
-                state: state,
-                onDismissMessage: controller.dismissMessage,
-                onSelectHealth: controller.setHealthLayer,
-                onSnap: controller.snapToAccessPoint,
-                onPin: () => _confirmAccessPoint(controller),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Once the agent is at the plot - pinned, or within the
+                  // near range - not while they are still walking there.
+                  if (state.plot case final plot? when state.pinned || state.mode == RenderMode.near)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12, bottom: 10),
+                      child: PlotMinimap(plot: plot, health: state.health, frame: controller.frame),
+                    ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: _BottomSheet(
+                      state: state,
+                      onDismissMessage: controller.dismissMessage,
+                      onSelectHealth: controller.setHealthLayer,
+                      onSnap: controller.snapToAccessPoint,
+                      onPin: () => _confirmAccessPoint(controller),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
