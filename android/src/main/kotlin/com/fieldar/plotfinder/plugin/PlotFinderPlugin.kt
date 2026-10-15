@@ -19,6 +19,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.Display
@@ -475,6 +476,12 @@ class PlotFinderPlugin :
                 override fun onProviderDisabled(provider: String) = Unit
             }
             locationListener = listener
+            // A cold GNSS start takes 10-30 s. The phone usually already knows
+            // where it was moments ago - the plot list was just using it - so
+            // that goes out at once, and the first live fix corrects it. Only
+            // a recent one: an hour-old fix would start the agent in the wrong
+            // village.
+            freshLastKnown(manager)?.let { events.success(it.toMap()) }
             try {
                 manager.requestLocationUpdates(provider(manager), INTERVAL_MS, 0f, listener, Looper.getMainLooper())
             } catch (e: SecurityException) {
@@ -485,6 +492,16 @@ class PlotFinderPlugin :
         }
 
         override fun onCancel(arguments: Any?) = stopLocation()
+    }
+
+    /** The newest last-known fix from any provider, if under [MAX_LAST_KNOWN_AGE_MS] old. */
+    private fun freshLastKnown(manager: LocationManager): Location? = try {
+        manager.allProviders
+            .mapNotNull { manager.getLastKnownLocation(it) }
+            .filter { SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos < MAX_LAST_KNOWN_AGE_MS * 1_000_000L }
+            .maxByOrNull { it.elapsedRealtimeNanos }
+    } catch (_: SecurityException) {
+        null
     }
 
     /** The platform's fused provider where it exists (API 31+), GNSS otherwise. */
@@ -522,6 +539,7 @@ class PlotFinderPlugin :
         const val TAG = "PlotFinder"
         const val CHANNEL = "com.fieldar.plot_finder"
         const val INTERVAL_MS = 1_000L
+        const val MAX_LAST_KNOWN_AGE_MS = 30_000L
 
         /** Must fit in 16 bits for hosts still using fragment-based requests. */
         const val PERMISSION_REQUEST_CODE = 0x5046

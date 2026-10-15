@@ -7,6 +7,7 @@ import 'package:plot_finder/pose/pose_source.dart';
 import 'package:plot_finder/ui/ar/ar_controller.dart';
 import 'package:plot_finder/ui/ar/heading_chip.dart';
 import 'package:plot_finder/ui/ar/minimap.dart';
+import 'package:plot_finder/ui/ar/startup_loader.dart';
 import 'package:plot_finder/ui/detail/plot_detail_screen.dart';
 import 'package:plot_finder/ui/theme.dart';
 
@@ -105,5 +106,22 @@ void main() {
     await tester.tap(map);
     await tester.pumpAndSettle();
     expect(tester.getSize(map), const Size(220, 220));
+  });
+
+  testWidgets('the startup loader says what it is still waiting for, and when it is slow', (tester) async {
+    await tester.pumpWidget(host(const StartupLoader(hasFix: false, usesTracking: true, tracking: true)));
+    expect(find.text('Finding your position'), findsOneWidget);
+    expect(find.text('Motion tracking'), findsOneWidget);
+    expect(find.text('GPS'), findsOneWidget);
+    expect(find.text('ready'), findsNWidgets(2), reason: 'camera and tracking are in; GPS is not');
+    expect(find.textContaining('Taking longer'), findsNothing);
+    // Release the clock and the pulse before the test ends.
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  test('the loader is done only when everything it waits for is in', () {
+    expect(StartupLoader.done(hasFix: true, usesTracking: true, tracking: false), isFalse);
+    expect(StartupLoader.done(hasFix: true, usesTracking: false, tracking: false), isTrue);
+    expect(StartupLoader.done(hasFix: false, usesTracking: false, tracking: false), isFalse);
   });
 }

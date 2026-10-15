@@ -23,6 +23,7 @@ import 'ar_controller.dart';
 import 'ar_overlay_painter.dart';
 import 'heading_chip.dart';
 import 'minimap.dart';
+import 'startup_loader.dart';
 
 /// Camera, overlay, heading chip, mode indicator, snap button.
 ///
@@ -56,6 +57,11 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
 
   /// ARCore could run here once Google Play Services for AR is installed.
   bool _arCoreInstallable = false;
+
+  /// Latched once the first fix and first tracked frame are in: the startup
+  /// loader is for opening the screen, not for every later dropout - those
+  /// get the tracking banner, which says why.
+  bool _ready = false;
   CameraController? _camera;
   CameraGeometry _geometry = CameraGeometry.fallback;
   bool _cameraStarting = false;
@@ -87,6 +93,7 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
       _backend = backend;
       _controller = controller;
       _measured = null;
+      _ready = false;
     });
     if (backend == _Backend.sensors) unawaited(_startCamera());
   }
@@ -212,6 +219,9 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
     }
   }
 
+  bool _isReady(ArUiState state) => _ready = _ready ||
+      StartupLoader.done(hasFix: state.hasFix, usesTracking: state.visual, tracking: state.visualTracking);
+
   void _reportViewport(ArController controller, int width, int height) {
     final next = (width, height, _geometry.portraitHorizontalFovDeg);
     if (next == _measured) return;
@@ -288,6 +298,20 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                 );
               }),
             ),
+            // Over the camera, under the chrome: the sheet stays usable while
+            // the position comes in, and the card fades once it has.
+            Positioned.fill(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: _isReady(state)
+                    ? const SizedBox.shrink()
+                    : StartupLoader(
+                        hasFix: state.hasFix,
+                        usesTracking: state.visual,
+                        tracking: state.visualTracking,
+                      ),
+              ),
+            ),
             // App bar, then chip and badge in one row so they cannot overlap:
             // at a large system font scale the chip's text grows into the
             // badge if both are absolutely positioned against opposite corners.
@@ -312,7 +336,9 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                     ),
                   ),
                   _GuidePill(frame: controller.frame),
-                  if (state.visual && !state.visualTracking)
+                  // The loader already says tracking is starting; the banner is
+                  // for losing it later.
+                  if (state.visual && !state.visualTracking && _ready)
                     _TrackingBanner(failure: state.trackingFailure)
                   else if (!arcore && _arCoreInstallable)
                     _InstallArCoreBanner(onInstall: _installArCore),
