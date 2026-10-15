@@ -25,6 +25,11 @@ import '../../data/plot.dart';
 import '../../pose/pose_source.dart';
 import '../../pose/vio_pose_source.dart';
 
+/// Beyond this GPS distance from the access point, "I'm at the access point"
+/// stays disabled. Generous enough for ordinary GNSS error in the open,
+/// tight enough that a tap from the next field over cannot place the plot.
+const double maxAccessPointPinDistanceM = 50.0;
+
 /// What the overlay canvas draws for one pose sample.
 ///
 /// Kept out of [ArUiState] on purpose. A new frame arrives with every carrier
@@ -78,6 +83,7 @@ class ArUiState {
     this.trackingFailure = ArTrackingFailure.none,
     this.pinned = false,
     this.depthActive = false,
+    this.accessPointDistanceM,
   });
 
   final Plot? plot;
@@ -120,6 +126,16 @@ class ArUiState {
   /// ARCore depth is hiding the overlay behind nearer objects.
   final bool depthActive;
 
+  /// GPS distance to the access point, whole metres; null before a fix.
+  final int? accessPointDistanceM;
+
+  /// "I'm at the access point" is offered only within
+  /// [maxAccessPointPinDistanceM] by GPS.
+  bool get canPin => switch (accessPointDistanceM) {
+        final d? => d <= maxAccessPointPinDistanceM,
+        null => false,
+      };
+
   /// The layer actually drawn, after the heading veto.
   ///
   /// A boundary drawn on a bad heading is wrong about where a fence is, and the
@@ -152,6 +168,7 @@ class ArUiState {
     ArTrackingFailure? trackingFailure,
     bool? pinned,
     bool? depthActive,
+    int? Function()? accessPointDistanceM,
   }) =>
       ArUiState(
         plot: plot == null ? this.plot : plot(),
@@ -171,6 +188,7 @@ class ArUiState {
         trackingFailure: trackingFailure ?? this.trackingFailure,
         pinned: pinned ?? this.pinned,
         depthActive: depthActive ?? this.depthActive,
+        accessPointDistanceM: accessPointDistanceM == null ? this.accessPointDistanceM : accessPointDistanceM(),
       );
 }
 
@@ -412,21 +430,6 @@ class ArController extends ValueNotifier<ArUiState> {
     }
   }
 
-  /// How far the agent appears to be from the access point, when that is far
-  /// enough - and the position good enough - to be worth asking "are you
-  /// sure?" before taking their word for it. Null when the tap is plausible.
-  ///
-  /// Indoors, or wherever GNSS is tens of metres out, this stays null: a
-  /// receiver that unsure cannot contradict someone standing on the spot.
-  double? accessPointDistanceIfDoubtful() {
-    final plot = value.plot;
-    final agent = _agentPosition;
-    if (plot == null || agent == null) return null;
-    final distance = distanceM(agent, plot.accessPoint);
-    final doubt = math.max(25.0, 2.5 * _stabilizer.uncertaintyM);
-    return distance > doubt ? distance : null;
-  }
-
   /// "I'm at the access point": the one action this screen asks for.
   ///
   /// GNSS under a roof or beside a tree line is several metres out, and close
@@ -438,7 +441,7 @@ class ArController extends ValueNotifier<ArUiState> {
   /// direction, with nothing more to tap.
   void pinToAccessPoint() {
     final plot = value.plot;
-    if (plot == null) return;
+    if (plot == null || !value.canPin) return;
     final now = _lastLocation?.timestampMs;
     if (now == null) {
       value = value.copyWith(message: () => 'Waiting for a location fix');
@@ -608,7 +611,11 @@ class ArController extends ValueNotifier<ArUiState> {
       _worstStationaryShiftM = math.max(_worstStationaryShiftM, stabilized.shiftM);
     }
 
+    final plotNow = value.plot;
+    final distanceToAccess =
+        plotNow == null ? null : distanceM(sample.position, plotNow.accessPoint).round();
     _rebuildOverlay(value.copyWith(
+      accessPointDistanceM: () => distanceToAccess,
       // Once pinned, the receiver's ±90 m is not the position's error any more.
       accuracyM: pinned ? math.min(sample.accuracyM, _stabilizer.uncertaintyM) : sample.accuracyM,
       hasFix: true,

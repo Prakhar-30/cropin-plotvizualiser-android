@@ -127,27 +127,6 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
     controller.dispose();
   }
 
-  /// Takes the agent's word that they are on the access point - unless GPS is
-  /// good enough to say they plainly are not, in which case it asks once.
-  Future<void> _confirmAccessPoint(ArController controller) async {
-    final distance = controller.accessPointDistanceIfDoubtful();
-    if (distance != null) {
-      final sure = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Are you at the access point?'),
-          content: Text('GPS puts you about ${distance.round()} m away. Follow the arrow to reach it.'),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Not yet')),
-            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text("Yes, I'm here")),
-          ],
-        ),
-      );
-      if (sure != true || !mounted || !identical(controller, _controller)) return;
-    }
-    controller.pinToAccessPoint();
-  }
-
   Future<void> _installArCore() async {
     final answer = await widget.container.platform.arInstall();
     if (!mounted || answer == 'failed') return;
@@ -369,7 +348,7 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                       onDismissMessage: controller.dismissMessage,
                       onSelectHealth: controller.setHealthLayer,
                       onSnap: controller.snapToAccessPoint,
-                      onPin: () => _confirmAccessPoint(controller),
+                      onPin: controller.pinToAccessPoint,
                     ),
                   ),
                 ],
@@ -496,7 +475,13 @@ class _BottomSheetState extends State<_BottomSheet> {
               _MessageBanner(message: message, onDismiss: widget.onDismissMessage),
               const SizedBox(height: 10),
             ],
-            if (plot != null) _PrimaryAction(pinned: state.pinned, onPressed: widget.onPin),
+            if (plot != null)
+              _PrimaryAction(
+                pinned: state.pinned,
+                distanceM: state.accessPointDistanceM,
+                enabled: state.canPin,
+                onPressed: widget.onPin,
+              ),
             if (plot != null && _expanded) ...[
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
@@ -543,14 +528,49 @@ class _BottomSheetState extends State<_BottomSheet> {
 /// The one thing the agent is asked to do: say when they are standing on the
 /// access point. Everything else - direction included - follows from it and
 /// from the walk.
+///
+/// Disabled until GPS puts the agent within [maxAccessPointPinDistanceM] of
+/// the access point, and the label says why: how far there is still to go,
+/// or that GPS has not come in yet.
 class _PrimaryAction extends StatelessWidget {
-  const _PrimaryAction({required this.pinned, required this.onPressed});
+  const _PrimaryAction({
+    required this.pinned,
+    required this.distanceM,
+    required this.enabled,
+    required this.onPressed,
+  });
 
   final bool pinned;
+  final int? distanceM;
+  final bool enabled;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
+    final distance = distanceM;
+    final onTap = enabled ? onPressed : null;
+    // Once pinned, the button just says so; re-pinning still needs the 50 m.
+    if (!enabled && !pinned) {
+      return SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(
+            disabledBackgroundColor: const Color(0x33FFFFFF),
+            disabledForegroundColor: PlotFinderColors.mutedText,
+            minimumSize: const Size(0, 48),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+          ),
+          onPressed: null,
+          icon: Icon(distance == null ? Icons.gps_not_fixed : Icons.directions_walk, size: 20),
+          label: Text(
+            distance == null
+                ? 'Waiting for GPS…'
+                : 'Walk closer · access point $distance m away',
+          ),
+        ),
+      );
+    }
     final icon = Icon(pinned ? Icons.where_to_vote : Icons.my_location, size: 20);
     final label = Text(pinned ? 'At the access point' : "I'm at the access point");
     if (pinned) {
@@ -562,7 +582,7 @@ class _PrimaryAction extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
         ),
-        onPressed: onPressed,
+        onPressed: onTap,
         icon: icon,
         label: label,
       );
@@ -571,7 +591,7 @@ class _PrimaryAction extends StatelessWidget {
       width: double.infinity,
       child: FilledButton.icon(
         style: cameraPrimaryButtonStyle(),
-        onPressed: onPressed,
+        onPressed: onTap,
         icon: icon,
         label: label,
       ),

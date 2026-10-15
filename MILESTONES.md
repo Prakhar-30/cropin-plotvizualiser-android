@@ -23,6 +23,7 @@ this log must match the code.
 | F13 | One action instead of two: "I'm at the access point". Direction set automatically by aligning ARCore's tracked walk to GNSS (weighted 2-D Procrustes), anchored at the pin; guide pill to the access point; one confirm guard when GPS says you are far; aim moved to a fallback with guards in the right order; plot keeps its colour under ARCore, occlusion only by clearly nearer objects | Aligner tests: exact recovery, noisy winding walk, indoor fixes ignored, standing still says nothing, anchored walk-in |
 | F14 | Minimap in the AR view: north-up plan of the plot with the crop-health cells in their severity colours, ranked hotspots, the access point and the agent as a heading arrow; bottom right above the sheet, tap to enlarge; shown once at the plot | Widget test: renders and grows on tap |
 | F15 | Startup loader on the AR view (camera / motion tracking / GPS checklist with elapsed seconds and a hint after 20 s), and a faster first fix: the native side sends the newest last-known location under 30 s old the moment AR opens | Widget tests for the loader |
+| F16 | "I'm at the access point" disabled until GPS puts the agent within 50 m of it; the disabled button says how far is left, or that GPS is still coming. Replaces the far-away confirm dialog | State test for the 50 m rule |
 
 **F9, packaging for a host app.** The aim was to add nothing that could break a
 host app's build: no third-party native dependencies (framework

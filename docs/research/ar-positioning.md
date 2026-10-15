@@ -254,11 +254,11 @@ occlusion faded it further, in a white office.
 
 **Guards, in order, each with one plain sentence:**
 
-- Tapping "I'm at the access point" while GPS confidently says you are more
-  than 25 m away (and more than 2.5× its own error) asks once: "GPS puts you
-  about 120 m away", with *Not yet* and *Yes, I'm here*. Where GPS is weak,
-  indoors for example, it never asks, because a receiver that unsure cannot
-  contradict someone standing on the spot.
+- "I'm at the access point" stays disabled until GPS puts the agent within
+  50 m of it; the disabled button reads "Walk closer · access point 120 m
+  away", or "Waiting for GPS…". (This replaced an earlier confirm dialog.)
+  Where GPS is very poor, as indoors at ±100 m, the reading can exceed 50 m
+  while standing on the spot, and the button then stays disabled.
 - After pinning, one line says what happens next: plot placed, *walk a few
   steps to set direction*, or *GPS weak here, direction is from the compass*.
 - Aiming is now a fallback inside the expanded sheet, for when GPS is too weak

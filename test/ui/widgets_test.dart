@@ -124,4 +124,11 @@ void main() {
     expect(StartupLoader.done(hasFix: true, usesTracking: false, tracking: false), isTrue);
     expect(StartupLoader.done(hasFix: false, usesTracking: false, tracking: false), isFalse);
   });
+
+  test("I'm at the access point is offered only within 50 m by GPS", () {
+    expect(const ArUiState().canPin, isFalse, reason: 'no fix yet');
+    expect(const ArUiState(accessPointDistanceM: 50).canPin, isTrue);
+    expect(const ArUiState(accessPointDistanceM: 51).canPin, isFalse);
+    expect(const ArUiState(accessPointDistanceM: 3).canPin, isTrue);
+  });
 }
