@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/geo/enu.dart';
 import '../../core/geo/polygon_geometry.dart';
+import '../../core/render/health_geometry.dart';
 import '../../core/render/plot_palette.dart';
 import '../../data/plot.dart';
 import '../theme.dart';
@@ -92,11 +93,11 @@ class MinimapGeometry {
     ring = openRing([for (final p in plot.ring) _frame.toEnu(p)]);
     access = _frame.toEnu(plot.accessPoint);
     cells = [
-      for (final cell in health?.cells ?? const [])
+      for (final cell in health?.cells ?? const <HealthCell>[])
         (cell.severity, openRing([for (final p in cell.ring) _frame.toEnu(p)])),
     ];
     hotspots = [
-      for (final h in health?.hotspots ?? const []) (h.rank, h.severity, _frame.toEnu(h.centroid)),
+      for (final h in health?.hotspots ?? const <HealthHotspot>[]) (h.rank, h.severity, _frame.toEnu(h.centroid)),
     ];
     final points = [...ring, access];
     _minE = points.map((p) => p.east).reduce(math.min);
