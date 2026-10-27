@@ -7,16 +7,15 @@ import 'entities.dart';
 
 /// The offline cache, on sqflite.
 ///
-/// The file name, table names, column names and `user_version` are exactly the
-/// Kotlin app's Room database at version 3. Same applicationId, same
-/// `databases/` directory, same file: a phone upgrading from the Kotlin build
-/// opens its existing cache instead of starting empty. That matters because the
-/// cache is the only copy of the plots an agent has once they are out of
-/// signal, and wiping it on upgrade would strand someone mid-visit.
+/// Versions 1-3 were the Kotlin app's Room schema, kept so an upgrade from that
+/// build opened its cache. Version 4 is the updated flow: no access point, and
+/// crop condition on three indices. The server was reset for it too, so the
+/// upgrade empties the plot and health caches rather than carrying rows the new
+/// app cannot use; the next sync refills them. Telemetry is kept.
 class AppDatabase {
   AppDatabase._(this._db);
 
-  static const int schemaVersion = 3;
+  static const int schemaVersion = 4;
 
   final Database _db;
 
@@ -46,6 +45,7 @@ class AppDatabase {
       onUpgrade: (db, from, to) async {
         if (from < 2) await _migrate1To2(db);
         if (from < 3) await db.execute(_createHealth);
+        if (from < 4) await _migrate3To4(db);
       },
     );
     return AppDatabase._(db);
@@ -55,7 +55,6 @@ class AppDatabase {
     CREATE TABLE IF NOT EXISTS `plots` (
       `id` TEXT NOT NULL, `name` TEXT NOT NULL, `ringJson` TEXT NOT NULL,
       `centroidLat` REAL NOT NULL, `centroidLng` REAL NOT NULL,
-      `accessLat` REAL NOT NULL, `accessLng` REAL NOT NULL,
       `areaSqM` REAL NOT NULL, `landmarkNote` TEXT NOT NULL,
       `colourIndex` INTEGER NOT NULL, `createdAt` TEXT NOT NULL,
       `syncedAtMs` INTEGER NOT NULL, PRIMARY KEY(`id`))''';
@@ -79,6 +78,14 @@ class AppDatabase {
       `plotId` TEXT NOT NULL, `capturedOn` TEXT NOT NULL,
       `synthetic` INTEGER NOT NULL, `snapshotJson` TEXT NOT NULL,
       `syncedAtMs` INTEGER NOT NULL, PRIMARY KEY(`plotId`))''';
+
+  /// The updated flow: plots without an access point, snapshots in the new
+  /// three-index shape. Both caches start empty and refill on the next sync.
+  static Future<void> _migrate3To4(Database db) async {
+    await db.execute('DROP TABLE IF EXISTS `plots`');
+    await db.execute(_createPlots);
+    await db.execute('DELETE FROM `plot_health`');
+  }
 
   /// Adds the boundary colour and the stabiliser telemetry columns.
   ///
@@ -137,6 +144,9 @@ class PlotDao {
   Future<List<PlotEntity>> _all() async =>
       (await _db.query('plots', orderBy: 'name')).map(PlotEntity.fromMap).toList();
 
+  /// Every cached plot, once.
+  Future<List<PlotEntity>> all() => _all();
+
   Future<PlotEntity?> findById(String id) async {
     final rows = await _db.query('plots', where: 'id = ?', whereArgs: [id]);
     return rows.isEmpty ? null : PlotEntity.fromMap(rows.first);
@@ -167,6 +177,10 @@ class HealthDao {
   HealthDao(this._db);
 
   final Database _db;
+
+  /// Every cached snapshot.
+  Future<List<HealthEntity>> all() async =>
+      (await _db.query('plot_health')).map(HealthEntity.fromMap).toList();
 
   Future<HealthEntity?> findByPlot(String plotId) async {
     final rows = await _db.query('plot_health', where: 'plotId = ?', whereArgs: [plotId]);

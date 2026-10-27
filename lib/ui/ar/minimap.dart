@@ -11,22 +11,30 @@ import '../../data/plot.dart';
 import '../theme.dart';
 import 'ar_controller.dart';
 
-/// A plan view of the plot in the corner of the camera, as games do it.
+/// A plan view in the corner of the camera, as games do it.
 ///
-/// The camera answers "what is in front of me"; this answers "where am I in
-/// the field, and where is the bad patch from here". North up, like the web
-/// map the plots were drawn on: the boundary, the crop-health cells in the same
-/// severity colours, the access point, the ranked hotspots, and the agent as a
-/// blue arrow turning with the phone.
+/// Centred on the agent and north up: every nearby plot's boundary in its own
+/// colour, the moderate and critical ground of the chosen index in yellow and
+/// red (normal ground is left out, as in the camera), a dot on each drop point,
+/// and the agent as a blue arrow turning with the phone. The camera answers
+/// "what is in front of me"; this answers "where are the problem patches from
+/// here, in every direction".
 ///
-/// Tap to enlarge, tap again to shrink.
+/// Tap to enlarge - which also widens the radius shown - tap again to shrink.
 class PlotMinimap extends StatefulWidget {
-  const PlotMinimap({super.key, required this.plot, required this.health, required this.frame});
+  const PlotMinimap({
+    super.key,
+    required this.plots,
+    required this.health,
+    required this.index,
+    required this.frame,
+  });
 
-  final Plot plot;
-  final PlotHealth? health;
+  final List<Plot> plots;
+  final Map<String, PlotHealth> health;
+  final HealthIndex index;
 
-  /// Per-frame position and heading; only the agent marker listens to it.
+  /// Per-frame position and heading.
   final ValueListenable<ArFrame?> frame;
 
   @override
@@ -35,20 +43,25 @@ class PlotMinimap extends StatefulWidget {
 
 class _PlotMinimapState extends State<PlotMinimap> {
   bool _large = false;
-  MinimapGeometry? _geometry;
+  MinimapLayer? _layer;
 
-  MinimapGeometry _geometryFor(Plot plot, PlotHealth? health) {
-    final existing = _geometry;
-    if (existing != null && identical(existing.plot, plot) && identical(existing.health, health)) return existing;
-    return _geometry = MinimapGeometry(plot, health);
+  MinimapLayer? _layerFor(LatLng? origin) {
+    final existing = _layer;
+    if (existing != null &&
+        identical(existing.plots, widget.plots) &&
+        identical(existing.health, widget.health) &&
+        existing.index == widget.index) {
+      return existing;
+    }
+    if (origin == null) return null;
+    return _layer = MinimapLayer(widget.plots, widget.health, widget.index, origin);
   }
 
   @override
   Widget build(BuildContext context) {
-    final geometry = _geometryFor(widget.plot, widget.health);
     final side = _large ? 220.0 : 132.0;
     return Semantics(
-      label: 'Plot map. Tap to ${_large ? 'shrink' : 'enlarge'}',
+      label: 'Map of nearby plots. Tap to ${_large ? 'shrink' : 'enlarge'}',
       button: true,
       child: GestureDetector(
         onTap: () => setState(() => _large = !_large),
@@ -66,16 +79,35 @@ class _PlotMinimapState extends State<PlotMinimap> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // The field itself changes only with the plot or the raster, so
-              // it sits on its own layer and is not repainted per frame.
-              RepaintBoundary(child: CustomPaint(painter: _FieldPainter(geometry))),
-              CustomPaint(painter: _AgentPainter(geometry, widget.frame)),
+              ValueListenableBuilder<ArFrame?>(
+                valueListenable: widget.frame,
+                builder: (context, current, _) {
+                  final layer = _layerFor(current?.agent);
+                  if (layer == null || current?.agent == null) return const SizedBox.shrink();
+                  return CustomPaint(
+                    painter: _MinimapPainter(
+                      layer,
+                      current!.agent!,
+                      current.headingDeg,
+                      _large ? 120.0 : 60.0,
+                    ),
+                  );
+                },
+              ),
               const Positioned(
                 top: 4,
                 left: 6,
                 child: Text(
                   'N ↑',
                   style: TextStyle(color: PlotFinderColors.mutedText, fontSize: 10, fontWeight: FontWeight.w700),
+                ),
+              ),
+              Positioned(
+                bottom: 4,
+                right: 6,
+                child: Text(
+                  '${_large ? 120 : 60} m',
+                  style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 10),
                 ),
               ),
             ],
@@ -86,131 +118,98 @@ class _PlotMinimapState extends State<PlotMinimap> {
   }
 }
 
-/// The plot and its raster in metres around the centroid, north up, plus the
-/// one transform both layers draw with.
-class MinimapGeometry {
-  MinimapGeometry(this.plot, this.health) : _frame = EnuFrame(plot.centroid) {
-    ring = openRing([for (final p in plot.ring) _frame.toEnu(p)]);
-    access = _frame.toEnu(plot.accessPoint);
-    cells = [
-      for (final cell in health?.cells ?? const <HealthCell>[])
-        (cell.severity, openRing([for (final p in cell.ring) _frame.toEnu(p)])),
-    ];
-    hotspots = [
-      for (final h in health?.hotspots ?? const <HealthHotspot>[]) (h.rank, h.severity, _frame.toEnu(h.centroid)),
-    ];
-    final points = [...ring, access];
-    _minE = points.map((p) => p.east).reduce(math.min);
-    _maxE = points.map((p) => p.east).reduce(math.max);
-    _minN = points.map((p) => p.north).reduce(math.min);
-    _maxN = points.map((p) => p.north).reduce(math.max);
-  }
+/// The plots and the problem ground, in metres around a fixed origin, as paths.
+///
+/// Built once per plot set, snapshot set and index - not per frame. Each frame
+/// only moves and scales the canvas under them, which is cheap however many
+/// cells there are.
+class MinimapLayer {
+  MinimapLayer(this.plots, this.health, this.index, this.origin) {
+    final frame = EnuFrame(origin);
+    Offset at(LatLng p) {
+      final e = frame.toEnu(p);
+      return Offset(e.east, e.north);
+    }
 
-  final Plot plot;
-  final PlotHealth? health;
-  final EnuFrame _frame;
-  late final List<Enu> ring;
-  late final Enu access;
-  late final List<(int, List<Enu>)> cells;
-  late final List<(int, int, Enu)> hotspots;
-  late final double _minE, _maxE, _minN, _maxN;
-
-  static const double padding = 12.0;
-
-  Enu toEnu(LatLng p) => _frame.toEnu(p);
-
-  /// Metres to pixels for a box of [size]: one scale for both axes, so the
-  /// field keeps its real shape, centred, north up.
-  Offset Function(Enu) transform(Size size) {
-    final spanE = math.max(_maxE - _minE, 1.0);
-    final spanN = math.max(_maxN - _minN, 1.0);
-    final scale = math.min((size.width - padding * 2) / spanE, (size.height - padding * 2) / spanN);
-    final offsetX = (size.width - spanE * scale) / 2;
-    final offsetY = (size.height - spanN * scale) / 2;
-    return (p) => Offset(offsetX + (p.east - _minE) * scale, size.height - offsetY - (p.north - _minN) * scale);
-  }
-}
-
-class _FieldPainter extends CustomPainter {
-  _FieldPainter(this.geometry);
-
-  final MinimapGeometry geometry;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (geometry.ring.length < 3) return;
-    final at = geometry.transform(size);
-    final tint = Color(plotColour(geometry.plot.colourIndex).argb);
-    final boundary = Path()..addPolygon([for (final p in geometry.ring) at(p)], true);
-
-    canvas.drawPath(boundary, Paint()..color = tint.withAlpha(alpha8(0.12)));
-
-    // Every severity, healthy included: on a map nothing is hidden behind
-    // anything, and green is what makes the red read as a patch.
-    final bySeverity = <int, Path>{};
-    for (final (severity, ring) in geometry.cells) {
+    for (final plot in plots) {
+      final ring = openRing([for (final p in plot.ring) frame.toEnu(p)]);
       if (ring.length < 3) continue;
-      (bySeverity[severity] ??= Path()).addPolygon([for (final p in ring) at(p)], true);
+      boundaries.add((
+        Path()..addPolygon([for (final e in ring) Offset(e.east, e.north)], true),
+        Color(plotColour(plot.colourIndex).argb),
+      ));
     }
-    bySeverity.forEach((severity, path) {
-      canvas.drawPath(path, Paint()..color = Color(severityColour(severity).argb).withAlpha(alpha8(0.8)));
-    });
-
-    canvas.drawPath(
-      boundary,
-      Paint()
-        ..color = tint
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..isAntiAlias = true,
-    );
-
-    for (final (rank, severity, centre) in geometry.hotspots) {
-      final c = at(centre);
-      canvas.drawCircle(c, 7, Paint()..color = const Color(0xFF0B0F14));
-      canvas.drawCircle(c, 5.5, Paint()..color = Color(severityColour(severity).argb));
-      final text = TextPainter(
-        text: TextSpan(
-          text: '$rank',
-          style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w800),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      text.paint(canvas, c - Offset(text.width / 2, text.height / 2));
+    for (final snapshot in health.values) {
+      for (final cell in snapshot.cells) {
+        final zone = cell.zoneFor(index);
+        if (zone < zoneModerate || cell.ring.length < 3) continue;
+        (zone == zoneCritical ? critical : moderate).addPolygon([for (final p in cell.ring) at(p)], true);
+      }
+      for (final patch in snapshot.patchesFor(index)) {
+        drops.add((at(patch.centroid), patch.zone));
+      }
     }
-
-    // The access point, as on the plot's detail sketch.
-    canvas.drawCircle(at(geometry.access), 4.5, Paint()..color = const Color(0xFFF59E0B));
   }
 
-  @override
-  bool shouldRepaint(_FieldPainter oldDelegate) => !identical(oldDelegate.geometry, geometry);
+  final List<Plot> plots;
+  final Map<String, PlotHealth> health;
+  final HealthIndex index;
+  final LatLng origin;
+
+  final List<(Path, Color)> boundaries = [];
+  final Path moderate = Path();
+  final Path critical = Path();
+  final List<(Offset, int)> drops = [];
 }
 
-/// The agent: a blue arrow pointing where the camera faces. Outside the map
-/// it waits at the edge, still pointing, so the agent knows which side of the
-/// field they are on.
-class _AgentPainter extends CustomPainter {
-  _AgentPainter(this.geometry, this.frame) : super(repaint: frame);
+class _MinimapPainter extends CustomPainter {
+  _MinimapPainter(this.layer, this.agent, this.headingDeg, this.radiusM);
 
-  final MinimapGeometry geometry;
-  final ValueListenable<ArFrame?> frame;
+  final MinimapLayer layer;
+  final LatLng agent;
+  final double headingDeg;
+
+  /// Metres from the centre to the edge of the map.
+  final double radiusM;
 
   static const Color _blue = Color(0xFF3B82F6);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final current = frame.value;
-    final agent = current?.agent;
-    if (current == null || agent == null) return;
-    final at = geometry.transform(size);
-    var p = at(geometry.toEnu(agent));
-    const inset = 8.0;
-    p = Offset(p.dx.clamp(inset, size.width - inset), p.dy.clamp(inset, size.height - inset));
+    final centre = size.center(Offset.zero);
+    final scale = (size.shortestSide / 2) / radiusM;
+    final here = EnuFrame(layer.origin).toEnu(agent);
 
     canvas.save();
-    canvas.translate(p.dx, p.dy);
-    canvas.rotate(current.headingDeg * math.pi / 180.0);
+    canvas.translate(centre.dx, centre.dy);
+    // North up: screen y runs down, so north is flipped.
+    canvas.scale(scale, -scale);
+    canvas.translate(-here.east, -here.north);
+
+    final hairline = 1.0 / scale;
+    canvas.drawPath(layer.moderate, Paint()..color = Color(severityColour(zoneModerate).argb).withAlpha(alpha8(0.8)));
+    canvas.drawPath(layer.critical, Paint()..color = Color(severityColour(zoneCritical).argb).withAlpha(alpha8(0.85)));
+    for (final (path, colour) in layer.boundaries) {
+      canvas.drawPath(path, Paint()..color = colour.withAlpha(alpha8(0.12)));
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = colour
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2 * hairline
+          ..isAntiAlias = true,
+      );
+    }
+    for (final (at, zone) in layer.drops) {
+      canvas.drawCircle(at, 4.5 * hairline, Paint()..color = const Color(0xFF0B0F14));
+      canvas.drawCircle(at, 3.2 * hairline, Paint()..color = Color(severityColour(zone).argb));
+    }
+    canvas.restore();
+
+    // The agent, always at the centre, turning with the camera.
+    canvas.save();
+    canvas.translate(centre.dx, centre.dy);
+    canvas.rotate(headingDeg * math.pi / 180.0);
     final arrow = Path()
       ..moveTo(0, -9)
       ..lineTo(6.5, 6)
@@ -230,6 +229,9 @@ class _AgentPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_AgentPainter oldDelegate) =>
-      !identical(oldDelegate.geometry, geometry) || oldDelegate.frame != frame;
+  bool shouldRepaint(_MinimapPainter oldDelegate) =>
+      !identical(oldDelegate.layer, layer) ||
+      oldDelegate.agent != agent ||
+      oldDelegate.headingDeg != headingDeg ||
+      oldDelegate.radiusM != radiusM;
 }

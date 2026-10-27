@@ -4,8 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plot_finder/core/geo/arcore_pose.dart';
 import 'package:plot_finder/core/geo/enu.dart';
 import 'package:plot_finder/core/render/health_geometry.dart';
+import 'package:plot_finder/core/render/plot_palette.dart';
 import 'package:plot_finder/core/render/world_scene.dart';
 import 'package:plot_finder/core/math_util.dart';
+import 'package:plot_finder/data/plot.dart';
 
 void main() {
   const origin = LatLng(12.7862, 76.7201);
@@ -100,41 +102,59 @@ void main() {
       origin,
     ];
     final centre = offset(origin, 5.0, 5.0);
-    HealthCell cell(int severity, double e, double n) => HealthCell(
-          severity: severity,
-          centroid: offset(origin, e + 1, n + 1),
-          ring: [offset(origin, e, n), offset(origin, e + 2, n), offset(origin, e + 2, n + 2), offset(origin, e, n + 2)],
+    Plot plot(String id, List<LatLng> ring, int colour) => Plot(
+          id: id,
+          name: id,
+          ring: ring,
+          centroid: ring.first,
+          areaSqM: 100,
+          landmarkNote: '',
+          colourIndex: colour,
+          createdAt: '2026-10-01',
+          syncedAtMs: 0,
         );
 
-    test('the boundary is centred on the origin and its closing vertex dropped', () {
+    test('each plot is centred on the shared origin, closing vertex dropped, in its own colour', () {
       final scene = buildWorldScene(
-        ring: ring,
+        plots: [plot('A', ring, 0), plot('B', [for (final p in ring) offset(p, 20, 0)], 3)],
+        patches: const [],
         origin: centre,
-        cells: const [],
-        layer: HealthLayer.off,
-        tintArgb: 0xFFFF3B30,
         alpha: 1.0,
       );
-      expect(scene.ring.length, 8);
-      expect(scene.ring[0], closeTo(-5.0, 1e-3));
-      expect(scene.ring[1], closeTo(-5.0, 1e-3));
-      expect(scene.fill.length, 12);
+      expect(scene.plots.length, 2);
+      expect(scene.plots[0].ring.length, 8);
+      expect(scene.plots[0].ring[0], closeTo(-5.0, 1e-3));
+      expect(scene.plots[0].ring[1], closeTo(-5.0, 1e-3));
+      expect(scene.plots[0].fill.length, 12);
+      expect(scene.plots[1].ring[0], closeTo(15.0, 1e-3), reason: 'the second plot, 20 m east, same frame');
+      expect(scene.plots[0].tintArgb, plotColour(0).argb);
+      expect(scene.plots[1].tintArgb, plotColour(3).argb);
     });
 
-    test('problem areas leave healthy cells out; off leaves every cell out', () {
-      final cells = [cell(0, 0, 0), cell(2, 4, 4)];
-      List<double> build(HealthLayer layer) => buildWorldScene(
-            ring: ring,
-            origin: centre,
-            cells: cells,
-            layer: layer,
-            tintArgb: 0xFFFF3B30,
-            alpha: 1.0,
-          ).cells;
-      // Two triangles per cell, six floats per vertex.
-      expect(build(HealthLayer.all).length, 2 * 2 * 3 * 6);
-      expect(build(HealthLayer.stress).length, 2 * 3 * 6);
-      expect(build(HealthLayer.off), isEmpty);
+    test('drop points carry their position and their zone colour', () {
+      final scene = buildWorldScene(
+        plots: [plot('A', ring, 0)],
+        patches: [
+          HealthPatch(
+            index: HealthIndex.ndvi,
+            rank: 1,
+            zone: zoneCritical,
+            centroid: offset(origin, 7, 3),
+            cellCount: 4,
+            areaSqM: 36,
+          ),
+        ],
+        origin: centre,
+        alpha: 1.0,
+      );
+      expect(scene.drops.length, 5);
+      expect(scene.drops[0], closeTo(2.0, 1e-3));
+      expect(scene.drops[1], closeTo(-2.0, 1e-3));
+      final red = severityColour(zoneCritical).argb;
+      expect(scene.drops[2], closeTo(((red >> 16) & 0xFF) / 255.0, 1e-6));
+      final message = scene.toMessage();
+      expect(message['dropHeight'], dropPointHeightM);
+      expect((message['plots']! as List).length, 1);
     });
   });
 }

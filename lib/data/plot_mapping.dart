@@ -34,8 +34,6 @@ extension PlotDtoMapping on PlotDto {
         ringJson: jsonEncode(polygon.coordinates.isEmpty ? const <List<double>>[] : polygon.coordinates.first),
         centroidLat: centroidLat,
         centroidLng: centroidLng,
-        accessLat: accessLat,
-        accessLng: accessLng,
         areaSqM: areaSqM,
         landmarkNote: landmarkNote,
         colourIndex: colourIndex,
@@ -58,27 +56,33 @@ extension HealthDtoMapping on HealthDto {
   PlotHealth toHealth(int syncedAtMs) => PlotHealth(
         plotId: plotId,
         capturedOn: capturedOn,
-        indexName: indexName,
         synthetic: synthetic,
         note: note,
         cellSizeM: cellSizeM,
         cells: [
           for (final c in cells)
             HealthCell(
-              // Clamped, not trusted. A band the renderer has no colour for
-              // would otherwise index off the end of the ramp mid-frame.
-              severity: c.severity.clamp(0, 3),
               centroid: LatLng(c.centroidLat, c.centroidLng),
               ring: _ringOf(c.cell.coordinates),
+              // Clamped, not trusted. A zone the renderer has no colour for
+              // would otherwise index off the end of the ramp mid-frame.
+              zones: [for (final index in HealthIndex.values) (c.zones[index.wireName] ?? zoneNormal).clamp(0, 2)],
             ),
         ],
-        hotspots: [
-          for (final h in hotspots)
-            HealthHotspot(
-              rank: h.rank,
-              severity: h.severity.clamp(0, 3),
-              centroid: LatLng(h.centroidLat, h.centroidLng),
-            ),
+        patches: [
+          for (final p in patches)
+            // An index this build does not know is skipped, not guessed at.
+            if (HealthIndex.fromWire(p.index) case final index?)
+              // Normal ground is never a drop point, whatever the wire says.
+              if (p.zone >= zoneModerate)
+                HealthPatch(
+                  index: index,
+                  rank: p.rank,
+                  zone: p.zone.clamp(zoneModerate, zoneCritical),
+                  centroid: LatLng(p.centroidLat, p.centroidLng),
+                  cellCount: p.cellCount,
+                  areaSqM: p.areaSqM,
+                ),
         ],
         syncedAtMs: syncedAtMs,
       );
@@ -114,7 +118,6 @@ extension PlotEntityMapping on PlotEntity {
       // Indian Ocean, so the swap happens in exactly one place: `_ringOf`.
       ring: _ringOf([ring]),
       centroid: LatLng(centroidLat, centroidLng),
-      accessPoint: LatLng(accessLat, accessLng),
       areaSqM: areaSqM,
       landmarkNote: landmarkNote,
       colourIndex: colourIndex,

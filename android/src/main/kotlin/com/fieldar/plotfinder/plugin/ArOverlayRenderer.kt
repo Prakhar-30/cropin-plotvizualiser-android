@@ -12,24 +12,31 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 
-/**
- * The plot, as Dart describes it, in a plot-local metric frame: east, north and
- * up in metres from the plot's centroid, with true north up.
- *
- * Built once per plot, health layer or heading-confidence change - never per
- * frame. What moves per frame is only the camera, which ARCore supplies.
- */
-internal class OverlayScene(
+/** One plot of the scene: ground fill, boundary ring, colour. */
+internal class ScenePlot(
     /** Ground fill, already triangulated: (east, north) per vertex. */
     val fill: FloatArray,
     /** The boundary, open ring: (east, north) per vertex. */
     val ring: FloatArray,
-    /** Crop-health cells, triangulated: (east, north, r, g, b, a) per vertex. */
-    val cells: FloatArray,
+    /** Plot colour, 0xAARRGGBB. */
+    val tint: Int,
+)
+
+/**
+ * Every nearby plot and every drop point, as Dart describes them, in one local
+ * metric frame: east, north and up in metres from a fixed origin, true north up.
+ *
+ * Built when the nearby plots, the crop-condition index or the snapshots
+ * change - never per frame. What moves per frame is only the camera, which
+ * ARCore supplies.
+ */
+internal class OverlayScene(
+    val plots: List<ScenePlot>,
+    /** Drop points: (east, north, r, g, b) per point. */
+    val drops: FloatArray,
     val wallHeight: Float,
     val postHeight: Float,
-    /** Plot colour, 0xAARRGGBB, already greyed out by Dart when untrusted. */
-    val tint: Int,
+    val dropHeight: Float,
     /** Overall opacity from heading confidence. */
     val alpha: Float,
     val wallAlpha: Float,
@@ -37,22 +44,30 @@ internal class OverlayScene(
     val railAlpha: Float,
 ) {
     companion object {
+        private fun floats(v: Any?): FloatArray = when (v) {
+            is FloatArray -> v
+            is DoubleArray -> FloatArray(v.size) { v[it].toFloat() }
+            is List<*> -> FloatArray(v.size) { (v[it] as Number).toFloat() }
+            else -> FloatArray(0)
+        }
+
         fun from(arguments: Any?): OverlayScene? {
             val map = arguments as? Map<*, *> ?: return null
-            fun floats(key: String): FloatArray = when (val v = map[key]) {
-                is FloatArray -> v
-                is DoubleArray -> FloatArray(v.size) { v[it].toFloat() }
-                is List<*> -> FloatArray(v.size) { (v[it] as Number).toFloat() }
-                else -> FloatArray(0)
-            }
             fun number(key: String, default: Float): Float = (map[key] as? Number)?.toFloat() ?: default
+            val plots = (map["plots"] as? List<*>).orEmpty().mapNotNull { entry ->
+                val plot = entry as? Map<*, *> ?: return@mapNotNull null
+                ScenePlot(
+                    fill = floats(plot["fill"]),
+                    ring = floats(plot["ring"]),
+                    tint = (plot["tint"] as? Number)?.toLong()?.toInt() ?: 0xFFFF3B30.toInt(),
+                )
+            }
             return OverlayScene(
-                fill = floats("fill"),
-                ring = floats("ring"),
-                cells = floats("cells"),
+                plots = plots,
+                drops = floats(map["drops"]),
                 wallHeight = number("wallHeight", 2.6f),
                 postHeight = number("postHeight", 2.5f),
-                tint = (map["tint"] as? Number)?.toLong()?.toInt() ?: 0xFFFF3B30.toInt(),
+                dropHeight = number("dropHeight", 4.5f),
                 alpha = number("alpha", 1f),
                 wallAlpha = number("wallAlpha", 0.28f),
                 fillAlpha = number("fillAlpha", 0.18f),
@@ -62,22 +77,36 @@ internal class OverlayScene(
     }
 }
 
+/** GL buffers for one plot. */
+private class PlotBuffers(
+    val tintR: Float,
+    val tintG: Float,
+    val tintB: Float,
+    val fill: FloatBuffer,
+    val fillCount: Int,
+    val outline: FloatBuffer,
+    val outlineCount: Int,
+    val walls: FloatBuffer,
+    val rails: FloatBuffer,
+    val posts: FloatBuffer,
+    val edgeCount: Int,
+    /** (east, north) of each edge's midpoint, for far-to-near sorting. */
+    val edgeMid: FloatArray,
+)
+
 /**
- * Draws the plot in the same GL frame as ARCore's camera image.
+ * Draws the plots and the drop points in the same GL frame as ARCore's camera
+ * image.
  *
- * This is the fix for the overlay swimming as the phone turns. Drawn on the
- * Flutter canvas, the overlay always lagged the picture under it by the trip
- * through the event channel and the next Flutter frame - one or two frames, so
- * at an ordinary 30 degrees per second of hand motion the boundary trailed the
- * scene by one or two degrees and slid back when the hand stopped. Here it is
- * projected with the view and projection matrices of the very frame the camera
- * image came from, so the two cannot disagree.
+ * Drawn on the Flutter canvas, the overlay always lagged the picture under it
+ * by the trip through the event channel and the next Flutter frame, so the
+ * boundary trailed every turn of the hand. Here it is projected with the view
+ * and projection matrices of the very frame the camera image came from.
  *
- * It also makes occlusion possible. Where ARCore's Depth API is available, each
- * fragment of the overlay is compared with the measured depth of the scene at
- * that pixel; a person, a tree or a wall standing nearer than the boundary hides
- * it - not completely, but down to a faint ghost, so the boundary is never lost
- * behind the crop it encloses ("X-ray" rendering).
+ * Where ARCore's Depth API is available, each fragment is compared with the
+ * measured depth of the scene at that pixel; something clearly nearer - a
+ * person, a tree, a wall - hides it, not completely but down to a ghost, so a
+ * boundary is never lost behind the crop it encloses ("X-ray" rendering).
  */
 internal class ArOverlayRenderer {
     private var program = 0
@@ -96,8 +125,11 @@ internal class ArOverlayRenderer {
     private var uUvX = 0
     private var uUvY = 0
     private var uGhost = 0
+    private var uPointSize = 0
+    private var uRound = 0
 
     private var lineWidthMax = 1f
+    private var pointSizeMax = 1f
 
     private var depthTexture = 0
     private var depthAvailableAt = 0L
@@ -105,23 +137,19 @@ internal class ArOverlayRenderer {
     private val uvIn = floatArrayOf(0f, 0f, 1f, 0f, 0f, 1f)
 
     private var scene: OverlayScene? = null
-    private var fillVerts: FloatBuffer? = null
-    private var fillCount = 0
-    private var outlineVerts: FloatBuffer? = null
-    private var outlineCount = 0
-    private var wallVerts: FloatBuffer? = null
-    private var railVerts: FloatBuffer? = null
-    private var postVerts: FloatBuffer? = null
-    private var edgeCount = 0
-    private var edgeMid = FloatArray(0)
-    private var cellPositions: FloatBuffer? = null
-    private var cellColors: FloatBuffer? = null
-    private var cellCount = 0
+    private var plots: List<PlotBuffers> = emptyList()
+    private var dropStems: FloatBuffer? = null
+    private var dropHeads: FloatBuffer? = null
+    private var dropColors: FloatBuffer? = null
+    private var stemColors: FloatBuffer? = null
+    private var dropCount = 0
 
     private val model = FloatArray(16)
     private val modelView = FloatArray(16)
     private val mvp = FloatArray(16)
-    private val edgeOrder = ArrayList<Int>()
+
+    /** (plot index, edge index, distance) for every wall, re-sorted each frame. */
+    private val wallOrder = ArrayList<Triple<Int, Int, Float>>()
 
     fun create() {
         program = GLES20.glCreateProgram().also { p ->
@@ -148,10 +176,14 @@ internal class ArOverlayRenderer {
         uUvX = GLES20.glGetUniformLocation(program, "u_UvX")
         uUvY = GLES20.glGetUniformLocation(program, "u_UvY")
         uGhost = GLES20.glGetUniformLocation(program, "u_Ghost")
+        uPointSize = GLES20.glGetUniformLocation(program, "u_PointSize")
+        uRound = GLES20.glGetUniformLocation(program, "u_Round")
 
         val range = FloatArray(2)
         GLES20.glGetFloatv(GLES20.GL_ALIASED_LINE_WIDTH_RANGE, range, 0)
         lineWidthMax = max(1f, range[1])
+        GLES20.glGetFloatv(GLES20.GL_ALIASED_POINT_SIZE_RANGE, range, 0)
+        pointSizeMax = max(1f, range[1])
 
         val textures = IntArray(1)
         GLES20.glGenTextures(1, textures, 0)
@@ -170,10 +202,8 @@ internal class ArOverlayRenderer {
     fun setScene(next: OverlayScene?) {
         scene = next
         if (next == null) {
-            edgeCount = 0
-            fillCount = 0
-            cellCount = 0
-            outlineCount = 0
+            plots = emptyList()
+            dropCount = 0
         } else if (program != 0) {
             build(next)
         }
@@ -223,7 +253,7 @@ internal class ArOverlayRenderer {
 
     /**
      * Draws the scene. [placement] is `[a, b, c, d, tx, tn]`: the 2x2 rotation
-     * from true east-north into the session's east-north, and where the plot's
+     * from true east-north into the session's east-north, and where the scene's
      * origin sits in it. [floorY] is the ground's height in ARCore's world.
      */
     fun draw(
@@ -243,14 +273,12 @@ internal class ArOverlayRenderer {
         val b = placement[1]
         val c = placement[2]
         val d = placement[3]
-        val tx = placement[4]
-        val tn = placement[5]
-        // Column-major. Input is (east, north, up, 1) in the plot frame; output
+        // Column-major. Input is (east, north, up, 1) in the scene frame; output
         // is ARCore's world, where x is session east, -z session north, y up.
         model[0] = a; model[1] = 0f; model[2] = -c; model[3] = 0f
         model[4] = b; model[5] = 0f; model[6] = -d; model[7] = 0f
         model[8] = 0f; model[9] = 1f; model[10] = 0f; model[11] = 0f
-        model[12] = tx; model[13] = floorY; model[14] = -tn; model[15] = 1f
+        model[12] = placement[4]; model[13] = floorY; model[14] = -placement[5]; model[15] = 1f
         Matrix.multiplyMM(modelView, 0, view, 0, model, 0)
         Matrix.multiplyMM(mvp, 0, projection, 0, modelView, 0)
 
@@ -269,70 +297,94 @@ internal class ArOverlayRenderer {
         GLES20.glUniform2f(uUvX, uvTransform[2] - uvTransform[0], uvTransform[3] - uvTransform[1])
         GLES20.glUniform2f(uUvY, uvTransform[4] - uvTransform[0], uvTransform[5] - uvTransform[1])
         GLES20.glUniform1i(uUseDepth, if (depthActive) 1 else 0)
+        GLES20.glUniform1f(uPointSize, 1f)
+        GLES20.glUniform1i(uRound, 0)
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, depthTexture)
         GLES20.glUniform1i(uDepth, 0)
 
-        val tintR = ((s.tint shr 16) and 0xFF) / 255f
-        val tintG = ((s.tint shr 8) and 0xFF) / 255f
-        val tintB = (s.tint and 0xFF) / 255f
-
-        // Ground first - cells, then the plot fill and its outline - because
-        // everything else stands on it.
+        // Ground first - every plot's fill and outline - because everything
+        // else stands on it.
         GLES20.glUniform1f(uGhost, SURFACE_GHOST)
-        if (cellCount > 0) {
-            fade(0f, CELL_FADE_START_M, CELL_FADE_FLOOR)
-            GLES20.glUniform1f(uAlpha, s.alpha)
-            drawArrays(cellPositions!!, cellColors, GLES20.GL_TRIANGLES, 0, cellCount)
-        }
         noFade()
-        if (fillCount > 0) {
-            color(tintR, tintG, tintB, s.fillAlpha * s.alpha)
-            drawArrays(fillVerts!!, null, GLES20.GL_TRIANGLES, 0, fillCount)
-        }
-        if (outlineCount > 1) {
-            lineWidth(4f)
-            color(tintR, tintG, tintB, 0.9f * s.alpha)
-            drawArrays(outlineVerts!!, null, GLES20.GL_LINE_LOOP, 0, outlineCount)
+        for (p in plots) {
+            if (p.fillCount > 0) {
+                color(p.tintR, p.tintG, p.tintB, s.fillAlpha * s.alpha)
+                drawArrays(p.fill, null, GLES20.GL_TRIANGLES, 0, p.fillCount)
+            }
+            if (p.outlineCount > 1) {
+                lineWidth(4f)
+                color(p.tintR, p.tintG, p.tintB, 0.9f * s.alpha)
+                drawArrays(p.outline, null, GLES20.GL_LINE_LOOP, 0, p.outlineCount)
+            }
         }
 
-        if (edgeCount > 0) {
-            // Walls farthest first: translucent panels composited in ring order
-            // let the far side paint over the near one, which reads as a fold.
-            sortEdges(cameraX, cameraZ)
-            fade(WALL_FADE_END_M, WALL_FADE_START_M, WALL_FADE_FLOOR)
-            color(tintR, tintG, tintB, s.wallAlpha * s.alpha)
-            for (i in edgeOrder) drawArrays(wallVerts!!, null, GLES20.GL_TRIANGLES, i * 6, 6)
+        // Walls of every plot together, farthest first: translucent panels
+        // composited in any other order let a far wall paint over a near one,
+        // which reads as a fold - and with several plots, as plots overlapping.
+        sortWalls(cameraX, cameraZ)
+        fade(WALL_FADE_END_M, WALL_FADE_START_M, WALL_FADE_FLOOR)
+        for ((plotIndex, edge, _) in wallOrder) {
+            val p = plots[plotIndex]
+            color(p.tintR, p.tintG, p.tintB, s.wallAlpha * s.alpha)
+            drawArrays(p.walls, null, GLES20.GL_TRIANGLES, edge * 6, 6)
+        }
 
-            // Rails and posts last, over every panel, each on a dark backing so
-            // they read against bright sky and pale soil alike.
-            fade(WALL_FADE_END_M, WALL_FADE_START_M, MIN_RAIL_OPACITY)
-            GLES20.glUniform1f(uGhost, LINE_GHOST)
+        // Rails and posts over every panel, each on a dark backing so they read
+        // against bright sky and pale soil alike.
+        fade(WALL_FADE_END_M, WALL_FADE_START_M, MIN_RAIL_OPACITY)
+        GLES20.glUniform1f(uGhost, LINE_GHOST)
+        for (p in plots) {
+            if (p.edgeCount == 0) continue
             lineWidth(11f)
             color(0.04f, 0.06f, 0.08f, 0.5f * s.alpha)
-            drawArrays(railVerts!!, null, GLES20.GL_LINES, 0, edgeCount * 2)
-            drawArrays(postVerts!!, null, GLES20.GL_LINES, 0, edgeCount * 2)
+            drawArrays(p.rails, null, GLES20.GL_LINES, 0, p.edgeCount * 2)
+            drawArrays(p.posts, null, GLES20.GL_LINES, 0, p.edgeCount * 2)
             lineWidth(7f)
-            color(tintR, tintG, tintB, s.railAlpha * s.alpha)
-            drawArrays(railVerts!!, null, GLES20.GL_LINES, 0, edgeCount * 2)
-            drawArrays(postVerts!!, null, GLES20.GL_LINES, 0, edgeCount * 2)
+            color(p.tintR, p.tintG, p.tintB, s.railAlpha * s.alpha)
+            drawArrays(p.rails, null, GLES20.GL_LINES, 0, p.edgeCount * 2)
+            drawArrays(p.posts, null, GLES20.GL_LINES, 0, p.edgeCount * 2)
+        }
+
+        // Drop points last, over everything: a stem from the ground to above
+        // the walls, and a round head on top. A drop point is a walk-to target,
+        // and a target hidden behind the fence between you and it is none.
+        if (dropCount > 0) {
+            noFade()
+            GLES20.glUniform1f(uGhost, LINE_GHOST)
+            lineWidth(10f)
+            color(0.04f, 0.06f, 0.08f, 0.55f * s.alpha)
+            drawArrays(dropStems!!, null, GLES20.GL_LINES, 0, dropCount * 2)
+            lineWidth(6f)
+            GLES20.glUniform1f(uAlpha, s.alpha)
+            drawArrays(dropStems!!, stemColors, GLES20.GL_LINES, 0, dropCount * 2)
+
+            GLES20.glUniform1i(uRound, 1)
+            GLES20.glUniform1f(uPointSize, min(HEAD_SIZE_PX + 10f, pointSizeMax))
+            color(0.04f, 0.06f, 0.08f, 0.7f * s.alpha)
+            drawArrays(dropHeads!!, null, GLES20.GL_POINTS, 0, dropCount)
+            GLES20.glUniform1f(uPointSize, min(HEAD_SIZE_PX, pointSizeMax))
+            GLES20.glUniform1f(uAlpha, s.alpha)
+            drawArrays(dropHeads!!, dropColors, GLES20.GL_POINTS, 0, dropCount)
+            GLES20.glUniform1i(uRound, 0)
         }
 
         GLES20.glDisable(GLES20.GL_BLEND)
         GLES20.glDepthMask(true)
     }
 
-    private fun sortEdges(cameraX: Float, cameraZ: Float) {
-        edgeOrder.clear()
-        for (i in 0 until edgeCount) edgeOrder.add(i)
-        val distances = FloatArray(edgeCount) { i ->
-            val e = edgeMid[i * 2]
-            val n = edgeMid[i * 2 + 1]
-            val wx = model[0] * e + model[4] * n + model[12]
-            val wz = model[2] * e + model[6] * n + model[14]
-            hypot(wx - cameraX, wz - cameraZ)
+    private fun sortWalls(cameraX: Float, cameraZ: Float) {
+        wallOrder.clear()
+        for ((plotIndex, p) in plots.withIndex()) {
+            for (edge in 0 until p.edgeCount) {
+                val e = p.edgeMid[edge * 2]
+                val n = p.edgeMid[edge * 2 + 1]
+                val wx = model[0] * e + model[4] * n + model[12]
+                val wz = model[2] * e + model[6] * n + model[14]
+                wallOrder.add(Triple(plotIndex, edge, hypot(wx - cameraX, wz - cameraZ)))
+            }
         }
-        edgeOrder.sortByDescending { distances[it] }
+        wallOrder.sortByDescending { it.third }
     }
 
     private fun fade(end: Float, start: Float, floor: Float) {
@@ -367,59 +419,80 @@ internal class ArOverlayRenderer {
     }
 
     private fun build(s: OverlayScene) {
+        plots = s.plots.map { buildPlot(it, s) }
+
+        // Drop points: a stem as a line from the ground to the top, a head as
+        // one point at the top. Both coloured by the point's zone.
+        dropCount = s.drops.size / 5
+        val stems = FloatArray(dropCount * 6)
+        val heads = FloatArray(dropCount * 3)
+        val headColors = FloatArray(dropCount * 4)
+        val stemColorArray = FloatArray(dropCount * 8)
+        for (i in 0 until dropCount) {
+            val e = s.drops[i * 5]
+            val n = s.drops[i * 5 + 1]
+            val r = s.drops[i * 5 + 2]
+            val g = s.drops[i * 5 + 3]
+            val b = s.drops[i * 5 + 4]
+            System.arraycopy(floatArrayOf(e, n, 0f, e, n, s.dropHeight), 0, stems, i * 6, 6)
+            System.arraycopy(floatArrayOf(e, n, s.dropHeight), 0, heads, i * 3, 3)
+            System.arraycopy(floatArrayOf(r, g, b, 1f), 0, headColors, i * 4, 4)
+            System.arraycopy(floatArrayOf(r, g, b, 0.95f, r, g, b, 0.95f), 0, stemColorArray, i * 8, 8)
+        }
+        dropStems = buffer(stems)
+        dropHeads = buffer(heads)
+        dropColors = buffer(headColors)
+        stemColors = buffer(stemColorArray)
+    }
+
+    private fun buildPlot(p: ScenePlot, s: OverlayScene): PlotBuffers {
         // Ground surfaces sit a hair above the floor so they never fight the
         // measured floor in the depth test.
-        fillCount = s.fill.size / 2
-        fillVerts = buffer(FloatArray(fillCount * 3).also { out ->
-            for (i in 0 until fillCount) {
-                out[i * 3] = s.fill[i * 2]; out[i * 3 + 1] = s.fill[i * 2 + 1]; out[i * 3 + 2] = 0.02f
-            }
-        })
+        val fillCount = p.fill.size / 2
+        val fill = FloatArray(fillCount * 3)
+        for (i in 0 until fillCount) {
+            fill[i * 3] = p.fill[i * 2]; fill[i * 3 + 1] = p.fill[i * 2 + 1]; fill[i * 3 + 2] = 0.02f
+        }
+        val n = p.ring.size / 2
+        val outline = FloatArray(n * 3)
+        for (i in 0 until n) {
+            outline[i * 3] = p.ring[i * 2]; outline[i * 3 + 1] = p.ring[i * 2 + 1]; outline[i * 3 + 2] = 0.03f
+        }
 
-        val n = s.ring.size / 2
-        outlineCount = n
-        outlineVerts = buffer(FloatArray(n * 3).also { out ->
-            for (i in 0 until n) {
-                out[i * 3] = s.ring[i * 2]; out[i * 3 + 1] = s.ring[i * 2 + 1]; out[i * 3 + 2] = 0.03f
-            }
-        })
-
-        edgeCount = if (n >= 2) n else 0
-        val walls = FloatArray(edgeCount * 6 * 3)
-        val rails = FloatArray(edgeCount * 2 * 3)
-        val posts = FloatArray(edgeCount * 2 * 3)
-        edgeMid = FloatArray(edgeCount * 2)
+        val edgeCount = if (n >= 2) n else 0
+        val walls = FloatArray(edgeCount * 18)
+        val rails = FloatArray(edgeCount * 6)
+        val posts = FloatArray(edgeCount * 6)
+        val edgeMid = FloatArray(edgeCount * 2)
         val h = s.wallHeight
         for (i in 0 until edgeCount) {
-            val ae = s.ring[i * 2]
-            val an = s.ring[i * 2 + 1]
-            val be = s.ring[((i + 1) % n) * 2]
-            val bn = s.ring[((i + 1) % n) * 2 + 1]
-            val quad = floatArrayOf(
-                ae, an, 0f, be, bn, 0f, be, bn, h,
-                ae, an, 0f, be, bn, h, ae, an, h,
+            val ae = p.ring[i * 2]
+            val an = p.ring[i * 2 + 1]
+            val be = p.ring[((i + 1) % n) * 2]
+            val bn = p.ring[((i + 1) % n) * 2 + 1]
+            System.arraycopy(
+                floatArrayOf(ae, an, 0f, be, bn, 0f, be, bn, h, ae, an, 0f, be, bn, h, ae, an, h),
+                0, walls, i * 18, 18,
             )
-            System.arraycopy(quad, 0, walls, i * 18, 18)
             System.arraycopy(floatArrayOf(ae, an, h, be, bn, h), 0, rails, i * 6, 6)
             System.arraycopy(floatArrayOf(ae, an, 0f, ae, an, s.postHeight), 0, posts, i * 6, 6)
             edgeMid[i * 2] = (ae + be) / 2f
             edgeMid[i * 2 + 1] = (an + bn) / 2f
         }
-        wallVerts = buffer(walls)
-        railVerts = buffer(rails)
-        postVerts = buffer(posts)
-
-        cellCount = s.cells.size / 6
-        val positions = FloatArray(cellCount * 3)
-        val colors = FloatArray(cellCount * 4)
-        for (i in 0 until cellCount) {
-            positions[i * 3] = s.cells[i * 6]
-            positions[i * 3 + 1] = s.cells[i * 6 + 1]
-            positions[i * 3 + 2] = 0.01f
-            System.arraycopy(s.cells, i * 6 + 2, colors, i * 4, 4)
-        }
-        cellPositions = buffer(positions)
-        cellColors = buffer(colors)
+        return PlotBuffers(
+            tintR = ((p.tint shr 16) and 0xFF) / 255f,
+            tintG = ((p.tint shr 8) and 0xFF) / 255f,
+            tintB = (p.tint and 0xFF) / 255f,
+            fill = buffer(fill),
+            fillCount = fillCount,
+            outline = buffer(outline),
+            outlineCount = n,
+            walls = buffer(walls),
+            rails = buffer(rails),
+            posts = buffer(posts),
+            edgeCount = edgeCount,
+            edgeMid = edgeMid,
+        )
     }
 
     private fun compile(type: Int, source: String): Int = GLES20.glCreateShader(type).also {
@@ -430,8 +503,8 @@ internal class ArOverlayRenderer {
     private companion object {
         /**
          * Opacity left on overlay that something real stands in front of. Lines
-         * keep more than surfaces: the rail is how the boundary is found, and
-         * it must stay findable through a crop row or a passer-by.
+         * keep more than surfaces: the rail and the drop points are how things
+         * are found, and must stay findable through a crop row or a passer-by.
          */
         const val SURFACE_GHOST = 0.35f
         const val LINE_GHOST = 0.6f
@@ -442,8 +515,9 @@ internal class ArOverlayRenderer {
         const val WALL_FADE_START_M = 8f
         const val WALL_FADE_END_M = 1.5f
         const val MIN_RAIL_OPACITY = 0.75f
-        const val CELL_FADE_START_M = 6f
-        const val CELL_FADE_FLOOR = 0.62f
+
+        /** A drop point's head at 10 m; it shrinks with distance in the shader. */
+        const val HEAD_SIZE_PX = 44f
 
         fun buffer(values: FloatArray): FloatBuffer =
             ByteBuffer.allocateDirect(max(4, values.size * 4)).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
@@ -454,19 +528,23 @@ internal class ArOverlayRenderer {
         val VERTEX = """
             uniform mat4 u_Mvp;
             uniform mat4 u_ModelView;
+            uniform float u_PointSize;
             attribute vec3 a_Position;
             attribute vec4 a_Color;
             varying vec4 v_Color;
             varying float v_ViewDepth;
             varying float v_Distance;
             void main() {
-                // The plot frame is (east, north, up); the model matrix takes
+                // The scene frame is (east, north, up); the model matrix takes
                 // it to ARCore's world.
                 vec4 local = vec4(a_Position.x, a_Position.y, a_Position.z, 1.0);
                 vec4 eye = u_ModelView * local;
                 v_ViewDepth = -eye.z;
                 v_Distance = length(eye.xyz);
                 v_Color = a_Color;
+                // Points shrink with distance, but not below a third of their
+                // size, so a drop point 200 m off is still a dot, not nothing.
+                gl_PointSize = u_PointSize * clamp(10.0 / max(v_Distance, 0.1), 0.35, 1.3);
                 gl_Position = u_Mvp * local;
             }
         """.trimIndent()
@@ -479,6 +557,7 @@ internal class ArOverlayRenderer {
             #endif
             uniform sampler2D u_Depth;
             uniform int u_UseDepth;
+            uniform int u_Round;
             uniform vec2 u_Viewport;
             uniform vec2 u_UvOrigin;
             uniform vec2 u_UvX;
@@ -492,6 +571,10 @@ internal class ArOverlayRenderer {
             varying float v_ViewDepth;
             varying float v_Distance;
             void main() {
+                if (u_Round == 1) {
+                    vec2 c = gl_PointCoord - vec2(0.5);
+                    if (dot(c, c) > 0.25) discard;
+                }
                 float t = clamp((v_Distance - u_FadeEnd) / (u_FadeStart - u_FadeEnd), 0.0, 1.0);
                 float fade = u_FadeFloor + (1.0 - u_FadeFloor) * t;
                 float visible = 1.0;
@@ -504,8 +587,8 @@ internal class ArOverlayRenderer {
                         // Only something clearly in front occludes: nearer than
                         // 80% of the overlay's distance starts to, nearer than
                         // 60% fully does. A person 2 m away hides a boundary at
-                        // 16 m; the crop row just inside the boundary, or the
-                        // floor the fill lies on, does not.
+                        // 16 m; the crop row just inside it, or the floor the
+                        // fill lies on, does not.
                         float ratio = real / max(v_ViewDepth, 0.01);
                         float hidden = clamp((0.8 - ratio) / 0.2, 0.0, 1.0);
                         visible = mix(1.0, u_Ghost, hidden);

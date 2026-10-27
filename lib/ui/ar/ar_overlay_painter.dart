@@ -30,9 +30,6 @@ import 'ar_controller.dart';
 class ArOverlayPainter extends CustomPainter {
   ArOverlayPainter({
     required this.frame,
-    required this.plotId,
-    required this.areaHectares,
-    required this.colourIndex,
     required this.confidence,
     required this.accuracyM,
     required this.devicePixelRatio,
@@ -40,20 +37,15 @@ class ArOverlayPainter extends CustomPainter {
   }) : super(repaint: frame);
 
   final ValueListenable<ArFrame?> frame;
-  final String plotId;
-  final double areaHectares;
-
-  /// Palette slot from the plot record, so neighbouring plots never match.
-  final int colourIndex;
   final HeadingConfidence confidence;
   final double accuracyM;
   final double devicePixelRatio;
 
-  /// False on the ARCore path, where the boundary, fill and health cells are
-  /// drawn natively in the camera's own GL frame. This canvas then carries
-  /// only what is text or screen furniture: the label, hotspot ranks, the
-  /// off-screen arrow and the crosshair.
+  /// False on the ARCore path, where the boundaries and the drop points are
+  /// drawn natively in the camera's own GL frame. This canvas then carries only
+  /// text and screen furniture: the labels, the off-screen arrow, the crosshair.
   final bool drawGeometry;
+
   static const Color _labelBackground = Color(0xCC0B0F14);
 
   /// Dark backing for strokes that must survive any background.
@@ -71,60 +63,61 @@ class ArOverlayPainter extends CustomPainter {
     _drawCrosshair(canvas, size);
     final current = frame.value;
     if (current == null) return;
-    final overlay = current.overlay;
 
-    // Grey and dim when the heading cannot be trusted. The overlay is still
-    // drawn rather than hidden, because "roughly there, direction unknown" is
-    // useful and a blank screen is not - but it must not look authoritative,
-    // and it must not keep the plot's identity colour. That colour says "this
-    // is plot 4, not plot 5", which is a claim about which boundary you are
-    // looking at, and that claim is only ever as good as the heading it was
-    // drawn with.
-    final tint = Color(overlayTintArgb(confidence, colourIndex));
-
-    // Three tiers. HOLDING is only a nudge: an agent inspecting a small plot
-    // walks around it, never across, so a whole visit runs carried. The chip
-    // states the source, the age and the expected error in degrees, which is
-    // more specific than a dimmer ever was. The dimming marks the genuinely
-    // untrustworthy case.
+    // Three tiers. HOLDING is only a nudge; the chip states the source, age
+    // and expected error. The dimming marks the genuinely untrustworthy case.
     final alpha = overlayConfidenceAlpha(confidence);
 
-    final health = current.health;
     if (drawGeometry) {
-      // The raster goes down before anything else, because it lies on the
-      // ground and everything else stands on it.
-      if (health != null) _drawHealthPatches(canvas, health, alpha);
-
-      // Walls next, in both modes: they are the boundary.
-      _drawWalls(canvas, overlay, tint, alpha);
-
-      switch (overlay.mode) {
-        case RenderMode.far:
-          _drawFarMode(canvas, overlay, tint, alpha);
-        case RenderMode.near:
-          _drawNearMode(canvas, overlay, tint, alpha);
+      // Farthest plot first, so a near plot's walls paint over a far one's.
+      for (final drawn in current.plots.reversed) {
+        final tint = Color(overlayTintArgb(confidence, drawn.plot.colourIndex));
+        _drawWalls(canvas, drawn.overlay, tint, alpha);
+        switch (drawn.overlay.mode) {
+          case RenderMode.far:
+            _drawFarMode(canvas, drawn.overlay, tint, alpha);
+          case RenderMode.near:
+            _drawNearMode(canvas, drawn.overlay, tint, alpha);
+        }
+      }
+      // Drop points stand above every wall: a walk-to target hidden behind the
+      // fence between you and it is no target at all.
+      for (final drop in current.drops) {
+        _drawDropPoint(canvas, drop, alpha);
       }
     }
 
-    // Hotspot markers stand above the walls on purpose: the marker is a
-    // walk-to target, and a target hidden behind the fence between you and it
-    // is no target at all.
-    if (health != null) _drawHotspotMarkers(canvas, health, alpha);
-
-    final offscreen = overlay.offscreenBearingDeg;
-    if (offscreen != null) _drawEdgeArrow(canvas, size, offscreen, tint, alpha);
-
-    final label = overlay.label;
-    if (label != null) {
-      final text = StringBuffer()
-        ..write(plotId)
-        ..write('  ')
-        ..write('${areaHectares.toStringAsFixed(2)} ha')
-        ..write('  ')
-        ..write('${label.distanceM.toStringAsFixed(0)} m');
-      if (overlay.mode == RenderMode.near) text.write('  ±${accuracyM.toStringAsFixed(0)} m');
-      _drawLabel(canvas, text.toString(), label.at, tint, alpha);
+    // When no plot is on screen, point at the nearest one.
+    if (current.plots.isNotEmpty) {
+      final nearest = current.plots.first;
+      final offscreen = nearest.overlay.offscreenBearingDeg;
+      if (offscreen != null && current.plots.every((p) => p.overlay.offscreenBearingDeg != null)) {
+        _drawEdgeArrow(canvas, size, offscreen, Color(overlayTintArgb(confidence, nearest.plot.colourIndex)), alpha);
+      }
     }
+
+    // A label per plot: which plot, how big, how far.
+    for (final drawn in current.plots) {
+      final label = drawn.overlay.label;
+      if (label == null) continue;
+      final near = drawn.overlay.mode == RenderMode.near;
+      final text = '${drawn.plot.name}  ${drawn.plot.areaHectares.toStringAsFixed(2)} ha  '
+          '${label.distanceM.toStringAsFixed(0)} m${near ? '  ±${accuracyM.toStringAsFixed(0)} m' : ''}';
+      _drawLabel(canvas, text, label.at, Color(overlayTintArgb(confidence, drawn.plot.colourIndex)), alpha);
+    }
+  }
+
+  /// A drop point on the sensor path: a stem from the ground to above the
+  /// walls, and a disc in the zone's colour on top.
+  void _drawDropPoint(Canvas canvas, DropMarker drop, double alpha) {
+    final colour = Color(severityColour(drop.zone).argb);
+    final base = _o(drop.base);
+    final top = _o(drop.top);
+    canvas.drawLine(base, top, _stroke(_outlineBacking, 0.55 * alpha, 14));
+    canvas.drawLine(base, top, _stroke(colour, alpha, 8));
+    final radius = _px(26) * (10.0 / drop.distanceM.clamp(4.0, 60.0)).clamp(0.4, 1.3);
+    canvas.drawCircle(top, radius + _px(4), _fill(_outlineBacking, 0.7 * alpha));
+    canvas.drawCircle(top, radius, _fill(colour, alpha));
   }
 
   Paint _fill(Color colour, double alpha) => Paint()
@@ -144,72 +137,6 @@ class ArOverlayPainter extends CustomPainter {
   static Path? _path(List<ScreenPoint> points) {
     if (points.length < 3) return null;
     return Path()..addPolygon([for (final p in points) _o(p)], true);
-  }
-
-  /// Fills the graded ground cells.
-  ///
-  /// Each cell carries its own opacity from two sources multiplied together: the
-  /// severity band and the distance fade. No outline: a stroke around every cell
-  /// turns a 500-cell raster into a grid of boxes, and the eye follows the grid
-  /// instead of the colour.
-  ///
-  /// Cells at full strength - everything beyond the foreground fade, which is
-  /// nearly all of them - are merged into one path per severity band, so up to
-  /// 500 draw calls become four. That is safe only because cells never overlap:
-  /// the union of non-overlapping translucent fills is the same picture as the
-  /// fills drawn one by one, in any order, and it loses the faint seams where
-  /// neighbouring antialiased edges used to double up. Faded foreground cells
-  /// each have their own alpha, so they are still drawn individually.
-  void _drawHealthPatches(Canvas canvas, HealthOverlay health, double confidenceAlpha) {
-    final merged = <int, Path>{};
-    for (final patch in health.patches) {
-      if (patch.corners.length < 3) continue;
-      final polygon = [for (final p in patch.corners) _o(p)];
-      if (patch.opacity >= 1.0) {
-        (merged[patch.severity] ??= Path()).addPolygon(polygon, true);
-        continue;
-      }
-      final band = severityColour(patch.severity);
-      canvas.drawPath(
-        Path()..addPolygon(polygon, true),
-        _fill(Color(band.argb), band.fillAlpha * patch.opacity * confidenceAlpha),
-      );
-    }
-    merged.forEach((severity, path) {
-      final band = severityColour(severity);
-      canvas.drawPath(path, _fill(Color(band.argb), band.fillAlpha * confidenceAlpha));
-    });
-  }
-
-  /// Stands a stem at each hotspot centroid, ranked.
-  ///
-  /// A patch on the ground vanishes behind the crop the moment the agent is
-  /// standing in the field. The stem is drawn tall for the same reason the
-  /// boundary posts are: it reads against the sky.
-  void _drawHotspotMarkers(Canvas canvas, HealthOverlay health, double confidenceAlpha) {
-    for (final marker in health.markers) {
-      final colour = Color(severityColour(marker.severity).argb);
-      final base = _o(marker.base);
-      final top = _o(marker.top);
-
-      canvas.drawLine(base, top, _stroke(_outlineBacking, 0.5 * confidenceAlpha, 14));
-      canvas.drawLine(base, top, _stroke(colour, confidenceAlpha, 9));
-      canvas.drawCircle(top, _px(23), _fill(_outlineBacking, 0.6 * confidenceAlpha));
-      canvas.drawCircle(top, _px(19), _fill(colour, confidenceAlpha));
-
-      // The rank inside the disc. It is the order to walk them in, and an
-      // unnumbered marker leaves the agent to guess which patch is worst.
-      _drawText(
-        canvas,
-        '${marker.rank}',
-        Offset(top.dx, top.dy + _px(10)),
-        TextStyle(
-          color: Colors.white.withAlpha(alpha8(confidenceAlpha)),
-          fontSize: _px(28),
-          fontWeight: FontWeight.bold,
-        ),
-      );
-    }
   }
 
   /// Draws the standing boundary panels, farthest first as they arrive, then
@@ -309,22 +236,11 @@ class ArOverlayPainter extends CustomPainter {
     canvas.drawCircle(_o(at), _px(5), _fill(tint, alpha));
   }
 
-  /// Text centred horizontally on [baseline]'s x, sitting on its y.
-  void _drawText(Canvas canvas, String text, Offset baseline, TextStyle style) {
-    final painter = TextPainter(text: TextSpan(text: text, style: style), textDirection: TextDirection.ltr)
-      ..layout();
-    final ascent = painter.computeDistanceToActualBaseline(TextBaseline.alphabetic);
-    painter.paint(canvas, Offset(baseline.dx - painter.width / 2, baseline.dy - ascent));
-  }
-
   @override
   bool shouldRepaint(ArOverlayPainter oldDelegate) =>
       oldDelegate.frame != frame ||
-      oldDelegate.plotId != plotId ||
-      oldDelegate.areaHectares != areaHectares ||
       oldDelegate.confidence != confidence ||
       oldDelegate.accuracyM != accuracyM ||
-      oldDelegate.colourIndex != colourIndex ||
       oldDelegate.devicePixelRatio != devicePixelRatio ||
       oldDelegate.drawGeometry != drawGeometry;
 }

@@ -40,8 +40,6 @@ class PlotDto {
     required this.polygon,
     required this.centroidLat,
     required this.centroidLng,
-    required this.accessLat,
-    required this.accessLng,
     required this.areaSqM,
     required this.landmarkNote,
     required this.colourIndex,
@@ -54,8 +52,6 @@ class PlotDto {
         polygon: PolygonDto.fromJson(json['polygon'] as Json),
         centroidLat: _double(json['centroid_lat']),
         centroidLng: _double(json['centroid_lng']),
-        accessLat: _double(json['access_lat']),
-        accessLng: _double(json['access_lng']),
         areaSqM: _double(json['area_sq_m']),
         landmarkNote: json['landmark_note'] as String? ?? '',
         // Defaulted so a server that has not been migrated yet still parses;
@@ -71,29 +67,29 @@ class PlotDto {
   final PolygonDto polygon;
   final double centroidLat;
   final double centroidLng;
-  final double accessLat;
-  final double accessLng;
   final double areaSqM;
   final String landmarkNote;
   final int colourIndex;
   final String createdAt;
 }
 
-/// One health snapshot, exactly as `GET /api/plots/:id/health` serves it.
+/// One crop-condition snapshot, exactly as `GET /api/plots/:id/health` serves it.
 ///
-/// [synthetic] and [note] are defaulted rather than required so that a server
-/// which has not been updated still parses - but the default is `false`, which
-/// is the *unsafe* direction, so the app treats a missing flag as measured.
-/// That is deliberate: the current server always sends it, and a silent default
-/// of `true` would libel a real snapshot as fake.
+/// Every cell carries its zone on all three indices; [patches] are the
+/// moderate-and-critical areas the AR view turns into drop points. The raw index
+/// values, the per-index summaries and the grid size are on the wire too and
+/// are deliberately not mapped: nothing in the field app shows a raw NDVI.
+///
+/// [synthetic] defaults to `false` when missing, the unsafe direction, on
+/// purpose: the server always sends it, and a silent `true` would libel a real
+/// snapshot as fake.
 class HealthDto {
   const HealthDto({
     required this.plotId,
     required this.capturedOn,
-    required this.indexName,
     required this.cellSizeM,
     this.cells = const [],
-    this.hotspots = const [],
+    this.patches = const [],
     this.synthetic = false,
     this.note = '',
   });
@@ -101,14 +97,12 @@ class HealthDto {
   factory HealthDto.fromJson(Json json) => HealthDto(
         plotId: json['plot_id'] as String,
         capturedOn: json['captured_on'] as String,
-        indexName: json['index_name'] as String,
         cellSizeM: _double(json['cell_size_m']),
         cells: [
           for (final c in json['cells'] as List<dynamic>? ?? const []) HealthCellDto.fromJson(c as Json),
         ],
-        hotspots: [
-          for (final h in json['hotspots'] as List<dynamic>? ?? const [])
-            HealthHotspotDto.fromJson(h as Json),
+        patches: [
+          for (final p in json['patches'] as List<dynamic>? ?? const []) HealthPatchDto.fromJson(p as Json),
         ],
         synthetic: json['synthetic'] as bool? ?? false,
         note: json['note'] as String? ?? '',
@@ -116,20 +110,18 @@ class HealthDto {
 
   final String plotId;
   final String capturedOn;
-  final String indexName;
   final double cellSizeM;
   final List<HealthCellDto> cells;
-  final List<HealthHotspotDto> hotspots;
+  final List<HealthPatchDto> patches;
   final bool synthetic;
   final String note;
 
   Json toJson() => {
         'plot_id': plotId,
         'captured_on': capturedOn,
-        'index_name': indexName,
         'cell_size_m': cellSizeM,
         'cells': [for (final c in cells) c.toJson()],
-        'hotspots': [for (final h in hotspots) h.toJson()],
+        'patches': [for (final p in patches) p.toJson()],
         'synthetic': synthetic,
         'note': note,
       };
@@ -137,21 +129,23 @@ class HealthDto {
 
 class HealthCellDto {
   const HealthCellDto({
-    required this.severity,
+    required this.zones,
     required this.centroidLat,
     required this.centroidLng,
     required this.cell,
   });
 
   factory HealthCellDto.fromJson(Json json) => HealthCellDto(
-        severity: _int(json['severity']),
+        zones: {
+          for (final MapEntry(:key, :value) in (json['zones'] as Json? ?? const {}).entries) key: _int(value),
+        },
         centroidLat: _double(json['centroid_lat']),
         centroidLng: _double(json['centroid_lng']),
         cell: PolygonDto.fromJson(json['cell'] as Json),
       );
 
-  /// 0 healthy to 3 critical. Banded server-side so no client owns the agronomy.
-  final int severity;
+  /// Zone per index key - `ndvi`, `ndre`, `lswi` - 0 normal to 2 critical.
+  final Map<String, int> zones;
   final double centroidLat;
   final double centroidLng;
 
@@ -159,39 +153,50 @@ class HealthCellDto {
   final PolygonDto cell;
 
   Json toJson() => {
-        'severity': severity,
+        'zones': zones,
         'centroid_lat': centroidLat,
         'centroid_lng': centroidLng,
         'cell': cell.toJson(),
       };
 }
 
-class HealthHotspotDto {
-  const HealthHotspotDto({
+class HealthPatchDto {
+  const HealthPatchDto({
+    required this.index,
     required this.rank,
+    required this.zone,
     required this.centroidLat,
     required this.centroidLng,
-    required this.severity,
+    required this.cellCount,
+    required this.areaSqM,
   });
 
-  factory HealthHotspotDto.fromJson(Json json) => HealthHotspotDto(
+  factory HealthPatchDto.fromJson(Json json) => HealthPatchDto(
+        index: json['index'] as String,
         rank: _int(json['rank']),
+        zone: _int(json['zone']),
         centroidLat: _double(json['centroid_lat']),
         centroidLng: _double(json['centroid_lng']),
-        severity: _int(json['severity']),
+        cellCount: json['cell_count'] == null ? 0 : _int(json['cell_count']),
+        areaSqM: json['area_sq_m'] == null ? 0.0 : _double(json['area_sq_m']),
       );
 
-  /// 1 is the worst. What the agent walks to first.
+  final String index;
   final int rank;
+  final int zone;
   final double centroidLat;
   final double centroidLng;
-  final int severity;
+  final int cellCount;
+  final double areaSqM;
 
   Json toJson() => {
+        'index': index,
         'rank': rank,
+        'zone': zone,
         'centroid_lat': centroidLat,
         'centroid_lng': centroidLng,
-        'severity': severity,
+        'cell_count': cellCount,
+        'area_sq_m': areaSqM,
       };
 }
 

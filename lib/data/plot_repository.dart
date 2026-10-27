@@ -24,6 +24,15 @@ class PlotRepository {
 
   Future<Plot?> findById(String id) async => (await _dao.findById(id))?.toPlot();
 
+  /// Every cached plot. The AR view shows all nearby plots at once.
+  Future<List<Plot>> allPlots() async => [for (final row in await _dao.all()) row.toPlot()];
+
+  /// Every cached crop-condition snapshot that this build can read, by plot id.
+  Future<Map<String, PlotHealth>> allHealth() async => {
+        for (final row in await _healthDao.all())
+          if (row.toHealth() case final health?) health.plotId: health,
+      };
+
   /// The cached crop-health raster for a plot, or null if none was ever pulled.
   ///
   /// Reads the cache only. The AR screen opens with the radio off as often as

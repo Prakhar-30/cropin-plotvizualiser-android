@@ -5,110 +5,118 @@ import 'package:flutter/foundation.dart';
 
 import '../../app_container.dart';
 import '../../core/geo/arcore_pose.dart';
+import '../../core/geo/boundary_snap.dart';
 import '../../core/geo/enu.dart';
-import '../../core/geo/linear.dart';
 import '../../core/geo/position_stabilizer.dart';
 import '../../core/geo/projection.dart';
 import '../../core/heading/course_over_ground_detector.dart';
 import '../../core/heading/heading_model.dart';
-import '../../core/heading/landmark_snap.dart';
 import '../../core/heading/trajectory_aligner.dart';
-import '../../core/math_util.dart';
 import '../../core/motion/step_calibrator.dart';
 import '../../core/motion/step_detector.dart';
 import '../../core/render/health_geometry.dart';
 import '../../core/render/overlay_geometry.dart';
-import '../../core/render/plot_palette.dart';
 import '../../core/render/world_scene.dart';
 import '../../data/db/entities.dart';
 import '../../data/plot.dart';
 import '../../pose/pose_source.dart';
 import '../../pose/vio_pose_source.dart';
 
-/// Beyond this GPS distance from the access point, "I'm at the access point"
-/// stays disabled. Generous enough for ordinary GNSS error in the open,
-/// tight enough that a tap from the next field over cannot place the plot.
-const double maxAccessPointPinDistanceM = 50.0;
+/// Plots whose nearest edge is within this are drawn. Beyond it a boundary is
+/// a sliver on the horizon and the minimap is the better guide.
+const double plotViewRangeM = 400.0;
+
+/// At most this many plots are drawn at once, nearest first.
+const int maxDrawnPlots = 24;
+
+/// One plot as drawn this frame.
+class DrawnPlot {
+  const DrawnPlot(this.plot, this.overlay);
+
+  final Plot plot;
+  final PlotOverlay overlay;
+}
 
 /// What the overlay canvas draws for one pose sample.
 ///
-/// Kept out of [ArUiState] on purpose. A new frame arrives with every carrier
-/// sample - about fifty a second - and only the canvas needs it. Folding it into
-/// the UI state made every one of those samples rebuild the whole screen: the
-/// chip, the health panel, the buttons and the camera box.
+/// Kept out of [ArUiState] on purpose: frames arrive at sensor rate and only
+/// the canvas and the minimap marker need them.
 class ArFrame {
-  const ArFrame(this.overlay, this.health, {this.guide, this.agent, this.headingDeg = 0.0});
+  const ArFrame({
+    this.plots = const [],
+    this.drops = const [],
+    this.guide,
+    this.agent,
+    this.headingDeg = 0.0,
+  });
 
-  final PlotOverlay overlay;
+  /// Every nearby plot, nearest first. On the sensor path the canvas draws
+  /// them; on the ARCore path only their labels.
+  final List<DrawnPlot> plots;
 
-  /// The way to the access point, until the agent says they are standing on it.
-  final AccessGuide? guide;
+  /// Drop points, projected - sensor path only; ARCore draws its own.
+  final List<DropMarker> drops;
 
-  /// Where the agent is drawn from, and which way the camera faces - for the
-  /// minimap's marker.
+  /// The way to the nearest boundary, until the session has snapped to one.
+  final BoundaryGuide? guide;
+
+  /// Where the agent is drawn from, and which way the camera faces.
   final LatLng? agent;
   final double headingDeg;
-
-  /// The crop-health raster, already projected. Null when the layer is off.
-  final HealthOverlay? health;
 }
 
-/// Where the access point is from here: how far, and how far to turn.
-class AccessGuide {
-  const AccessGuide(this.distanceM, this.relativeBearingDeg);
+/// How far, and which way, to the nearest plot boundary.
+class BoundaryGuide {
+  const BoundaryGuide(this.distanceM, this.relativeBearingDeg, this.plotName);
 
   final double distanceM;
 
   /// Negative is to the left of where the camera points.
   final double relativeBearingDeg;
+  final String plotName;
 }
 
 /// Everything on the AR screen except the per-frame geometry - see [ArFrame].
 class ArUiState {
   const ArUiState({
-    this.plot,
+    this.plots = const [],
+    this.health = const {},
+    this.index = HealthIndex.ndvi,
     this.mode,
     this.edgeDistanceM = 0,
-    this.hiddenCellCount = 0,
     this.headingStatus,
     this.accuracyM = 0.0,
     this.hasFix = false,
     this.stationary = false,
-    this.health,
-    this.healthLayer = HealthLayer.stress,
-    this.healthSyncing = false,
     this.message,
     this.visual = false,
     this.visualTracking = false,
     this.trackingFailure = ArTrackingFailure.none,
-    this.pinned = false,
+    this.snappedTo,
     this.depthActive = false,
-    this.accessPointDistanceM,
+    this.loaded = false,
   });
 
-  final Plot? plot;
+  /// Every cached plot. The view shows the nearby ones.
+  final List<Plot> plots;
 
-  /// Render mode of the latest frame, or null before the first one.
+  /// Crop condition per plot id, for those that have a snapshot.
+  final Map<String, PlotHealth> health;
+
+  /// Which index the drop points and the minimap show.
+  final HealthIndex index;
+
+  /// Render mode of the nearest plot, or null before the first frame.
   final RenderMode? mode;
 
-  /// Distance to the nearest edge, whole metres - as precise as the badge shows.
+  /// Distance to the nearest plot's nearest edge, whole metres.
   final int edgeDistanceM;
-
-  /// Cells inside range that the health layer chose not to draw.
-  final int hiddenCellCount;
   final HeadingStatus? headingStatus;
   final double accuracyM;
   final bool hasFix;
 
   /// True while the stabiliser judges the agent to be standing still.
   final bool stationary;
-
-  /// The cached crop-health raster, or null if none has ever been pulled.
-  final PlotHealth? health;
-
-  /// What the agent asked to see. Not necessarily what is drawn - see below.
-  final HealthLayer healthLayer;
-  final bool healthSyncing;
   final String? message;
 
   /// ARCore motion tracking carries the pose and the motion this session.
@@ -116,88 +124,75 @@ class ArUiState {
 
   /// ARCore is tracking right now. While it is not, counted steps stand in.
   final bool visualTracking;
-
-  /// Why ARCore is not tracking, when it is not.
   final ArTrackingFailure trackingFailure;
 
-  /// The agent has declared their position at the access point.
-  final bool pinned;
+  /// The plot whose boundary the session anchored to, once it has.
+  final String? snappedTo;
 
   /// ARCore depth is hiding the overlay behind nearer objects.
   final bool depthActive;
 
-  /// GPS distance to the access point, whole metres; null before a fix.
-  final int? accessPointDistanceM;
+  /// The cache has been read.
+  final bool loaded;
 
-  /// "I'm at the access point" is offered only within
-  /// [maxAccessPointPinDistanceM] by GPS.
-  bool get canPin => switch (accessPointDistanceM) {
-        final d? => d <= maxAccessPointPinDistanceM,
-        null => false,
-      };
+  bool get snapped => snappedTo != null;
 
-  /// The layer actually drawn, after the heading veto.
-  ///
-  /// A boundary drawn on a bad heading is wrong about where a fence is, and the
-  /// agent can see the fence to check it. A health patch drawn on a bad heading
-  /// is wrong about which ground is failing, and there is nothing in the field
-  /// to check it against - stressed crop and healthy crop look alike from a
-  /// distance, which is the entire reason for showing the raster. So the
-  /// boundary degrades to grey and stays up, while this switches off rather
-  /// than sending someone to dig up a healthy corner.
-  HealthLayer get effectiveHealthLayer =>
-      headingStatus?.confidence == HeadingConfidence.unreliable ? HealthLayer.off : healthLayer;
+  /// Every drop point of the current index, across all plots.
+  Iterable<HealthPatch> get patches sync* {
+    for (final h in health.values) {
+      yield* h.patchesFor(index);
+    }
+  }
 
-  /// True when the layer is on but the heading veto is suppressing it.
-  bool get healthVetoed => healthLayer != HealthLayer.off && effectiveHealthLayer == HealthLayer.off;
+  /// True when any shown snapshot is demonstration data.
+  bool get synthetic => health.values.any((h) => h.synthetic);
 
   ArUiState copyWith({
-    Plot? Function()? plot,
+    List<Plot>? plots,
+    Map<String, PlotHealth>? health,
+    HealthIndex? index,
     RenderMode? mode,
     int? edgeDistanceM,
-    int? hiddenCellCount,
     HeadingStatus? Function()? headingStatus,
     double? accuracyM,
     bool? hasFix,
     bool? stationary,
-    PlotHealth? Function()? health,
-    HealthLayer? healthLayer,
-    bool? healthSyncing,
     String? Function()? message,
     bool? visualTracking,
     ArTrackingFailure? trackingFailure,
-    bool? pinned,
+    String? Function()? snappedTo,
     bool? depthActive,
-    int? Function()? accessPointDistanceM,
+    bool? loaded,
   }) =>
       ArUiState(
-        plot: plot == null ? this.plot : plot(),
+        plots: plots ?? this.plots,
+        health: health ?? this.health,
+        index: index ?? this.index,
         mode: mode ?? this.mode,
         edgeDistanceM: edgeDistanceM ?? this.edgeDistanceM,
-        hiddenCellCount: hiddenCellCount ?? this.hiddenCellCount,
         headingStatus: headingStatus == null ? this.headingStatus : headingStatus(),
         accuracyM: accuracyM ?? this.accuracyM,
         hasFix: hasFix ?? this.hasFix,
         stationary: stationary ?? this.stationary,
-        health: health == null ? this.health : health(),
-        healthLayer: healthLayer ?? this.healthLayer,
-        healthSyncing: healthSyncing ?? this.healthSyncing,
         message: message == null ? this.message : message(),
         visual: visual,
         visualTracking: visualTracking ?? this.visualTracking,
         trackingFailure: trackingFailure ?? this.trackingFailure,
-        pinned: pinned ?? this.pinned,
+        snappedTo: snappedTo == null ? this.snappedTo : snappedTo(),
         depthActive: depthActive ?? this.depthActive,
-        accessPointDistanceM: accessPointDistanceM == null ? this.accessPointDistanceM : accessPointDistanceM(),
+        loaded: loaded ?? this.loaded,
       );
 }
 
-/// Runs one AR session: pose in, overlay out, telemetry recorded.
+/// Runs one AR session over every nearby plot: pose in, overlay out.
 class ArController extends ValueNotifier<ArUiState> {
-  /// [visual] runs the session on ARCore motion tracking; the AR screen sets
-  /// it only once it knows ARCore is installed and its camera view is shown.
-  ArController(this._container, this._plotId, {bool visual = false})
-      : _sensors = _container.createSensors(visual: visual),
+  /// [focusPlotId], when the session was opened from a plot, is preferred for
+  /// telemetry; every nearby plot is shown either way. [visual] runs the
+  /// session on ARCore motion tracking; the AR screen sets it only once it
+  /// knows ARCore is installed and its camera view is shown.
+  ArController(this._container, {String? focusPlotId, bool visual = false})
+      : _focusPlotId = focusPlotId,
+        _sensors = _container.createSensors(visual: visual),
         super(ArUiState(visual: visual)) {
     _sensors.location.location.addListener(_onLocationChanged);
     _sensors.pose.pose.addListener(_onPoseChanged);
@@ -211,7 +206,7 @@ class ArController extends ValueNotifier<ArUiState> {
   }
 
   final AppContainer _container;
-  final String _plotId;
+  final String? _focusPlotId;
   final Sensors _sensors;
 
   /// The ARCore pose source, when this session runs on one.
@@ -236,10 +231,8 @@ class ArController extends ValueNotifier<ArUiState> {
   final TrajectoryAligner _aligner = TrajectoryAligner();
   bool _wasTracking = false;
 
-  /// Smooths the agent's position so a stationary agent gets a stationary
-  /// overlay, and moves it with each counted step so a walking agent's overlay
-  /// keeps pace with the camera. Applied to the render path only - see
-  /// [_onLocation].
+  /// Smooths the agent's position and carries it with ARCore's motion or
+  /// counted steps. The boundary snap pins it.
   final PositionStabilizer _stabilizer = PositionStabilizer();
 
   final StepDetector _steps = StepDetector();
@@ -248,9 +241,6 @@ class ArController extends ValueNotifier<ArUiState> {
   StreamSubscription<(double, int)>? _acceleration;
 
   /// The local metric frame, re-anchored whenever the agent walks far enough.
-  /// Held here rather than rebuilt per frame so that a single origin serves
-  /// every point in one drawing pass - two points converted against different
-  /// origins would be metres apart for no reason.
   EnuFrame? _frame;
 
   CameraIntrinsics? _intrinsics;
@@ -260,18 +250,19 @@ class ArController extends ValueNotifier<ArUiState> {
   (int, int)? _viewport;
   LocationSample? _lastLocation;
 
-  /// The health raster in metres, built once per frame anchor.
-  ///
-  /// Rebuilt only when [_frame] changes, which is when the agent has walked far
-  /// enough to re-anchor - not on every pose sample. Converting a few hundred
-  /// cells from degrees is trigonometry per corner, and doing that at sensor
-  /// rate is the difference between a smooth overlay and a stuttering one.
-  HealthField? _healthField;
-
   /// The filtered position everything is drawn against.
   LatLng? _agentPosition;
 
-  /// Worst single-update overlay shift seen while standing still, for telemetry.
+  /// Where the session last snapped, for deciding when the agent has walked
+  /// on far enough to snap to another boundary.
+  LatLng? _snapPoint;
+
+  /// Nearby plots, nearest first, recomputed on each fix.
+  List<Plot> _nearby = const [];
+
+  /// The scene's fixed origin on the ARCore path; set with the first nearby set.
+  LatLng? _sceneOrigin;
+
   double _worstStationaryShiftM = 0.0;
   int _frameAnchoredAtMs = 0;
   final int _sessionStartedAtMs = DateTime.now().millisecondsSinceEpoch;
@@ -279,24 +270,29 @@ class ArController extends ValueNotifier<ArUiState> {
   bool _disposed = false;
 
   Future<void> _load() async {
-    final plot = await _container.plots.findById(_plotId);
+    final plots = await _container.plots.allPlots();
+    final health = await _container.plots.allHealth();
     if (_disposed) return;
     value = value.copyWith(
-      plot: () => plot,
-      message: () => plot == null ? 'Plot $_plotId is not in the offline cache' : null,
+      plots: plots,
+      health: health,
+      loaded: true,
+      message: () => plots.isEmpty ? 'No plots cached - sync on the plot list first' : null,
     );
-    if (plot != null) {
-      // The raster is loaded after the plot, never before: the boundary is
-      // what the agent came for and must not wait on it.
-      await _loadHealth();
+    // Plots synced before crop condition existed have no snapshot. One quiet
+    // attempt each; failing to reach the network is the normal rural case.
+    final missing = [
+      for (final p in plots)
+        if (!health.containsKey(p.id)) p.id,
+    ];
+    if (missing.isNotEmpty) unawaited(_fetchMissingHealth(missing));
+  }
 
-      // A plot cached before the health layer existed has a boundary and no
-      // raster, and the layer defaults to on - so without this the agent opens
-      // AR, sees no colour, and concludes the field is healthy. One quiet
-      // attempt fixes that. Quiet because it is speculative: failing to reach
-      // the network here is the normal rural case and is not worth a banner.
-      if (!_disposed && value.health == null) unawaited(refreshHealth(announce: false));
-    }
+  Future<void> _fetchMissingHealth(List<String> ids) async {
+    await Future.wait([for (final id in ids) _container.plots.syncHealth(id)]);
+    final health = await _container.plots.allHealth();
+    if (_disposed) return;
+    _rebuildOverlay(value.copyWith(health: health));
   }
 
   void start() {
@@ -310,16 +306,13 @@ class ArController extends ValueNotifier<ArUiState> {
   }
 
   /// Releases the sensors and the GNSS receiver while the app is in the
-  /// background, without ending the session. An AR screen left open in a
-  /// pocket would otherwise keep a 1 Hz high-accuracy fix and two 50 Hz sensor
-  /// streams running for nothing.
+  /// background, without ending the session.
   void pause() {
     if (value.visual) unawaited(_container.platform.arPause());
     _sensors.pose.stop();
     _sensors.location.stop();
     _acceleration?.cancel();
     _acceleration = null;
-    // A stride interrupted by the app going away is not one to finish later.
     _steps.reset();
   }
 
@@ -333,18 +326,18 @@ class ArController extends ValueNotifier<ArUiState> {
     });
   }
 
-  /// One counted step: move the agent along the way the camera faces.
-  ///
-  /// The camera heading stands in for the walking direction, which is right
-  /// for the way this screen is used - phone held up, looking where you are
-  /// going - and is the fused, locked heading rather than the compass. When it
-  /// is wrong, because the agent walks one way while looking another, the
-  /// error is bounded by GNSS pulling the estimate back, and it only lasts
-  /// until they look where they are going again.
+  /// Shows [index]'s drop points - crop greenness, crop vigour or water stress.
+  void setIndex(HealthIndex index) {
+    if (index == value.index) return;
+    _rebuildOverlay(value.copyWith(index: index));
+  }
+
+  void dismissMessage() => value = value.copyWith(message: () => null);
+
+  /// One counted step: move the agent along the way the camera faces. Only
+  /// without ARCore tracking - with it, the measured motion is used instead.
   void _onStep(DetectedStep step) {
     if (_pose.timestampMs == 0) return;
-    // While ARCore tracks, it measures the motion the steps would only model;
-    // counting both would move the agent twice.
     if (value.visualTracking) return;
     final heading = _pose.headingDeg;
     _stepCalibration.onStep(step, heading);
@@ -365,17 +358,10 @@ class ArController extends ValueNotifier<ArUiState> {
     if (current == null || current.needsReanchor(position)) {
       _frame = EnuFrame(position);
       _frameAnchoredAtMs = DateTime.now().millisecondsSinceEpoch;
-      // Every cached metre is measured from the old origin. Keeping them would
-      // offset the whole raster by however far the agent walked.
-      _healthField = null;
     }
   }
 
   /// The viewport is only known once the camera box has been laid out.
-  ///
-  /// On ARCore the field of view passed here is a placeholder until the first
-  /// frame reports the one its projection actually uses - see
-  /// [_onVisualStatusChanged].
   void onViewportMeasured(int widthPx, int heightPx, double horizontalFovDeg) {
     if (widthPx <= 0 || heightPx <= 0) return;
     _viewport = (widthPx, heightPx);
@@ -384,16 +370,11 @@ class ArController extends ValueNotifier<ArUiState> {
   }
 
   void _setIntrinsics(int widthPx, int heightPx, double horizontalFovDeg) {
-    final next = CameraIntrinsics(
+    _intrinsics = CameraIntrinsics(
       horizontalFovDeg: horizontalFovDeg,
       viewportWidthPx: widthPx,
       viewportHeightPx: heightPx,
     );
-    if (next != _intrinsics) {
-      debugPrint('PlotFinder: viewport ${widthPx}x$heightPx hFOV=${horizontalFovDeg.toStringAsFixed(1)} deg '
-          '-> focal=${next.focalPx.toStringAsFixed(1)}');
-    }
-    _intrinsics = next;
     _rebuildOverlay();
   }
 
@@ -402,7 +383,6 @@ class ArController extends ValueNotifier<ArUiState> {
     final moved = _stabilizer.onVisualMotion(dEast: dEast, dNorth: dNorth, timestampMs: timestampMs);
     if (moved == null) return;
     _moveAgent(moved.position);
-    // The pose listener redraws on this same frame; no rebuild here.
   }
 
   void _onVisualStatusChanged() {
@@ -411,7 +391,12 @@ class ArController extends ValueNotifier<ArUiState> {
       visualFailed.value = true;
       return;
     }
-    if (_wasTracking && !status.tracking) _aligner.reset();
+    if (_wasTracking && !status.tracking) {
+      // ARCore may resume in a shifted frame: nothing measured before can be
+      // laid against anything after, and the snap is no longer held by it.
+      _aligner.reset();
+      _snapPoint = null;
+    }
     _wasTracking = status.tracking;
     final fov = status.horizontalFovDeg;
     final viewport = _viewport;
@@ -430,40 +415,35 @@ class ArController extends ValueNotifier<ArUiState> {
     }
   }
 
-  /// "I'm at the access point": the one action this screen asks for.
+  /// The automatic anchor: once GPS puts the agent within [autoSnapDistanceM]
+  /// of any nearby plot's boundary, the closest point of it - a corner, or a
+  /// point between two corners - is taken as where they stand.
   ///
-  /// GNSS under a roof or beside a tree line is several metres out, and close
-  /// to a boundary a few metres is the difference between the line in front of
-  /// you and the line beside you. The access point is a surveyed point the
-  /// agent can physically stand on, so standing there and saying so replaces
-  /// the receiver's opinion outright. On the ARCore path it also becomes the
-  /// anchor of the walk alignment, so every step away from it refines the
-  /// direction, with nothing more to tap.
-  void pinToAccessPoint() {
-    final plot = value.plot;
-    if (plot == null || !value.canPin) return;
-    final now = _lastLocation?.timestampMs;
-    if (now == null) {
-      value = value.copyWith(message: () => 'Waiting for a location fix');
-      return;
-    }
-    final pinned = _stabilizer.pinTo(plot.accessPoint, timestampMs: now);
+  /// Once per area: it happens again only after the agent has moved
+  /// [resnapAfterM] from the last snap point (on to the next plot), or ARCore
+  /// lost tracking and the old anchor no longer holds.
+  void _maybeSnap(LocationSample sample) {
+    if (_nearby.isEmpty) return;
+    final last = _snapPoint;
+    final agent = _agentPosition;
+    if (last != null && agent != null && distanceM(last, agent) < resnapAfterM) return;
+
+    final hit = nearestBoundaryPoint([for (final p in _nearby) p.ring], sample.position);
+    if (hit == null || hit.distanceM > autoSnapDistanceM) return;
+
+    final plot = _nearby[hit.ringIndex];
+    final pinned = _stabilizer.pinTo(hit.point, timestampMs: sample.timestampMs);
+    _snapPoint = hit.point;
     _moveAgent(pinned.position);
     if (_vio?.sessionPosition case final session?) {
-      _aligner.anchor(session, plot.accessPoint);
+      _aligner.anchor(session, hit.point);
       _lockFromWalk();
     }
-    final locked = _sensors.pose.headingStatus.value.confidence != HeadingConfidence.unreliable;
-    final gpsUsable = (_lastLocation?.accuracyM ?? double.infinity) <= maxAlignmentFixAccuracyM;
     _rebuildOverlay(value.copyWith(
-      pinned: true,
+      snappedTo: () => plot.id,
       stationary: true,
       accuracyM: _stabilizer.uncertaintyM,
-      message: () => locked
-          ? 'At the access point - plot placed'
-          : gpsUsable
-              ? 'At the access point - walk a few steps to set direction'
-              : 'At the access point - GPS weak here, direction is from the compass',
+      message: () => 'Anchored to the ${plot.name} boundary',
     ));
   }
 
@@ -478,94 +458,7 @@ class ArController extends ValueNotifier<ArUiState> {
     final unlocked = current.confidence == HeadingConfidence.unreliable;
     if (!unlocked && fit.errorDeg > current.expectedErrorDeg + 0.5) return;
     vio.applyYawOffset(fit.yawOffsetDeg, HeadingSource.courseOverGround, errorDeg: fit.errorDeg);
-    if (unlocked) value = value.copyWith(message: () => 'Direction set from your walk');
   }
-
-  /// Landmark snap: the agent has the crosshair on the plot's access point.
-  ///
-  /// Both endpoints are known, so the true bearing is computable outright - one
-  /// tap and the heading is pinned to within a couple of degrees, no walking
-  /// required. [crosshairXPx] allows for a crosshair that is not dead centre.
-  void snapToAccessPoint({double? crosshairXPx}) {
-    final plot = value.plot;
-    if (plot == null) return;
-    // From the position the overlay is drawn from, never the raw fix. The
-    // snap's promise is "the access point lands under the crosshair", and it
-    // only keeps it if the bearing is taken from the same point the plot is
-    // projected from. Taken from the raw fix - ±90 m indoors - every tap
-    // computed a different bearing from a different wild position, and
-    // tapping repeatedly walked the plot round the agent in a circle.
-    final agent = _agentPosition;
-    if (agent == null) {
-      value = value.copyWith(message: () => 'Waiting for a location fix');
-      return;
-    }
-    // Too close comes first: standing on the access point, there is nothing
-    // to aim at, whatever the position is worth.
-    final range = distanceM(agent, plot.accessPoint);
-    if (range < minSnapDistanceM) {
-      value = value.copyWith(message: () => 'Step 10 m away from the access point, aim at it, then tap');
-      return;
-    }
-    // A bearing from an uncertain position is only as good as the position:
-    // ±15 m at 14 m away is ±47°. Refuse rather than lock a guess.
-    final uncertainty = _stabilizer.uncertaintyM;
-    if (toDegrees(math.atan2(uncertainty, range)) > maxSnapPositionErrorDeg) {
-      value = value.copyWith(message: () => 'GPS too weak here (±${uncertainty.round()} m). Use "I\'m at the access point" first');
-      return;
-    }
-    final intrinsics = _intrinsics;
-    final offsetDeg =
-        crosshairXPx != null && intrinsics != null ? horizontalAngleOffsetDeg(crosshairXPx, intrinsics) : 0.0;
-
-    final heading = headingFromLandmarkSnap(agent, plot.accessPoint, offsetDeg);
-    if (heading == null) return;
-    _sensors.pose.applyHeadingFix(heading, HeadingSource.landmarkSnap);
-    value = value.copyWith(message: () => 'Heading locked');
-  }
-
-  /// Cycles off - problem areas - all cells.
-  void cycleHealthLayer() => setHealthLayer(value.healthLayer.next());
-
-  /// Shows [layer], fetching the raster if the agent turned health on and
-  /// none is cached.
-  void setHealthLayer(HealthLayer layer) {
-    if (layer == value.healthLayer) return;
-    _rebuildOverlay(value.copyWith(healthLayer: layer));
-    if (layer != HealthLayer.off && value.health == null) unawaited(refreshHealth());
-  }
-
-  /// Pulls this plot's raster from the API on demand.
-  ///
-  /// Needed because a plot cached before the health layer existed has a
-  /// boundary and no raster, and making the agent re-sync every plot in the
-  /// district to colour one field would be an absurd way to spend their signal.
-  Future<void> refreshHealth({bool announce = true}) async {
-    if (value.healthSyncing) return;
-    value = value.copyWith(healthSyncing: true);
-    await _container.plots.syncHealth(_plotId);
-    await _loadHealth();
-    if (_disposed) return;
-    // Judged on what is now cached, not on what the call returned: a fetch
-    // that failed against a raster already on disk is not a problem the agent
-    // needs to hear about.
-    final failed = value.health == null;
-    value = value.copyWith(
-      healthSyncing: false,
-      message: announce && failed ? () => 'No crop health cached for this plot, and no signal to fetch it' : null,
-    );
-  }
-
-  Future<void> _loadHealth() async {
-    final health = await _container.plots.healthFor(_plotId);
-    if (_disposed) return;
-    // The metric conversion belongs to the old raster; keeping it would draw
-    // the previous cells under the new data.
-    _healthField = null;
-    _rebuildOverlay(value.copyWith(health: () => health));
-  }
-
-  void dismissMessage() => value = value.copyWith(message: () => null);
 
   void _onLocationChanged() {
     final sample = _sensors.location.location.value;
@@ -575,15 +468,8 @@ class ArController extends ValueNotifier<ArUiState> {
   void _onLocation(LocationSample sample) {
     _lastLocation = sample;
 
-    // A walked segment is the one heading source no magnetic disturbance can
-    // touch, so every fix is offered to the detector - and it is offered the
-    // RAW fix, deliberately. The stabiliser's whole job is to suppress apparent
-    // movement, which is precisely the signal course-over-ground measures;
-    // feeding it filtered positions would shorten every segment and bias the
-    // bearing towards whatever the filter already believed.
-    //
-    // On the ARCore path the walk alignment does the same job better - any
-    // path, not just straight ones - so the two are not left to fight.
+    // Direction from walking. On the sensor path, a straight GNSS segment; on
+    // the ARCore path, the tracked walk fitted to the fixes along it.
     final vio = _vio;
     if (vio == null) {
       final locked = _courseOverGround.add(sample);
@@ -602,26 +488,37 @@ class ArController extends ValueNotifier<ArUiState> {
       timestampMs: sample.timestampMs,
     );
     _moveAgent(stabilized.position);
-    // Raw fix, like course over ground: calibrating the step length against
-    // positions the steps themselves have already moved would be circular.
     _stepCalibration.onFix(sample.position, sample.accuracyM);
-    final pinned = _stabilizer.pinned;
-
     if (stabilized.stationary) {
       _worstStationaryShiftM = math.max(_worstStationaryShiftM, stabilized.shiftM);
     }
 
-    final plotNow = value.plot;
-    final distanceToAccess =
-        plotNow == null ? null : distanceM(sample.position, plotNow.accessPoint).round();
+    _updateNearby(stabilized.position);
+    _maybeSnap(sample);
+
+    final snapped = _stabilizer.pinned;
     _rebuildOverlay(value.copyWith(
-      accessPointDistanceM: () => distanceToAccess,
-      // Once pinned, the receiver's ±90 m is not the position's error any more.
-      accuracyM: pinned ? math.min(sample.accuracyM, _stabilizer.uncertaintyM) : sample.accuracyM,
+      // Once snapped, the receiver's error is not the position's any more.
+      accuracyM: snapped ? math.min(sample.accuracyM, _stabilizer.uncertaintyM) : sample.accuracyM,
       hasFix: true,
       stationary: stabilized.stationary,
-      pinned: pinned,
     ));
+  }
+
+  /// Picks the plots worth drawing: within [plotViewRangeM] of an edge, at most
+  /// [maxDrawnPlots], nearest first.
+  void _updateNearby(LatLng at) {
+    final scored = <(Plot, double)>[];
+    for (final plot in value.plots) {
+      final d = insideRing(plot.ring, at) ? 0.0 : distanceToRingM(plot.ring, at);
+      if (d <= plotViewRangeM) scored.add((plot, d));
+    }
+    scored.sort((a, b) => a.$2.compareTo(b.$2));
+    final next = [for (final (plot, _) in scored.take(maxDrawnPlots)) plot];
+    if (!listEquals([for (final p in next) p.id], [for (final p in _nearby) p.id])) {
+      _nearby = next;
+      _sceneOrigin ??= at;
+    }
   }
 
   void _onPoseChanged() {
@@ -630,142 +527,124 @@ class ArController extends ValueNotifier<ArUiState> {
     _syncPlacement();
   }
 
+  void _onHeadingStatusChanged() {
+    final status = _sensors.pose.headingStatus.value;
+    _rebuildOverlay(value.copyWith(headingStatus: () => status));
+  }
+
   /// What the native renderer was last given, to send only real changes.
   Object? _sentSceneKey;
   WorldPlacement? _sentPlacement;
 
-  /// Sends the plot geometry to the ARCore renderer when what it draws has
-  /// changed: the plot, the health layer or raster, or the heading confidence
-  /// that sets its colour.
+  /// Sends every nearby plot and the drop points of the current index to the
+  /// ARCore renderer, when any of that has changed.
   void _syncScene(ArUiState state) {
     if (!state.visual) return;
-    final plot = state.plot;
-    if (plot == null) return;
+    final origin = _sceneOrigin;
+    if (origin == null) return;
     final confidence = state.headingStatus?.confidence ?? HeadingConfidence.unreliable;
-    final layer = state.effectiveHealthLayer;
-    final health = state.health;
-    final key = (plot.id, layer, identityHashCode(health), confidence, plot.colourIndex);
+    final key = (
+      Object.hashAll([for (final p in _nearby) p.id]),
+      state.index,
+      identityHashCode(state.health),
+      confidence,
+    );
     if (key == _sentSceneKey) return;
     _sentSceneKey = key;
+    final agent = _agentPosition ?? origin;
     final scene = buildWorldScene(
-      ring: plot.ring,
-      origin: plot.centroid,
-      cells: health?.cells ?? const [],
-      layer: layer,
-      // Always the plot's own colour, never the grey of the sensor path: in a
-      // white office or under a pale sky a grey translucent wall is simply
-      // invisible, and an agent who cannot see the plot cannot judge it. The
-      // heading chip carries the confidence instead.
-      tintArgb: plotColour(plot.colourIndex).argb,
+      plots: _nearby,
+      patches: nearbyPatches(state.patches, agent, state.index),
+      origin: origin,
+      // Always the plots' own colours on the ARCore path: a grey translucent
+      // wall is invisible against a white wall or a pale sky. The heading chip
+      // carries the confidence instead.
       alpha: math.max(0.85, overlayConfidenceAlpha(confidence)),
     );
     unawaited(_container.platform.arSetScene(scene.toMessage()));
   }
 
-  /// Tells the ARCore renderer where the plot stands in its session.
-  ///
-  /// Only when the geo-registration moves - a pin, a heading lock, a drift
-  /// correction. Walking does not change it: the agent's position and
-  /// ARCore's camera move together.
+  /// Tells the ARCore renderer where the scene stands in its session. Only
+  /// when the geo-registration moves - walking moves agent and camera together.
   void _syncPlacement() {
     final vio = _vio;
-    final plot = value.plot;
+    final origin = _sceneOrigin;
     final agent = _agentPosition;
-    if (vio == null || plot == null || agent == null) return;
+    if (vio == null || origin == null || agent == null) return;
     final session = vio.sessionPosition;
     final yaw = vio.yawOffsetDeg;
     if (session == null || yaw == null) return;
-    final next = placePlot(plotOrigin: plot.centroid, agent: agent, sessionCamera: session, yawOffsetDeg: yaw);
+    final next = placePlot(plotOrigin: origin, agent: agent, sessionCamera: session, yawOffsetDeg: yaw);
     final sent = _sentPlacement;
     if (sent != null && next.isCloseTo(sent)) return;
     _sentPlacement = next;
     unawaited(_container.platform.arSetPlacement(next.toList()));
   }
 
-  void _onHeadingStatusChanged() {
-    // Through the overlay, not around it: the heading veto on the health layer
-    // depends on this status, so the frame has to be rebuilt against it.
-    final status = _sensors.pose.headingStatus.value;
-    _rebuildOverlay(value.copyWith(headingStatus: () => status));
-  }
-
   /// Rebuilds the frame and publishes [next] - the current state when omitted.
-  ///
-  /// Listeners hear about a state change at most once per call, and not at all
-  /// when nothing they show has changed. At fifty pose samples a second that is
-  /// the difference between redrawing the canvas and rebuilding the screen.
   void _rebuildOverlay([ArUiState? next]) {
     if (_disposed) return;
     var state = next ?? value;
-    final plot = state.plot;
     final frame = _frame;
     final intrinsics = _intrinsics;
     final agent = _agentPosition;
-    if (plot != null && frame != null && intrinsics != null && agent != null) {
-      final overlay = buildPlotOverlay(
-        ring: plot.ring,
-        centroid: plot.centroid,
-        agent: agent,
-        frame: frame,
-        deviceToEnu: _pose.deviceToEnu,
-        intrinsics: intrinsics,
-        gnssAccuracyM: state.accuracyM,
-        eyeHeight: _vio?.eyeHeightM ?? eyeHeightM,
-      );
-      final health = _buildHealth(state, frame, agent, _pose.deviceToEnu, intrinsics);
+    if (frame != null && intrinsics != null && agent != null) {
+      final eyeHeight = _vio?.eyeHeightM ?? eyeHeightM;
+      final drawn = <DrawnPlot>[
+        for (final plot in _nearby)
+          DrawnPlot(
+            plot,
+            buildPlotOverlay(
+              ring: plot.ring,
+              centroid: plot.centroid,
+              agent: agent,
+              frame: frame,
+              deviceToEnu: _pose.deviceToEnu,
+              intrinsics: intrinsics,
+              gnssAccuracyM: state.accuracyM,
+              eyeHeight: eyeHeight,
+            ),
+          ),
+      ];
+      final drops = state.visual
+          ? const <DropMarker>[]
+          : buildDropMarkers(
+              patches: nearbyPatches(state.patches, agent, state.index),
+              frame: frame,
+              eye: frame.toEnu(agent),
+              enuToDevice: _pose.deviceToEnu.transpose(),
+              intrinsics: intrinsics,
+              eyeHeight: eyeHeight,
+            );
       this.frame.value = ArFrame(
-        overlay,
-        health,
-        guide: state.pinned ? null : _guide(plot, agent),
+        plots: drawn,
+        drops: drops,
+        guide: state.snapped ? null : _guide(agent),
         agent: agent,
         headingDeg: _pose.headingDeg,
       );
 
-      final edge = overlay.edgeDistanceM.toInt();
-      final hidden = health?.hiddenCellCount ?? 0;
-      if (state.mode != overlay.mode || state.edgeDistanceM != edge || state.hiddenCellCount != hidden) {
-        state = state.copyWith(mode: overlay.mode, edgeDistanceM: edge, hiddenCellCount: hidden);
+      if (drawn.isNotEmpty) {
+        final nearest = drawn.first.overlay;
+        final edge = nearest.edgeDistanceM.toInt();
+        if (state.mode != nearest.mode || state.edgeDistanceM != edge) {
+          state = state.copyWith(mode: nearest.mode, edgeDistanceM: edge);
+        }
       }
     }
     _syncScene(state);
     if (!identical(state, value)) value = state;
   }
 
-  AccessGuide _guide(Plot plot, LatLng agent) => AccessGuide(
-        distanceM(agent, plot.accessPoint),
-        angleDifferenceDeg(_pose.headingDeg, bearingDeg(agent, plot.accessPoint)),
-      );
-
-  /// Projects the health raster against the same eye and frame as the boundary.
-  ///
-  /// Both take the camera from the *stabilised* agent fix through this one
-  /// frame, so the raster and the boundary move together or not at all.
-  /// Deriving the eye separately here is precisely what would let the brown
-  /// ground drift outside the plot that is supposed to contain it.
-  HealthOverlay? _buildHealth(
-    ArUiState state,
-    EnuFrame frame,
-    LatLng agent,
-    Mat3 deviceToEnu,
-    CameraIntrinsics intrinsics,
-  ) {
-    final layer = state.effectiveHealthLayer;
-    if (layer == HealthLayer.off) return null;
-    final health = state.health;
-    if (health == null) return null;
-
-    final existing = _healthField;
-    final field = existing != null && existing.matches(frame)
-        ? existing
-        : (_healthField = HealthField(health.cells, health.hotspots, frame));
-    if (field.isEmpty) return null;
-
-    return buildHealthOverlay(
-      field: field,
-      eye: frame.toEnu(agent),
-      enuToDevice: deviceToEnu.transpose(),
-      intrinsics: intrinsics,
-      layer: layer,
+  /// Which way, and how far, to the nearest boundary of any nearby plot.
+  BoundaryGuide? _guide(LatLng agent) {
+    if (_nearby.isEmpty) return null;
+    final hit = nearestBoundaryPoint([for (final p in _nearby) p.ring], agent);
+    if (hit == null) return null;
+    return BoundaryGuide(
+      hit.distanceM,
+      angleDifferenceDeg(_pose.headingDeg, bearingDeg(agent, hit.point)),
+      _nearby[hit.ringIndex].name,
     );
   }
 
@@ -776,12 +655,13 @@ class ArController extends ValueNotifier<ArUiState> {
     final status = snapshot.headingStatus;
     if (location == null || status == null) return;
     final mode = snapshot.mode?.wireName ?? 'NONE';
+    final plotId = _focusPlotId ?? snapshot.snappedTo ?? (_nearby.isEmpty ? '' : _nearby.first.id);
 
     final now = DateTime.now().millisecondsSinceEpoch;
     final row = TelemetryEntity(
       timestampMs: now,
       sessionId: _sessionId,
-      plotId: _plotId,
+      plotId: plotId,
       lat: location.position.lat,
       lng: location.position.lng,
       reportedAccuracyM: location.accuracyM,
@@ -795,8 +675,6 @@ class ArController extends ValueNotifier<ArUiState> {
       appVersion: _container.deviceInfo.appVersion,
       sessionDurationMs: now - _sessionStartedAtMs,
     );
-    // Not tied to this controller's lifetime: the row must land even though
-    // the screen that produced it is closing.
     unawaited(() async {
       await _container.telemetry.record(row);
       await _container.telemetry.syncPending();

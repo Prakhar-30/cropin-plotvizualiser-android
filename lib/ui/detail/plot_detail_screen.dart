@@ -49,7 +49,7 @@ class PlotDetailScreen extends StatelessWidget {
     final distance = distanceM;
     final landmark = plot.landmarkNote.trim();
     // Scrollable: at a large system font scale the content falls below the
-    // fold. The actions are pinned below it so "Find this plot" is always
+    // fold. The actions are pinned below it so "Open AR view" is always
     // reachable.
     return Scaffold(
       appBar: AppBar(title: const Text('Plot details')),
@@ -78,13 +78,8 @@ class PlotDetailScreen extends StatelessWidget {
                   icon: Icons.flag_outlined,
                   iconColour: GrowColors.warning,
                   iconBackground: GrowColors.warningTint,
-                  label: 'Landmark at the access point',
+                  label: 'Landmark',
                   value: landmark.isEmpty ? 'none recorded' : landmark,
-                ),
-                const Divider(height: 20),
-                _CoordinateRow(
-                  label: 'Access point',
-                  value: formatLatLng(plot.accessPoint.lat, plot.accessPoint.lng),
                 ),
                 const Divider(height: 20),
                 _CoordinateRow(
@@ -121,7 +116,7 @@ class PlotDetailScreen extends StatelessWidget {
                   child: FilledButton.icon(
                     onPressed: onFindPlot,
                     icon: const Icon(Icons.center_focus_strong_outlined, size: 18),
-                    label: const Text('Find this plot'),
+                    label: const Text('Open AR view'),
                   ),
                 ),
               ],
@@ -149,7 +144,7 @@ class _SketchCard extends StatelessWidget {
               children: [
                 Positioned.fill(
                   child: Semantics(
-                    label: 'Plan view of the plot boundary with the access point marked',
+                    label: 'Plan view of the plot boundary',
                     child: CustomPaint(painter: PlotSketchPainter(plot)),
                   ),
                 ),
@@ -181,13 +176,6 @@ class _SketchCard extends StatelessWidget {
                         SizedBox(width: 12, height: 3, child: ColoredBox(color: PlotSketchPainter.boundaryColour)),
                         SizedBox(width: 5),
                         Text('Boundary', style: TextStyle(color: Color(0xFFE5E7EB), fontSize: 11)),
-                        SizedBox(width: 12),
-                        DecoratedBox(
-                          decoration: BoxDecoration(color: PlotSketchPainter.accessColour, shape: BoxShape.circle),
-                          child: SizedBox(width: 8, height: 8),
-                        ),
-                        SizedBox(width: 5),
-                        Text('Access point', style: TextStyle(color: Color(0xFFE5E7EB), fontSize: 11)),
                       ],
                     ),
                   ),
@@ -332,7 +320,7 @@ class _Fact extends StatelessWidget {
       );
 }
 
-/// Plan view of the boundary with the access point marked, drawn in metres and
+/// Plan view of the boundary, drawn in metres and
 /// scaled to fit. Purely offline.
 class PlotSketchPainter extends CustomPainter {
   PlotSketchPainter(this.plot);
@@ -340,16 +328,14 @@ class PlotSketchPainter extends CustomPainter {
   final Plot plot;
 
   static const Color boundaryColour = Color(0xFF38BDF8);
-  static const Color accessColour = Color(0xFFF59E0B);
 
   @override
   void paint(Canvas canvas, Size size) {
     final frame = EnuFrame(plot.centroid);
     final ring = openRing([for (final p in plot.ring) frame.toEnu(p)]);
-    final access = frame.toEnu(plot.accessPoint);
     if (ring.length < 3) return;
 
-    final points = [...ring, access];
+    final points = ring;
     final minE = points.map((p) => p.east).reduce(math.min);
     final maxE = points.map((p) => p.east).reduce(math.max);
     final minN = points.map((p) => p.north).reduce(math.min);
@@ -382,7 +368,6 @@ class PlotSketchPainter extends CustomPainter {
     for (final vertex in ring) {
       canvas.drawCircle(toScreen(vertex), 3.5, vertexPaint);
     }
-    canvas.drawCircle(toScreen(access), 6, Paint()..color = accessColour);
   }
 
   @override

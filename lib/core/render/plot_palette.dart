@@ -50,16 +50,15 @@ class SeverityColour {
   final double fillAlpha;
 }
 
-/// The crop-health ramp, shared with the web map through palette.json.
+/// The crop-condition zones, shared with the web map through palette.json.
 ///
-/// Healthy through mild and stressed to critical. Kept apart from
+/// Normal, moderate, critical - green, yellow, red - for every index. Kept apart from
 /// [plotColours] on purpose: that palette identifies a plot, this one grades a
 /// condition, and swapping them would make a red-slot plot look like a dead one.
 const List<SeverityColour> severityColours = [
-  SeverityColour(0, 'healthy', 'Healthy', 0xFF2FD44E, 0.22),
-  SeverityColour(1, 'mild', 'Mild', 0xFFFFE81A, 0.55),
-  SeverityColour(2, 'stressed', 'Stressed', 0xFFFF8A00, 0.68),
-  SeverityColour(3, 'critical', 'Critical', 0xFFFF2118, 0.8),
+  SeverityColour(0, 'normal', 'Normal', 0xFF2FD44E, 0.25),
+  SeverityColour(1, 'moderate', 'Moderate', 0xFFFFD60A, 0.6),
+  SeverityColour(2, 'critical', 'Critical', 0xFFFF2118, 0.8),
 ];
 
 /// The band for a severity level, clamped rather than wrapped.

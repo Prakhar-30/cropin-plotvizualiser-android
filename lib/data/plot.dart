@@ -8,7 +8,6 @@ class Plot {
     required this.name,
     required this.ring,
     required this.centroid,
-    required this.accessPoint,
     required this.areaSqM,
     required this.landmarkNote,
     required this.colourIndex,
@@ -22,7 +21,6 @@ class Plot {
   /// Closed ring of WGS84 positions, in the order the surveyor drew them.
   final List<LatLng> ring;
   final LatLng centroid;
-  final LatLng accessPoint;
   final double areaSqM;
   final String landmarkNote;
 
@@ -37,22 +35,20 @@ class Plot {
   int get cornerCount => ring.length >= 2 && ring.first == ring.last ? ring.length - 1 : ring.length;
 }
 
-/// A crop-health snapshot for one plot, as the app uses it.
+/// A crop-condition snapshot for one plot, as the app uses it.
 ///
-/// [HealthCell] and [HealthHotspot] are the `core/render` types rather than
-/// copies of them. Mirroring a four-field shape across the data and render
-/// layers buys nothing but a mapping function and the chance for the two to
-/// disagree about what `severity` means.
+/// [HealthCell] and [HealthPatch] are the `core/render` types rather than
+/// copies of them, so the data and render layers cannot disagree about what a
+/// zone means.
 class PlotHealth {
   const PlotHealth({
     required this.plotId,
     required this.capturedOn,
-    required this.indexName,
     required this.synthetic,
     required this.note,
     required this.cellSizeM,
     required this.cells,
-    required this.hotspots,
+    required this.patches,
     required this.syncedAtMs,
   });
 
@@ -61,29 +57,24 @@ class PlotHealth {
   /// Capture date of the underlying imagery, `YYYY-MM-DD`.
   final String capturedOn;
 
-  /// Which index was graded, e.g. `ndvi`.
-  final String indexName;
-
-  /// True when the values are a stand-in rather than measured imagery.
-  ///
-  /// Surfaced in the AR view, not just logged. An agent acting on a made-up
-  /// NDVI is the one failure mode of this feature that costs real money, and
-  /// the overlay is convincing enough that nothing but an explicit label will
-  /// stop it being believed.
+  /// True when the values are demonstration values rather than measured
+  /// imagery. Surfaced in the AR view, not just logged.
   final bool synthetic;
 
-  /// The server's own wording for any caveat, shown verbatim - see [synthetic].
+  /// The server's own wording for any caveat, shown verbatim.
   final String note;
   final double cellSizeM;
   final List<HealthCell> cells;
-  final List<HealthHotspot> hotspots;
+
+  /// Moderate and critical patches on every index: the drop points.
+  final List<HealthPatch> patches;
   final int syncedAtMs;
 
-  /// Cells at or above the "stressed" band. The count the readout leads with.
-  int get stressedCellCount => cells.where((c) => c.severity >= 2).length;
-
-  /// Ground area graded as stressed or worse.
-  double get stressedAreaSqM => stressedCellCount * cellSizeM * cellSizeM;
+  /// Patches of one index, worst first.
+  List<HealthPatch> patchesFor(HealthIndex index) => [
+        for (final p in patches)
+          if (p.index == index) p,
+      ];
 }
 
 /// What a sync produced.

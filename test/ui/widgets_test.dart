@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plot_finder/core/geo/enu.dart';
 import 'package:plot_finder/core/heading/heading_model.dart';
+import 'package:plot_finder/core/render/health_geometry.dart';
 import 'package:plot_finder/data/plot.dart';
 import 'package:plot_finder/pose/pose_source.dart';
 import 'package:plot_finder/ui/ar/ar_controller.dart';
@@ -50,7 +51,6 @@ void main() {
         LatLng(12.7860, 76.7200),
       ],
       centroid: LatLng(12.7863, 76.7207),
-      accessPoint: LatLng(12.7860, 76.7200),
       areaSqM: 25000,
       landmarkNote: '',
       colourIndex: 2,
@@ -73,11 +73,11 @@ void main() {
     expect(find.text('2026-08-01'), findsOneWidget);
 
     expect(find.text('Simulate'), findsNothing);
-    await tester.tap(find.text('Find this plot'));
+    await tester.tap(find.text('Open AR view'));
     expect(opened, isTrue);
   });
 
-  testWidgets('the minimap draws the field and grows when tapped', (tester) async {
+  testWidgets('the minimap grows when tapped', (tester) async {
     const plot = Plot(
       id: 'PLT-2',
       name: 'South field',
@@ -88,24 +88,25 @@ void main() {
         LatLng(12.7860, 76.7200),
       ],
       centroid: LatLng(12.7863, 76.7207),
-      accessPoint: LatLng(12.7860, 76.7200),
       areaSqM: 25000,
       landmarkNote: '',
       colourIndex: 0,
       createdAt: '2026-08-01T10:00:00Z',
       syncedAtMs: 0,
     );
-    final frame = ValueNotifier<ArFrame?>(null);
+    final frame = ValueNotifier<ArFrame?>(const ArFrame(agent: LatLng(12.7862, 76.7205)));
     addTearDown(frame.dispose);
     await tester.pumpWidget(host(Align(
       alignment: Alignment.bottomRight,
-      child: PlotMinimap(plot: plot, health: null, frame: frame),
+      child: PlotMinimap(plots: const [plot], health: const {}, index: HealthIndex.ndvi, frame: frame),
     )));
     final map = find.byType(PlotMinimap);
     expect(tester.getSize(map), const Size(132, 132));
+    expect(find.text('60 m'), findsOneWidget, reason: 'the scale is shown');
     await tester.tap(map);
     await tester.pumpAndSettle();
     expect(tester.getSize(map), const Size(220, 220));
+    expect(find.text('120 m'), findsOneWidget, reason: 'enlarging also widens the radius');
   });
 
   testWidgets('the startup loader says what it is still waiting for, and when it is slow', (tester) async {
@@ -125,10 +126,34 @@ void main() {
     expect(StartupLoader.done(hasFix: false, usesTracking: false, tracking: false), isFalse);
   });
 
-  test("I'm at the access point is offered only within 50 m by GPS", () {
-    expect(const ArUiState().canPin, isFalse, reason: 'no fix yet');
-    expect(const ArUiState(accessPointDistanceM: 50).canPin, isTrue);
-    expect(const ArUiState(accessPointDistanceM: 51).canPin, isFalse);
-    expect(const ArUiState(accessPointDistanceM: 3).canPin, isTrue);
+  test('the AR state collects drop points of the chosen index across plots', () {
+    PlotHealth health(String id, List<HealthPatch> patches) => PlotHealth(
+          plotId: id,
+          capturedOn: '2026-10-01',
+          synthetic: true,
+          note: '',
+          cellSizeM: 3,
+          cells: const [],
+          patches: patches,
+          syncedAtMs: 0,
+        );
+    HealthPatch patch(HealthIndex index, int zone) => HealthPatch(
+          index: index,
+          rank: 1,
+          zone: zone,
+          centroid: const LatLng(12.78, 76.72),
+          cellCount: 3,
+          areaSqM: 27,
+        );
+    final state = ArUiState(health: {
+      'A': health('A', [patch(HealthIndex.ndvi, 2), patch(HealthIndex.lswi, 1)]),
+      'B': health('B', [patch(HealthIndex.ndvi, 1)]),
+    });
+    expect(state.patches.length, 2, reason: 'NDVI patches from both plots');
+    expect(state.copyWith(index: HealthIndex.lswi).patches.length, 1);
+    expect(state.copyWith(index: HealthIndex.ndre).patches, isEmpty);
+    expect(state.synthetic, isTrue);
+    expect(state.snapped, isFalse);
+    expect(state.copyWith(snappedTo: () => 'A').snapped, isTrue);
   });
 }

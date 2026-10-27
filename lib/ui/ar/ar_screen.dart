@@ -15,9 +15,7 @@ import '../../core/heading/heading_model.dart';
 import '../../core/render/health_geometry.dart';
 import '../../core/render/overlay_geometry.dart';
 import '../../core/render/plot_palette.dart';
-import '../../data/plot.dart';
 import '../../platform/native_platform.dart';
-import '../formatting.dart';
 import '../theme.dart';
 import 'ar_controller.dart';
 import 'ar_overlay_painter.dart';
@@ -40,10 +38,11 @@ import 'startup_loader.dart';
 ///    narrower field of view than the characteristics report, which would
 ///    silently scale every projected point.
 class ArScreen extends StatefulWidget {
-  const ArScreen({super.key, required this.container, required this.plotId});
+  const ArScreen({super.key, required this.container, this.plotId});
 
   final AppContainer container;
-  final String plotId;
+  /// The plot the view was opened from, if any. Every nearby plot is shown.
+  final String? plotId;
 
   @override
   State<ArScreen> createState() => _ArScreenState();
@@ -86,7 +85,7 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
   }
 
   void _open(_Backend backend) {
-    final controller = ArController(widget.container, widget.plotId, visual: backend == _Backend.arcore);
+    final controller = ArController(widget.container, focusPlotId: widget.plotId, visual: backend == _Backend.arcore);
     controller.visualFailed.addListener(_onVisualFailed);
     controller.start();
     setState(() {
@@ -261,9 +260,6 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                           child: CustomPaint(
                             painter: ArOverlayPainter(
                               frame: controller.frame,
-                              plotId: state.plot?.id ?? '',
-                              areaHectares: state.plot?.areaHectares ?? 0.0,
-                              colourIndex: state.plot?.colourIndex ?? 0,
                               confidence: state.headingStatus?.confidence ?? HeadingConfidence.unreliable,
                               accuracyM: state.accuracyM,
                               devicePixelRatio: dpr,
@@ -302,7 +298,7 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _ArAppBar(plot: state.plot),
+                  _ArAppBar(index: state.index, synthetic: state.synthetic),
                   Padding(
                     padding: const EdgeInsets.all(12),
                     child: Row(
@@ -334,21 +330,22 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Once the agent is at the plot - pinned, or within the
-                  // near range - not while they are still walking there.
-                  if (state.plot case final plot? when state.pinned || state.mode == RenderMode.near)
+                  if (state.plots.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(right: 12, bottom: 10),
-                      child: PlotMinimap(plot: plot, health: state.health, frame: controller.frame),
+                      child: PlotMinimap(
+                        plots: state.plots,
+                        health: state.health,
+                        index: state.index,
+                        frame: controller.frame,
+                      ),
                     ),
                   SizedBox(
                     width: double.infinity,
                     child: _BottomSheet(
                       state: state,
                       onDismissMessage: controller.dismissMessage,
-                      onSelectHealth: controller.setHealthLayer,
-                      onSnap: controller.snapToAccessPoint,
-                      onPin: controller.pinToAccessPoint,
+                      onSelectIndex: controller.setIndex,
                     ),
                   ),
                 ],
@@ -361,245 +358,173 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
   }
 }
 
-/// Grow's slate app bar, carried over the camera so the agent always sees
-/// which plot they are looking for.
+/// Grow's slate app bar, carried over the camera: what is being shown.
 class _ArAppBar extends StatelessWidget {
-  const _ArAppBar({required this.plot});
+  const _ArAppBar({required this.index, required this.synthetic});
 
-  final Plot? plot;
+  final HealthIndex index;
+  final bool synthetic;
 
   @override
-  Widget build(BuildContext context) {
-    final plot = this.plot;
-    return Material(
-      color: GrowColors.primary,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(4, MediaQuery.paddingOf(context).top, 12, 0),
-        child: SizedBox(
-          height: 56,
-          child: Row(
-            children: [
-              IconButton(
-                tooltip: 'Back to plot details',
-                color: Colors.white,
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      plot?.name ?? 'Finding plot',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w500),
-                    ),
-                    if (plot != null)
+  Widget build(BuildContext context) => Material(
+        color: GrowColors.primary,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(4, MediaQuery.paddingOf(context).top, 12, 0),
+          child: SizedBox(
+            height: 56,
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Back',
+                  color: Colors.white,
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Nearby plots',
+                        style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w500),
+                      ),
                       Text(
-                        '${plot.id} · ${formatHectares(plot.areaSqM)}',
+                        '${index.label} · ${index.code}${synthetic ? ' · demo values' : ''}',
                         style: const TextStyle(color: GrowColors.onPrimaryMuted, fontSize: 12),
                       ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-    );
-  }
+      );
 }
 
-/// Message, the two positioning actions, crop health - collapsible.
-///
-/// The two actions - aim at the access point to lock the heading, stand on it
-/// to fix the position - sit side by side and stay visible when the sheet is
-/// collapsed: they are what the agent reaches for while walking, and the
-/// collapsed sheet is how they walk. Expanding adds the health layer and the
-/// access point's note, nothing more.
-class _BottomSheet extends StatefulWidget {
-  const _BottomSheet({
-    required this.state,
-    required this.onDismissMessage,
-    required this.onSelectHealth,
-    required this.onSnap,
-    required this.onPin,
-  });
+/// The sheet: which index the drop points show, what the colours mean, and
+/// where the session is anchored. No buttons to press - the anchor is automatic.
+class _BottomSheet extends StatelessWidget {
+  const _BottomSheet({required this.state, required this.onDismissMessage, required this.onSelectIndex});
 
   final ArUiState state;
   final VoidCallback onDismissMessage;
-  final ValueChanged<HealthLayer> onSelectHealth;
-  final VoidCallback onSnap;
-  final VoidCallback onPin;
-
-  @override
-  State<_BottomSheet> createState() => _BottomSheetState();
-}
-
-class _BottomSheetState extends State<_BottomSheet> {
-  bool _expanded = false;
-
-  void _toggle() => setState(() => _expanded = !_expanded);
-
-  void _onDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    if (velocity.abs() < 100) return;
-    setState(() => _expanded = velocity < 0);
-  }
+  final ValueChanged<HealthIndex> onSelectIndex;
 
   @override
   Widget build(BuildContext context) {
-    final state = widget.state;
-    final plot = state.plot;
     final message = state.message;
-    if (plot == null && message == null) return const SizedBox.shrink();
-    final landmark = plot?.landmarkNote.trim() ?? '';
+    final drops = state.patches.length;
     return Container(
       decoration: const BoxDecoration(
         color: PlotFinderColors.sheet,
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + MediaQuery.paddingOf(context).bottom),
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
-        alignment: Alignment.bottomCenter,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _SheetHandle(expanded: _expanded, onTap: _toggle, onDragEnd: _onDragEnd),
-            if (message != null) ...[
-              _MessageBanner(message: message, onDismiss: widget.onDismissMessage),
-              const SizedBox(height: 10),
-            ],
-            if (plot != null)
-              _PrimaryAction(
-                pinned: state.pinned,
-                distanceM: state.accessPointDistanceM,
-                enabled: state.canPin,
-                onPressed: widget.onPin,
-              ),
-            if (plot != null && _expanded) ...[
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Divider(height: 1, color: PlotFinderColors.sheetDivider),
-              ),
-              _HealthControls(state: state, onSelect: widget.onSelectHealth),
-              if (landmark.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Icon(Icons.flag_outlined, size: 16, color: PlotFinderColors.warning),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        landmark,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 13),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              // A fallback, not a step: where GPS is too weak for the walk to
-              // set the direction - indoors, mostly - aiming at the access
-              // point from 10 m off can.
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  style: TextButton.styleFrom(foregroundColor: PlotFinderColors.mutedText, padding: EdgeInsets.zero),
-                  onPressed: widget.onSnap,
-                  icon: const Icon(Icons.gps_fixed, size: 16),
-                  label: const Text('Direction off? Aim at the access point and tap'),
-                ),
-              ),
-            ],
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MediaQuery.paddingOf(context).bottom),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (message != null) ...[
+            _MessageBanner(message: message, onDismiss: onDismissMessage),
+            const SizedBox(height: 10),
           ],
-        ),
+          _IndexSwitch(selected: state.index, onSelect: onSelectIndex),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const _ZoneDot(zone: zoneCritical),
+              const SizedBox(width: 6),
+              const Text('Critical', style: TextStyle(color: Colors.white, fontSize: 13)),
+              const SizedBox(width: 14),
+              const _ZoneDot(zone: zoneModerate),
+              const SizedBox(width: 6),
+              const Text('Moderate', style: TextStyle(color: Colors.white, fontSize: 13)),
+              const Spacer(),
+              Text(
+                state.health.isEmpty ? 'no crop data cached' : '$drops drop point${drops == 1 ? '' : 's'}',
+                style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            state.snapped ? 'Anchored to the boundary - walk freely' : 'Anchors automatically within 10 m of a boundary',
+            style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// The one thing the agent is asked to do: say when they are standing on the
-/// access point. Everything else - direction included - follows from it and
-/// from the walk.
-///
-/// Disabled until GPS puts the agent within [maxAccessPointPinDistanceM] of
-/// the access point, and the label says why: how far there is still to go,
-/// or that GPS has not come in yet.
-class _PrimaryAction extends StatelessWidget {
-  const _PrimaryAction({
-    required this.pinned,
-    required this.distanceM,
-    required this.enabled,
-    required this.onPressed,
-  });
+/// Crop greenness, crop vigour, water stress - one at a time.
+class _IndexSwitch extends StatelessWidget {
+  const _IndexSwitch({required this.selected, required this.onSelect});
 
-  final bool pinned;
-  final int? distanceM;
-  final bool enabled;
-  final VoidCallback onPressed;
+  final HealthIndex selected;
+  final ValueChanged<HealthIndex> onSelect;
 
   @override
-  Widget build(BuildContext context) {
-    final distance = distanceM;
-    final onTap = enabled ? onPressed : null;
-    // Once pinned, the button just says so; re-pinning still needs the 50 m.
-    if (!enabled && !pinned) {
-      return SizedBox(
-        width: double.infinity,
-        child: FilledButton.icon(
-          style: FilledButton.styleFrom(
-            disabledBackgroundColor: const Color(0x33FFFFFF),
-            disabledForegroundColor: PlotFinderColors.mutedText,
-            minimumSize: const Size(0, 48),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-          ),
-          onPressed: null,
-          icon: Icon(distance == null ? Icons.gps_not_fixed : Icons.directions_walk, size: 20),
-          label: Text(
-            distance == null
-                ? 'Waiting for GPS…'
-                : 'Walk closer · access point $distance m away',
-          ),
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: PlotFinderColors.sheetRaised,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            for (final index in HealthIndex.values)
+              Expanded(
+                child: Semantics(
+                  selected: index == selected,
+                  button: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onSelect(index),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      decoration: BoxDecoration(
+                        color: index == selected ? Colors.white : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        index.label,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: index == selected ? GrowColors.primaryDark : Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       );
-    }
-    final icon = Icon(pinned ? Icons.where_to_vote : Icons.my_location, size: 20);
-    final label = Text(pinned ? 'At the access point' : "I'm at the access point");
-    if (pinned) {
-      return OutlinedButton.icon(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.white,
-          side: const BorderSide(color: PlotFinderColors.sheetDivider),
-          minimumSize: const Size.fromHeight(48),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-        ),
-        onPressed: onTap,
-        icon: icon,
-        label: label,
-      );
-    }
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton.icon(
-        style: cameraPrimaryButtonStyle(),
-        onPressed: onTap,
-        icon: icon,
-        label: label,
-      ),
-    );
-  }
 }
 
-/// Which way, and how far, to the access point - until the agent is there.
+class _ZoneDot extends StatelessWidget {
+  const _ZoneDot({required this.zone});
+
+  final int zone;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 12,
+        height: 12,
+        decoration: BoxDecoration(color: Color(severityColour(zone).argb), shape: BoxShape.circle),
+      );
+}
+
+/// Which way, and how far, to the nearest plot boundary - until the session
+/// anchors to one.
 class _GuidePill extends StatelessWidget {
   const _GuidePill({required this.frame});
 
@@ -611,7 +536,6 @@ class _GuidePill extends StatelessWidget {
         builder: (context, current, _) {
           final guide = current?.guide;
           if (guide == null) return const SizedBox.shrink();
-          final near = guide.distanceM < 10;
           return Center(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -624,47 +548,19 @@ class _GuidePill extends StatelessWidget {
                     child: const Icon(Icons.navigation, color: Colors.white, size: 20),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    near ? 'Access point is here' : 'Access point · ${guide.distanceM.round()} m',
-                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                  Flexible(
+                    child: Text(
+                      '${guide.plotName} boundary · ${guide.distanceM.round()} m',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ],
               ),
             ),
           );
         },
-      );
-}
-
-/// The grab handle. The whole strip is the hit target, not the 36 px bar: a
-/// field agent is holding the phone up with one hand, often in gloves or the
-/// sun.
-class _SheetHandle extends StatelessWidget {
-  const _SheetHandle({required this.expanded, required this.onTap, required this.onDragEnd});
-
-  final bool expanded;
-  final VoidCallback onTap;
-  final GestureDragEndCallback onDragEnd;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-        button: true,
-        label: expanded ? 'Collapse panel' : 'Show crop health',
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          onVerticalDragEnd: onDragEnd,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 10),
-            child: Center(
-              child: Icon(
-                expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
-                color: PlotFinderColors.mutedText,
-                size: 22,
-              ),
-            ),
-          ),
-        ),
       );
 }
 
@@ -865,197 +761,4 @@ class _ModeBadge extends StatelessWidget {
       ),
     );
   }
-}
-
-/// The crop-health switch, its legend, and every caveat attached to it.
-///
-/// The caveats are not decoration. This overlay paints ground brown and tells a
-/// field agent to walk there, and there are three separate ways it can be saying
-/// something it does not know: the values may be synthetic rather than measured,
-/// the heading may be too poor to place them, or the raster may simply not be
-/// cached. Each of those has to be visible at the moment the colour is, because
-/// a confident-looking overlay is believed.
-class _HealthControls extends StatelessWidget {
-  const _HealthControls({required this.state, required this.onSelect});
-
-  final ArUiState state;
-  final ValueChanged<HealthLayer> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final health = state.health;
-    final caveats = <Widget>[];
-    if (state.healthSyncing) {
-      caveats.add(const _Caveat(Icons.downloading, 'Fetching health...', PlotFinderColors.mutedText));
-    } else if (state.healthLayer == HealthLayer.off) {
-      caveats.add(const _Caveat(Icons.visibility_off_outlined, 'Crop health hidden', PlotFinderColors.faintText));
-    } else if (health == null) {
-      caveats.add(const _Caveat(
-        Icons.cloud_off_outlined,
-        'No raster cached - tap Sync on the plot list',
-        PlotFinderColors.warning,
-      ));
-    } else if (state.healthVetoed) {
-      // The veto, spelled out. "Nothing is drawn" and "nothing is wrong" look
-      // identical on a camera feed, so the reason has to be stated or the agent
-      // will read an empty field as a healthy one.
-      caveats.add(const _Caveat(
-        Icons.visibility_off_outlined,
-        'Health hidden until heading is trusted - pin it below',
-        PlotFinderColors.warning,
-      ));
-    }
-    if (health != null && state.healthLayer != HealthLayer.off && health.synthetic) {
-      // The server's own wording, not a second copy of it written here.
-      caveats.add(_Caveat(
-        Icons.warning_amber_rounded,
-        health.note.trim().isEmpty ? 'Synthetic values - not measured imagery' : health.note,
-        PlotFinderColors.warning,
-      ));
-    }
-    final showing = state.healthLayer != HealthLayer.off && health != null && !state.healthVetoed;
-    final patches = health?.hotspots.length ?? 0;
-    final hidden = state.hiddenCellCount;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text('Crop health', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
-            ),
-            if (health != null)
-              Text(
-                '${health.indexName.toUpperCase()} · ${health.capturedOn}',
-                style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
-              ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        _LayerSwitch(selected: state.healthLayer, onSelect: onSelect),
-        if (showing) ...[
-          const SizedBox(height: 10),
-          Text(
-            '$patches patch${patches == 1 ? '' : 'es'} · ${formatHectares(health.stressedAreaSqM)} stressed',
-            style: const TextStyle(color: PlotFinderColors.onSurface, fontSize: 13),
-          ),
-          _SeverityLegend(minSeverity: state.healthLayer.minSeverity),
-          // Says out loud that healthy ground is being withheld. An agent who
-          // does not know the filter is on reads bare ground between two brown
-          // patches as unsurveyed.
-          if (hidden > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                '$hidden healthy cells hidden - choose All cells to show them',
-                style: const TextStyle(color: PlotFinderColors.faintText, fontSize: 12),
-              ),
-            ),
-        ],
-        for (final caveat in caveats) Padding(padding: const EdgeInsets.only(top: 8), child: caveat),
-      ],
-    );
-  }
-}
-
-/// Off / Problem areas / All cells as one segmented control, so the agent
-/// picks the layer instead of cycling past the one they want.
-class _LayerSwitch extends StatelessWidget {
-  const _LayerSwitch({required this.selected, required this.onSelect});
-
-  final HealthLayer selected;
-  final ValueChanged<HealthLayer> onSelect;
-
-  static String _label(HealthLayer layer) => switch (layer) {
-        HealthLayer.off => 'Off',
-        HealthLayer.stress => 'Problem areas',
-        HealthLayer.all => 'All cells',
-      };
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(color: PlotFinderColors.sheetRaised, borderRadius: BorderRadius.circular(10)),
-        child: Row(
-          children: [
-            for (final layer in HealthLayer.values)
-              Expanded(
-                child: Semantics(
-                  selected: layer == selected,
-                  button: true,
-                  child: TextButton(
-                    onPressed: () => onSelect(layer),
-                    style: TextButton.styleFrom(
-                      minimumSize: const Size(0, 40),
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      backgroundColor: layer == selected ? Colors.white : Colors.transparent,
-                      foregroundColor: layer == selected ? GrowColors.primaryDark : PlotFinderColors.mutedText,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      textStyle: TextStyle(
-                        fontSize: 13,
-                        fontWeight: layer == selected ? FontWeight.w700 : FontWeight.w500,
-                      ),
-                    ),
-                    child: Text(_label(layer), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-}
-
-class _Caveat extends StatelessWidget {
-  const _Caveat(this.icon, this.text, this.colour);
-
-  final IconData icon;
-  final String text;
-  final Color colour;
-
-  @override
-  Widget build(BuildContext context) => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(padding: const EdgeInsets.only(top: 1), child: Icon(icon, size: 15, color: colour)),
-          const SizedBox(width: 8),
-          Expanded(child: Text(text, style: TextStyle(color: colour, fontSize: 12, height: 1.4))),
-        ],
-      );
-}
-
-/// The colour key, showing only the bands this layer actually draws.
-///
-/// Listing a band that is currently hidden would have the agent hunting the
-/// field for a green that is not on screen.
-class _SeverityLegend extends StatelessWidget {
-  const _SeverityLegend({required this.minSeverity});
-
-  final int minSeverity;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Wrap(
-          spacing: 14,
-          runSpacing: 6,
-          children: [
-            for (final band in severityColours)
-              if (band.level >= minSeverity)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(color: Color(band.argb), borderRadius: BorderRadius.circular(3)),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(band.label, style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12)),
-                  ],
-                ),
-          ],
-        ),
-      );
 }

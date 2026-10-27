@@ -1,5 +1,4 @@
-// Cache rows, column for column the same as the Kotlin app's Room schema
-// (version 3), so a device upgrading from that build keeps its cached plots.
+// Cache rows. Version 4 dropped the access point; see AppDatabase.
 
 /// A plot as cached on the device. Mirrors the web tool's `plots` table.
 ///
@@ -13,8 +12,6 @@ class PlotEntity {
     required this.ringJson,
     required this.centroidLat,
     required this.centroidLng,
-    required this.accessLat,
-    required this.accessLng,
     required this.areaSqM,
     required this.landmarkNote,
     required this.colourIndex,
@@ -28,8 +25,6 @@ class PlotEntity {
         ringJson: m['ringJson'] as String,
         centroidLat: (m['centroidLat'] as num).toDouble(),
         centroidLng: (m['centroidLng'] as num).toDouble(),
-        accessLat: (m['accessLat'] as num).toDouble(),
-        accessLng: (m['accessLng'] as num).toDouble(),
         areaSqM: (m['areaSqM'] as num).toDouble(),
         landmarkNote: m['landmarkNote'] as String,
         colourIndex: m['colourIndex'] as int,
@@ -44,8 +39,6 @@ class PlotEntity {
   final String ringJson;
   final double centroidLat;
   final double centroidLng;
-  final double accessLat;
-  final double accessLng;
   final double areaSqM;
   final String landmarkNote;
 
@@ -62,8 +55,6 @@ class PlotEntity {
         'ringJson': ringJson,
         'centroidLat': centroidLat,
         'centroidLng': centroidLng,
-        'accessLat': accessLat,
-        'accessLng': accessLng,
         'areaSqM': areaSqM,
         'landmarkNote': landmarkNote,
         'colourIndex': colourIndex,
