@@ -198,7 +198,7 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
                 camera.getProjectionMatrix(projection, 0, NEAR_M, FAR_M)
                 zoomProjection(projection, z)
                 overlay.draw(
-                    view, projection, placement, floorY, pose.tx(), pose.tz(),
+                    view, projection, placement, floorY,
                     viewportWidth, viewportHeight, z,
                 )
             }

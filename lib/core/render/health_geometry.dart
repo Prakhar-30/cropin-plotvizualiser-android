@@ -94,9 +94,9 @@ class HealthPatch {
 
 /// How tall a drop point stands, metres from the ground.
 ///
-/// Taller than the 2.6 m boundary wall on purpose: the wall says where the
-/// plot ends, the drop point says where to walk, and a target hidden behind
-/// the fence between you and it is no target at all.
+/// Well above eye level on purpose: the boundary lies flat on the ground and
+/// says where the plot ends; the drop point stands up and says where to walk,
+/// and must show over the crop and the people between you and it.
 const double dropPointHeightM = 4.5;
 
 /// Drop points beyond this are not drawn. Past a few hundred metres a pin is a

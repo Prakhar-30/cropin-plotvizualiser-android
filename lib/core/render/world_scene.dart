@@ -44,28 +44,28 @@ double overlayConfidenceAlpha(HeadingConfidence confidence) => switch (confidenc
       HeadingConfidence.unreliable => 0.45,
     };
 
-/// One plot in the scene: its boundary, where its walls stand, and its colour.
+/// One plot in the scene: its boundary and its colour.
 ///
-/// No ground fill. A tinted floor across several plots - and across the whole
-/// screen when standing inside one - drowned the only colour on the ground that
-/// matters, the red and yellow of crop condition.
+/// The boundary lies flat on the ground as a ribbon from [ring] in to [inner],
+/// with a line down the middle; nothing stands up. Walls of neighbouring plots
+/// overlapped in the camera and made it hard to tell which fence was whose. No
+/// ground fill either: the only colour across the ground is crop condition.
 class ScenePlot {
-  const ScenePlot({required this.ring, required this.walls, required this.tintArgb, required this.primary});
+  const ScenePlot({required this.ring, required this.inner, required this.tintArgb, required this.primary});
 
-  /// Boundary, open ring: (east, north) per vertex. Drawn as a line on the ground.
+  /// Boundary, open ring: (east, north) per vertex. The ribbon's outer edge.
   final Float32List ring;
 
-  /// Where the walls stand: the boundary pulled [boundaryWallInsetM] inwards,
-  /// so neighbours sharing an edge show as two fences, one each side.
-  final Float32List walls;
+  /// The boundary pulled [boundaryRibbonWidthM] inwards, vertex for vertex: the
+  /// ribbon's inner edge. Inside its own plot only, so neighbours sharing an
+  /// edge show two bands side by side, neither covering the other.
+  final Float32List inner;
   final int tintArgb;
 
-  /// The plot the agent is in, or nearest to: the only one given full walls.
-  /// The rest get their ground line and short corner posts, so a row of
-  /// neighbouring fences cannot stack into a wall of colour.
+  /// The plot the agent is in, or nearest to; its line is drawn a little bolder.
   final bool primary;
 
-  Map<String, Object> toMessage() => {'ring': ring, 'walls': walls, 'tint': tintArgb, 'primary': primary};
+  Map<String, Object> toMessage() => {'ring': ring, 'inner': inner, 'tint': tintArgb, 'primary': primary};
 }
 
 class WorldScene {
@@ -85,13 +85,10 @@ class WorldScene {
         'plots': [for (final p in plots) p.toMessage()],
         'cells': cells,
         'drops': drops,
-        'wallHeight': boundaryWallHeightM,
-        'postHeight': vertexPostHeightM,
-        'minorPostHeight': minorPostHeightM,
         'dropHeight': dropPointHeightM,
         'alpha': alpha,
-        'wallAlpha': PlotAlpha.wallFill,
-        'railAlpha': PlotAlpha.rail,
+        'ribbonAlpha': PlotAlpha.ribbon,
+        'lineAlpha': PlotAlpha.outline,
       };
 }
 
@@ -115,8 +112,8 @@ WorldScene buildWorldScene({
       ring: Float32List.fromList([
         for (final p in boundary) ...[p.east, p.north],
       ]),
-      walls: Float32List.fromList([
-        for (final p in insetRing(boundary, boundaryWallInsetM)) ...[p.east, p.north],
+      inner: Float32List.fromList([
+        for (final p in insetRing(boundary, boundaryRibbonWidthM)) ...[p.east, p.north],
       ]),
       tintArgb: plotColour(plot.colourIndex).argb,
       primary: scenePlots.isEmpty,

@@ -648,18 +648,16 @@ class ArController extends ValueNotifier<ArUiState> {
     if (frame != null && intrinsics != null && agent != null) {
       final eyeHeight = _vio?.eyeHeightM ?? eyeHeightM;
       final drawn = <DrawnPlot>[
-        for (final (i, plot) in _nearby.indexed)
+        for (final plot in _nearby)
           DrawnPlot(
             plot,
             buildPlotOverlay(
-              primary: i == 0,
               ring: plot.ring,
               centroid: plot.centroid,
               agent: agent,
               frame: frame,
               deviceToEnu: _pose.deviceToEnu,
               intrinsics: intrinsics,
-              gnssAccuracyM: state.accuracyM,
               eyeHeight: eyeHeight,
             ),
           ),

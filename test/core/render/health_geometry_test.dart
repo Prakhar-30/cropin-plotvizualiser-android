@@ -5,7 +5,6 @@ import 'package:plot_finder/core/geo/enu.dart';
 import 'package:plot_finder/core/geo/projection.dart';
 import 'package:plot_finder/core/math_util.dart';
 import 'package:plot_finder/core/render/health_geometry.dart';
-import 'package:plot_finder/core/render/overlay_geometry.dart';
 
 void main() {
   const agent = LatLng(12.7862, 76.7201);
@@ -33,8 +32,8 @@ void main() {
         intrinsics: intrinsics,
       );
 
-  test('a drop point stands taller than the boundary wall', () {
-    expect(dropPointHeightM, greaterThan(boundaryWallHeightM));
+  test('a drop point stands well above eye level', () {
+    expect(dropPointHeightM, greaterThan(eyeHeightM + 2.0));
   });
 
   test('a drop point ahead projects as an upright stem, top above base', () {

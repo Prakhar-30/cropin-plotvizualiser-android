@@ -46,8 +46,8 @@ Boundaries are drawn there and only there; this app is a reader.
 2. **Start AR view** from the home screen. A loader ticks off
    *Camera*, *Motion tracking* and *GPS*; a last-known fix under 30 s old is used
    at once, so the wait is usually short.
-3. **Walk towards the plots.** Every cached plot within 400 m is drawn - walls on
-   its boundary, its name and distance - and a pill points to the nearest
+3. **Walk towards the plots.** Every cached plot within 400 m is drawn - its
+   boundary highlighted on the ground, its name and distance - and a pill points to the nearest
    boundary. No plot needs to be chosen.
 4. **No button to press.** Once GPS puts you within **10 m** of any plot's
    boundary, the session anchors itself to the nearest point on it - a corner, or
@@ -56,7 +56,7 @@ Boundaries are drawn there and only there; this app is a reader.
    each fix. Standing on the boundary at that moment makes it exact. It re-anchors
    after you walk 60 m on, or if ARCore loses tracking. North is set from your
    walk, also automatically (`TrajectoryAligner`).
-5. **Look for drop points**: tall pins (4.5 m, above the 2.6 m walls) on every
+5. **Look for drop points**: tall pins (4.5 m, standing up from the ground) on every
    moderate (yellow) and critical (red) patch, across every nearby plot at once,
    from the start. **Once anchored**, the moderate and critical 3 m cells are
    painted on the ground as well; before that the scene still moves with GPS and
@@ -289,45 +289,30 @@ real turn makes the estimate fall behind until the filter speeds up to catch it.
 > those are what tilt the ground plane. Only the carrier is smoothed now, and
 > only the carrier publishes a pose.
 
-## Two render modes
+## Boundaries on the ground
 
-Switched on distance to the **nearest edge**, never the centroid — an elongated
-plot's centroid can be 60 m away while the agent stands on its boundary.
+Every boundary is drawn **flat on the ground** - nothing stands up but the drop
+points. Standing walls of several neighbouring plots overlapped in the camera,
+and it was hard to tell which fence belonged to which plot.
 
-Neighbouring plots are kept apart: plot colours are blues, violets and white
-only (red and yellow always mean crop condition), plots have no tinted floor,
-walls stand **0.5 m inside** each plot's own boundary so a shared edge shows as
-two fences, and only the plot you are in or nearest to gets full walls - the
-rest keep their ground line and 1.2 m corner posts. Labels stand on a point
-inside each plot and are lifted clear of one another.
+Each plot's boundary is a **ribbon 0.6 m wide** running from the boundary *into
+its own plot*, with a bold line down its middle on a dark backing. Because the
+ribbon lies only inside its own plot, two plots sharing an edge show two bands
+side by side, each in its own colour, neither covering the other. The line is a
+fixed pixel width, so a plot 200 m off is still a visible outline even where the
+ribbon itself is a sliver; the plot you are in or nearest to gets a slightly
+bolder line.
 
-The primary plot's boundary edges stand up as **2.6 m vertical panels** in both modes — eye height
-plus a metre — each with a solid rail along its top. A boundary drawn flat on the
-ground reads as a coloured carpet rather than a limit, and disappears entirely
-when the phone is held level, because the ground plane is then edge-on to the
-camera. A wall topping out *below* eye level reads as floating; carrying it past
-eye level puts the rail against the sky and the panel plainly stands on the earth.
+Plot colours are blues, violets and white only - red and yellow always mean crop
+condition - and plots have no tinted floor, so the only colour across the ground
+is the red and yellow of problem cells. Labels stand on a point inside each plot,
+with a stalk to the ground and a strip of the plot's colour, and are lifted clear
+of one another.
 
-- **Far (>30 m)** — the panels, the boundary as a line on the ground, a post at each vertex,
-  and a label at the centroid with plot id, area and distance. An edge-of-screen
-  arrow points to the plot when it is outside the FOV. The *shape*, never just a
-  pin: the shape is what lets the agent confirm they are looking at the right
-  field when heading is slightly off.
-- **Near (<30 m)** — no fill. Each boundary edge becomes a translucent band whose
-  half-width is the live GNSS horizontal accuracy, built in metres so perspective
-  narrows it with distance. The band is labelled with the accuracy figure. A
-  crisp line here would be a false precision claim, and it is the line that gets
-  blamed the first time a farmer disputes a reading. Bands are suppressed once
-  the agent is closer to the edge than the accuracy itself, where the band's near
-  side falls behind the camera and floods the frame.
-
-Panels fade out inside 8 m, so walking up to a boundary opens the camera back up
-instead of filling it with colour — but the rail never drops below 0.75 opacity,
-because the line *is* the boundary and losing it as you reach the fence removes
-the answer at the moment you are trying to stand on it. Every rail, post and
-marker is stroked twice, a dark halo under the colour: a single coloured line
-vanishes wherever the background shares its luminance, and outdoor footage is
-mostly bright sky, pale soil and corrugated steel.
+The *NEAR / FAR* badge still switches at 30 m from the **nearest edge**, never the
+centroid - an elongated plot's centroid can be 60 m away while the agent stands
+on its boundary. In near mode the label carries the live GNSS accuracy. When no
+plot is in view, an edge-of-screen arrow points to the nearest.
 
 ## Crop condition as drop points
 
@@ -342,15 +327,15 @@ each split into the same three zones:
 
 The API also groups touching moderate-or-critical cells into **patches** (two
 cells or more), and the app draws **one drop point per patch**: a 4.5 m stem with
-a round head, yellow or red, standing above the 2.6 m boundary walls so a target
-is never hidden behind the fence in front of it. The moderate and critical cells
+a round head, yellow or red, standing well above eye level so a target shows
+over the crop and the people in front of it. The moderate and critical cells
 themselves are painted on the ground under them, yellow and red, for every
 nearby plot at once - only once the view is anchored to a boundary, and dropped
 again if ARCore loses tracking. Normal ground is not drawn. Drop points show the nearest 60
 within 300 m; on the sensor path cells are drawn to 120 m; the sheet switches the
 index for all of it together. On ARCore they are drawn natively in the camera's GL frame,
 ghosted rather than hidden behind nearer objects; without ARCore they are
-projected and painted like the walls.
+projected and painted like the boundaries.
 
 **The values are demonstration values**, deterministic per plot and shaped like a
 real field, and labelled as such in the app bar. Real Sentinel-2 means replacing
@@ -363,7 +348,7 @@ Persistent, not optional:
 - **Locked** (green) — heading from a recent walk or snap
 - **Holding** (amber) — gyro-carried, showing seconds since the last fix
 - **Unreliable** (grey) — compass only. On the sensor path the overlay greys out;
-  on the ARCore path it keeps the plot's colour, because a grey translucent wall
+  on the ARCore path it keeps the plot's colour, because a grey translucent boundary
   is invisible against a white wall or a pale sky. The chip reads *"walk a few
   steps to lock direction"*, which turns the worst failure mode into a short walk.
 

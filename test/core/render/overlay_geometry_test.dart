@@ -35,24 +35,19 @@ void main() {
     List<LatLng> ring, {
     double headingDeg = 0.0,
     double pitchDeg = 0.0,
-    double accuracyM = 6.0,
     LatLng agentAt = agent,
-    bool primary = true,
   }) =>
       buildPlotOverlay(
-        primary: primary,
         ring: ring,
         centroid: centroidOf(ring),
         agent: agentAt,
         frame: frame,
         deviceToEnu: deviceToEnuFromOrientation(headingDeg, pitchDeg),
         intrinsics: intrinsics,
-        gnssAccuracyM: accuracyM,
       );
 
-  /// Shoelace area of the projected quad, in square pixels.
-  double bandArea(OverlayBand band) {
-    final c = band.corners;
+  /// Shoelace area of a projected polygon, in square pixels.
+  double area(List<ScreenPoint> c) {
     var sum = 0.0;
     for (var i = 0; i < c.length; i++) {
       final n = c[(i + 1) % c.length];
@@ -61,34 +56,43 @@ void main() {
     return sum.abs() / 2;
   }
 
-  test('a distant plot renders in far mode with a filled shape and posts', () {
+  test('a distant plot is far mode: a ribbon and a line on every edge, and a label', () {
     final result = overlay(square(100.0, 80.0));
 
     expect(result.mode, RenderMode.far);
     expect(result.edgeDistanceM, closeTo(80.0, 0.5));
-    expect(result.fill.length, greaterThanOrEqualTo(4), reason: 'fill should be a closed shape');
-    expect(result.posts.length, 4, reason: 'one post per corner');
-    expect(result.bands, isEmpty);
+    expect(result.ribbons.length, 4);
+    expect(result.lines.length, 4);
+    expect(result.ribbons.every((r) => area(r.corners) > 0.0), isTrue);
     expect(result.label, isNotNull);
   });
 
-  test('posts stand above their own bases', () {
-    final result = overlay(square(100.0, 80.0));
-    for (final post in result.posts) {
-      expect(post.top.y, lessThan(post.base.y), reason: 'post top must be higher on screen than its base');
-      expect(post.top.x, closeTo(post.base.x, 1.0), reason: 'posts are vertical');
+  test('the boundary lies flat on the ground: nothing projects above the horizon', () {
+    // A level camera puts the horizon on the optical centre; ground below eye
+    // height is always under it. A wall would have crossed it.
+    final result = overlay(square(100.0, 60.0));
+    for (final ribbon in result.ribbons) {
+      for (final p in ribbon.corners) {
+        expect(p.y, greaterThan(intrinsics.centreYPx));
+      }
+    }
+    for (final line in result.lines) {
+      expect(line.from.y, greaterThan(intrinsics.centreYPx));
+      expect(line.to.y, greaterThan(intrinsics.centreYPx));
     }
   });
 
-  test('standing near an edge switches to near mode and drops the fill', () {
-    // Agent 10 m south of the plot's southern edge.
-    final result = overlay(square(100.0, 10.0));
+  test('ribbons arrive farthest first', () {
+    final distances = overlay(square(100.0, 60.0)).ribbons.map((r) => r.nearestDistanceM).toList();
+    final sorted = [...distances]..sort((a, b) => b.compareTo(a));
+    expect(distances, sorted);
+  });
 
+  test('standing near an edge switches to near mode', () {
+    final result = overlay(square(100.0, 10.0));
     expect(result.mode, RenderMode.near);
     expect(result.edgeDistanceM, closeTo(10.0, 0.5));
-    expect(result.fill, isEmpty, reason: 'near mode must not claim a filled area');
-    expect(result.posts, isEmpty);
-    expect(result.bands, isNotEmpty);
+    expect(result.ribbons, isNotEmpty);
   });
 
   test('an elongated plot switches on its edge even with a far centroid', () {
@@ -101,20 +105,6 @@ void main() {
     expect(result.edgeDistanceM, lessThan(nearModeThresholdM));
     expect(result.centroidDistanceM, greaterThan(100.0),
         reason: 'centroid is far away, which is exactly why it must not drive the switch');
-  });
-
-  test('a wider accuracy figure makes a wider band', () {
-    // 25 m from the near edge, so even the wide band stays in front of the
-    // camera and the comparison is about width alone, not clipping.
-    final ring = square(100.0, 25.0);
-    final tightArea = bandArea(overlay(ring, accuracyM: 3.0).bands.first);
-    final looseArea = bandArea(overlay(ring, accuracyM: 12.0).bands.first);
-    expect(looseArea, greaterThan(tightArea * 2), reason: '$looseArea should be well over $tightArea');
-  });
-
-  test('an excellent fix still draws a band rather than a hairline', () {
-    final result = overlay(square(100.0, 25.0), accuracyM: 0.1);
-    expect(bandArea(result.bands.first), greaterThan(0.0));
   });
 
   test('looking the wrong way reports a bearing for the edge arrow', () {
@@ -130,7 +120,7 @@ void main() {
   test('facing the plot needs no edge arrow', () {
     final result = overlay(square(100.0, 120.0), headingDeg: 0.0);
     expect(result.offscreenBearingDeg, isNull);
-    expect(result.fill.any((p) => p.isOnScreen(intrinsics)), isTrue);
+    expect(result.ribbons.any((r) => r.corners.any((p) => p.isOnScreen(intrinsics))), isTrue);
   });
 
   test('the arrow points the shorter way round', () {
@@ -140,29 +130,16 @@ void main() {
     expect(result.offscreenBearingDeg!, closeTo(60.0, 3.0));
   });
 
-  test('standing inside a large plot clips the outline instead of reshaping it', () {
-    // Centre of a 100 m square: every edge is 50 m off, so this is still far
-    // mode, and the two corners behind the agent must be clipped rather than
-    // dropped - dropping them would close the outline across the field.
+  test('standing inside a plot keeps the edges in front, clipped at the near plane', () {
     final sw = offset(agent, -50.0, -50.0);
     final ring = [sw, offset(sw, 100.0, 0.0), offset(sw, 100.0, 100.0), offset(sw, 0.0, 100.0), sw];
     final result = overlay(ring);
 
     expect(result.mode, RenderMode.far);
     expect(result.edgeDistanceM, closeTo(50.0, 0.5));
-    expect(result.fill.length, 4, reason: 'two corners in front plus two new points on the clip plane');
-    expect(result.posts.length, 2, reason: 'only the two corners in front can carry posts');
-  });
-
-  test('standing inside a small plot is near mode', () {
-    // Centre of a 40 m square: 20 m to every edge.
-    final sw = offset(agent, -20.0, -20.0);
-    final ring = [sw, offset(sw, 40.0, 0.0), offset(sw, 40.0, 40.0), offset(sw, 0.0, 40.0), sw];
-    final result = overlay(ring);
-
-    expect(result.mode, RenderMode.near);
-    expect(result.edgeDistanceM, closeTo(20.0, 0.5));
-    expect(result.bands, isNotEmpty, reason: 'some edge must still be drawable');
+    expect(result.ribbons, isNotEmpty, reason: 'the edges in front must still be drawn');
+    expect(result.ribbons.every((r) => r.nearestDistanceM > 0.0), isTrue,
+        reason: 'nothing behind the camera survives the clip');
   });
 
   test('clipping keeps the visible part of a polygon crossing the near plane', () {
@@ -209,10 +186,10 @@ void main() {
     expect(farDrop, greaterThan(0), reason: 'ground should project below the optical centre');
     expect(nearDrop / farDrop, closeTo(1.5, 0.02));
 
-    // The whole shape must move, not only the label.
+    // The whole shape must move, not only the label. Lines come in ring order.
     var moved = false;
-    for (var i = 0; i < math.min(near.fill.length, far.fill.length); i++) {
-      if ((near.fill[i].y - far.fill[i].y).abs() > 1.0) moved = true;
+    for (var i = 0; i < math.min(near.lines.length, far.lines.length); i++) {
+      if ((near.lines[i].from.y - far.lines[i].from.y).abs() > 1.0) moved = true;
     }
     expect(moved, isTrue, reason: 'the boundary must not hold a constant apparent position as the agent walks');
   });
@@ -231,108 +208,10 @@ void main() {
       frame: displacedFrame,
       deviceToEnu: deviceToEnuFromOrientation(0.0, 0.0),
       intrinsics: intrinsics,
-      gnssAccuracyM: 6.0,
     );
 
     expect(displaced.centroidDistanceM, closeTo(onAgent.centroidDistanceM, 0.2));
     expect(displaced.label!.at.x, closeTo(onAgent.label!.at.x, 1.0));
     expect(displaced.label!.at.y, closeTo(onAgent.label!.at.y, 1.0));
-  });
-
-  // --- vertical boundary walls --------------------------------------------
-
-  test('every boundary edge becomes a standing panel with a top rail', () {
-    final result = overlay(square(100.0, 60.0));
-
-    // A square has four edges; all four are in front of a camera 60 m south.
-    expect(result.walls.length, 4);
-    expect(result.rails.length, 4);
-    expect(result.walls.every((w) => w.quad.length >= 3), isTrue, reason: 'panels need at least three corners');
-  });
-
-  test('walls stand up on screen rather than lying flat', () {
-    final result = overlay(square(100.0, 60.0));
-
-    // The rail is boundaryWallHeightM above the ground, so for a level
-    // camera it must project above every point of the panel it caps.
-    // Walls are sorted far-to-near and rails are in ring order, so compare
-    // every rail against the lowest point of every panel.
-    final lowestFoot = result.walls.expand((w) => w.quad).map((p) => p.y).reduce(math.max);
-    for (final rail in result.rails) {
-      final railY = math.max(rail.from.y, rail.to.y);
-      expect(railY, lessThan(lowestFoot), reason: 'rail at $railY should sit above the panel foot at $lowestFoot');
-    }
-  });
-
-  test('panels are ordered far to near so translucency composites correctly', () {
-    final distances = overlay(square(100.0, 60.0)).walls.map((w) => w.nearestDistanceM).toList();
-    final sorted = [...distances]..sort((a, b) => b.compareTo(a));
-    expect(distances, sorted, reason: 'walls must arrive sorted farthest first');
-  });
-
-  test('walls are drawn in near mode too, where the ground fill is suppressed', () {
-    final result = overlay(square(100.0, 5.0));
-
-    expect(result.mode, RenderMode.near);
-    expect(result.fill, isEmpty, reason: 'near mode drops the ground fill');
-    expect(result.walls, isNotEmpty, reason: 'near mode keeps the standing boundary');
-  });
-
-  test('a wall the agent is standing inside is clipped, not dropped', () {
-    // Standing in the middle of the plot puts two edges behind the camera.
-    // Those must still contribute clipped panels rather than vanishing, or
-    // the boundary appears to open up behind the agent.
-    final result = overlay(square(40.0, -20.0));
-
-    expect(result.mode, RenderMode.near);
-    expect(result.walls, isNotEmpty, reason: 'some boundary must remain visible from inside');
-    expect(result.walls.every((w) => w.nearestDistanceM > 0.0), isTrue,
-        reason: 'clipped panels must stay in front of the camera');
-  });
-
-  test('accuracy bands are suppressed when they would engulf the camera', () {
-    // Standing 6 m from an edge with a 10 m fix: the band is a 10 m-wide
-    // slab lying on the ground, so its near side is 4 m BEHIND the camera.
-    final engulfing = overlay(square(60.0, 6.0), accuracyM: 10.0);
-    expect(engulfing.mode, RenderMode.near);
-    expect(engulfing.bands, isEmpty, reason: 'bands must not be drawn from inside them');
-    expect(engulfing.walls, isNotEmpty, reason: 'the boundary itself must still be drawn');
-
-    // Comfortably inside near mode but clear of the band: still drawn.
-    final usable = overlay(square(60.0, 25.0), accuracyM: 4.0);
-    expect(usable.mode, RenderMode.near);
-    expect(usable.bands, isNotEmpty, reason: 'a band that fits in front of the agent is useful');
-  });
-
-  test('walls finish above eye level so they read as standing on the ground', () {
-    // The rail must project ABOVE the optical centre for a level camera:
-    // that is what puts it against the sky rather than lying on the floor,
-    // and it is the difference between a fence and a shadow.
-    final result = overlay(square(100.0, 40.0));
-    final rail = result.rails.reduce(
-        (a, b) => math.min(a.from.y, a.to.y) <= math.min(b.from.y, b.to.y) ? a : b);
-    expect(rail.from.y, lessThan(intrinsics.centreYPx),
-        reason: 'wall tops should sit above the horizon, got y=${rail.from.y}');
-  });
-
-  test('a panel fades as the agent walks up to it but its rail never drops below the floor', () {
-    expect(wallOpacity(20.0), 1.0);
-    expect(wallOpacity(1.0), 0.0);
-    expect(wallOpacity(4.75), closeTo(0.5, 1e-9));
-    expect(math.max(wallOpacity(1.0), minRailOpacity), minRailOpacity);
-  });
-
-  test('only the primary plot gets walls; the others get a ground line and short posts', () {
-    final ring = square(100.0, 40.0);
-    final primary = overlay(ring);
-    final other = overlay(ring, primary: false);
-    expect(primary.walls, isNotEmpty);
-    expect(other.walls, isEmpty);
-    expect(other.rails, isEmpty);
-    expect(other.fill, isNotEmpty, reason: 'the boundary line on the ground stays');
-    expect(other.posts.length, primary.posts.length);
-    double height(OverlayPost p) => p.base.y - p.top.y;
-    expect(height(other.posts.first), lessThan(height(primary.posts.first)),
-        reason: 'minor posts are shorter than the primary plot\'s');
   });
 }

@@ -8,19 +8,18 @@ import com.google.ar.core.Frame
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
-import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 
-/** One plot of the scene: boundary ring, where its walls stand, colour. */
+/** One plot of the scene: its boundary, flat on the ground, and its colour. */
 internal class ScenePlot(
-    /** The boundary, open ring: (east, north) per vertex. A line on the ground. */
+    /** The boundary, open ring: (east, north) per vertex. The ribbon's outer edge. */
     val ring: FloatArray,
-    /** The boundary pulled slightly inwards: where the walls and posts stand. */
-    val walls: FloatArray,
+    /** The boundary pulled inwards, vertex for vertex: the ribbon's inner edge. */
+    val inner: FloatArray,
     /** Plot colour, 0xAARRGGBB. */
     val tint: Int,
-    /** The plot the agent is in or nearest to: the only one with full walls. */
+    /** The plot the agent is in or nearest to: its line is drawn bolder. */
     val primary: Boolean,
 )
 
@@ -39,15 +38,11 @@ internal class OverlayScene(
     val cells: FloatArray,
     /** Drop points: (east, north, r, g, b) per point. */
     val drops: FloatArray,
-    val wallHeight: Float,
-    val postHeight: Float,
-    /** Corner posts of every plot but the primary one. */
-    val minorPostHeight: Float,
     val dropHeight: Float,
     /** Overall opacity from heading confidence. */
     val alpha: Float,
-    val wallAlpha: Float,
-    val railAlpha: Float,
+    val ribbonAlpha: Float,
+    val lineAlpha: Float,
 ) {
     companion object {
         private fun floats(v: Any?): FloatArray = when (v) {
@@ -65,7 +60,7 @@ internal class OverlayScene(
                 val ring = floats(plot["ring"])
                 ScenePlot(
                     ring = ring,
-                    walls = floats(plot["walls"]).takeIf { it.size == ring.size } ?: ring,
+                    inner = floats(plot["inner"]).takeIf { it.size == ring.size } ?: ring,
                     tint = (plot["tint"] as? Number)?.toLong()?.toInt() ?: 0xFF0A84FF.toInt(),
                     primary = plot["primary"] as? Boolean ?: true,
                 )
@@ -74,13 +69,10 @@ internal class OverlayScene(
                 plots = plots,
                 cells = floats(map["cells"]),
                 drops = floats(map["drops"]),
-                wallHeight = number("wallHeight", 2.6f),
-                postHeight = number("postHeight", 2.5f),
-                minorPostHeight = number("minorPostHeight", 1.2f),
                 dropHeight = number("dropHeight", 4.5f),
                 alpha = number("alpha", 1f),
-                wallAlpha = number("wallAlpha", 0.28f),
-                railAlpha = number("railAlpha", 1f),
+                ribbonAlpha = number("ribbonAlpha", 0.55f),
+                lineAlpha = number("lineAlpha", 0.95f),
             )
         }
     }
@@ -91,16 +83,13 @@ private class PlotBuffers(
     val tintR: Float,
     val tintG: Float,
     val tintB: Float,
-    val outline: FloatBuffer,
-    val outlineCount: Int,
-    val walls: FloatBuffer,
-    val rails: FloatBuffer,
-    /** Wall panels, and rails: one per edge on the primary plot, none otherwise. */
-    val edgeCount: Int,
-    val posts: FloatBuffer,
-    val postCount: Int,
-    /** (east, north) of each edge's midpoint, for far-to-near sorting. */
-    val edgeMid: FloatArray,
+    val primary: Boolean,
+    /** The ribbon, two triangles per edge. */
+    val ribbon: FloatBuffer,
+    val ribbonCount: Int,
+    /** The line down the middle of the ribbon, as a loop. */
+    val line: FloatBuffer,
+    val lineCount: Int,
 )
 
 /**
@@ -161,8 +150,6 @@ internal class ArOverlayRenderer {
     private val modelView = FloatArray(16)
     private val mvp = FloatArray(16)
 
-    /** (plot index, edge index, distance) for every wall, re-sorted each frame. */
-    private val wallOrder = ArrayList<Triple<Int, Int, Float>>()
 
     fun create() {
         program = GLES20.glCreateProgram().also { p ->
@@ -276,8 +263,6 @@ internal class ArOverlayRenderer {
         projection: FloatArray,
         placement: FloatArray?,
         floorY: Float,
-        cameraX: Float,
-        cameraZ: Float,
         viewportWidth: Int,
         viewportHeight: Int,
         zoom: Float = 1f,
@@ -329,48 +314,28 @@ internal class ArOverlayRenderer {
             GLES20.glUniform1f(uAlpha, s.alpha)
             drawArrays(cellPositions!!, cellColors, GLES20.GL_TRIANGLES, 0, cellVertexCount)
         }
+        // Each plot's boundary: the ribbon from the boundary into the plot, then
+        // the line down its middle on a dark backing so it reads against bright
+        // sky and pale soil alike. Ribbons lie inside their own plot only, so
+        // neighbours never cover one another.
+        for (p in plots) {
+            if (p.ribbonCount == 0) continue
+            color(p.tintR, p.tintG, p.tintB, s.ribbonAlpha * s.alpha)
+            drawArrays(p.ribbon, null, GLES20.GL_TRIANGLES, 0, p.ribbonCount)
+        }
         GLES20.glUniform1f(uGhost, LINE_GHOST)
         for (p in plots) {
-            if (p.outlineCount > 1) {
-                lineWidth(8f)
-                color(0.04f, 0.06f, 0.08f, 0.5f * s.alpha)
-                drawArrays(p.outline, null, GLES20.GL_LINE_LOOP, 0, p.outlineCount)
-                lineWidth(5f)
-                color(p.tintR, p.tintG, p.tintB, 0.95f * s.alpha)
-                drawArrays(p.outline, null, GLES20.GL_LINE_LOOP, 0, p.outlineCount)
-            }
-        }
-        GLES20.glUniform1f(uGhost, SURFACE_GHOST)
-
-        // Walls of every plot together, farthest first: translucent panels
-        // composited in any other order let a far wall paint over a near one,
-        // which reads as a fold - and with several plots, as plots overlapping.
-        sortWalls(cameraX, cameraZ)
-        fade(WALL_FADE_END_M, WALL_FADE_START_M, WALL_FADE_FLOOR)
-        for ((plotIndex, edge, _) in wallOrder) {
-            val p = plots[plotIndex]
-            color(p.tintR, p.tintG, p.tintB, s.wallAlpha * s.alpha)
-            drawArrays(p.walls, null, GLES20.GL_TRIANGLES, edge * 6, 6)
-        }
-
-        // Rails and posts over every panel, each on a dark backing so they read
-        // against bright sky and pale soil alike.
-        fade(WALL_FADE_END_M, WALL_FADE_START_M, MIN_RAIL_OPACITY)
-        GLES20.glUniform1f(uGhost, LINE_GHOST)
-        for (p in plots) {
-            lineWidth(11f)
+            if (p.lineCount < 2) continue
+            lineWidth(if (p.primary) 11f else 9f)
             color(0.04f, 0.06f, 0.08f, 0.5f * s.alpha)
-            if (p.edgeCount > 0) drawArrays(p.rails, null, GLES20.GL_LINES, 0, p.edgeCount * 2)
-            if (p.postCount > 0) drawArrays(p.posts, null, GLES20.GL_LINES, 0, p.postCount * 2)
-            lineWidth(7f)
-            color(p.tintR, p.tintG, p.tintB, s.railAlpha * s.alpha)
-            if (p.edgeCount > 0) drawArrays(p.rails, null, GLES20.GL_LINES, 0, p.edgeCount * 2)
-            if (p.postCount > 0) drawArrays(p.posts, null, GLES20.GL_LINES, 0, p.postCount * 2)
+            drawArrays(p.line, null, GLES20.GL_LINE_LOOP, 0, p.lineCount)
+            lineWidth(if (p.primary) 7f else 5f)
+            color(p.tintR, p.tintG, p.tintB, s.lineAlpha * s.alpha)
+            drawArrays(p.line, null, GLES20.GL_LINE_LOOP, 0, p.lineCount)
         }
 
-        // Drop points last, over everything: a stem from the ground to above
-        // the walls, and a round head on top. A drop point is a walk-to target,
-        // and a target hidden behind the fence between you and it is none.
+        // Drop points last, over everything: a stem from the ground and a round
+        // head on top. A drop point is a walk-to target, the thing to find.
         if (dropCount > 0) {
             noFade()
             GLES20.glUniform1f(uGhost, LINE_GHOST)
@@ -393,20 +358,6 @@ internal class ArOverlayRenderer {
 
         GLES20.glDisable(GLES20.GL_BLEND)
         GLES20.glDepthMask(true)
-    }
-
-    private fun sortWalls(cameraX: Float, cameraZ: Float) {
-        wallOrder.clear()
-        for ((plotIndex, p) in plots.withIndex()) {
-            for (edge in 0 until p.edgeCount) {
-                val e = p.edgeMid[edge * 2]
-                val n = p.edgeMid[edge * 2 + 1]
-                val wx = model[0] * e + model[4] * n + model[12]
-                val wz = model[2] * e + model[6] * n + model[14]
-                wallOrder.add(Triple(plotIndex, edge, hypot(wx - cameraX, wz - cameraZ)))
-            }
-        }
-        wallOrder.sortByDescending { it.third }
     }
 
     private fun fade(end: Float, start: Float, floor: Float) {
@@ -441,7 +392,7 @@ internal class ArOverlayRenderer {
     }
 
     private fun build(s: OverlayScene) {
-        plots = s.plots.map { buildPlot(it, s) }
+        plots = s.plots.map { buildPlot(it) }
 
         // Graded cells lie just above the floor, under the boundary lines.
         cellVertexCount = s.cells.size / 6
@@ -480,55 +431,39 @@ internal class ArOverlayRenderer {
         stemColors = buffer(stemColorArray)
     }
 
-    private fun buildPlot(p: ScenePlot, s: OverlayScene): PlotBuffers {
-        // The boundary line sits a hair above the floor so it never fights the
-        // measured floor in the depth test, and above the graded cells.
+    private fun buildPlot(p: ScenePlot): PlotBuffers {
+        // Just above the floor so nothing fights the measured floor in the depth
+        // test, and above the graded cells.
         val n = p.ring.size / 2
-        val outline = FloatArray(n * 3)
-        for (i in 0 until n) {
-            outline[i * 3] = p.ring[i * 2]; outline[i * 3 + 1] = p.ring[i * 2 + 1]; outline[i * 3 + 2] = 0.03f
-        }
-
-        // Walls, rails and posts stand on the inset ring. Only the primary plot
-        // gets walls and rails; every plot gets corner posts, short on the rest.
-        val m = p.walls.size / 2
-        val edgeCount = if (p.primary && m >= 2) m else 0
-        val walls = FloatArray(edgeCount * 18)
-        val rails = FloatArray(edgeCount * 6)
-        val edgeMid = FloatArray(edgeCount * 2)
-        val h = s.wallHeight
-        for (i in 0 until edgeCount) {
-            val ae = p.walls[i * 2]
-            val an = p.walls[i * 2 + 1]
-            val be = p.walls[((i + 1) % m) * 2]
-            val bn = p.walls[((i + 1) % m) * 2 + 1]
+        val edges = if (n >= 3) n else 0
+        val ribbon = FloatArray(edges * 18)
+        for (i in 0 until edges) {
+            val j = (i + 1) % n
+            val ae = p.ring[i * 2]; val an = p.ring[i * 2 + 1]
+            val be = p.ring[j * 2]; val bn = p.ring[j * 2 + 1]
+            val ce = p.inner[j * 2]; val cn = p.inner[j * 2 + 1]
+            val de = p.inner[i * 2]; val dn = p.inner[i * 2 + 1]
             System.arraycopy(
-                floatArrayOf(ae, an, 0f, be, bn, 0f, be, bn, h, ae, an, 0f, be, bn, h, ae, an, h),
-                0, walls, i * 18, 18,
+                floatArrayOf(ae, an, RIBBON_Z, be, bn, RIBBON_Z, ce, cn, RIBBON_Z, ae, an, RIBBON_Z, ce, cn, RIBBON_Z, de, dn, RIBBON_Z),
+                0, ribbon, i * 18, 18,
             )
-            System.arraycopy(floatArrayOf(ae, an, h, be, bn, h), 0, rails, i * 6, 6)
-            edgeMid[i * 2] = (ae + be) / 2f
-            edgeMid[i * 2 + 1] = (an + bn) / 2f
         }
-        val postHeight = if (p.primary) s.postHeight else s.minorPostHeight
-        val posts = FloatArray(m * 6)
-        for (i in 0 until m) {
-            val e = p.walls[i * 2]
-            val nn = p.walls[i * 2 + 1]
-            System.arraycopy(floatArrayOf(e, nn, 0f, e, nn, postHeight), 0, posts, i * 6, 6)
+        // The middle of the ribbon: halfway between each outer and inner vertex.
+        val line = FloatArray(n * 3)
+        for (i in 0 until n) {
+            line[i * 3] = (p.ring[i * 2] + p.inner[i * 2]) / 2f
+            line[i * 3 + 1] = (p.ring[i * 2 + 1] + p.inner[i * 2 + 1]) / 2f
+            line[i * 3 + 2] = LINE_Z
         }
         return PlotBuffers(
             tintR = ((p.tint shr 16) and 0xFF) / 255f,
             tintG = ((p.tint shr 8) and 0xFF) / 255f,
             tintB = (p.tint and 0xFF) / 255f,
-            outline = buffer(outline),
-            outlineCount = n,
-            walls = buffer(walls),
-            rails = buffer(rails),
-            edgeCount = edgeCount,
-            posts = buffer(posts),
-            postCount = m,
-            edgeMid = edgeMid,
+            primary = p.primary,
+            ribbon = buffer(ribbon),
+            ribbonCount = edges * 6,
+            line = buffer(line),
+            lineCount = n,
         )
     }
 
@@ -540,18 +475,15 @@ internal class ArOverlayRenderer {
     private companion object {
         /**
          * Opacity left on overlay that something real stands in front of. Lines
-         * keep more than surfaces: the rail and the drop points are how things
+         * keep more than surfaces: the boundary line and the drop points are how things
          * are found, and must stay findable through a crop row or a passer-by.
          */
         const val SURFACE_GHOST = 0.35f
         const val LINE_GHOST = 0.6f
 
-        /** Walls never fade below this, so a boundary 3 m away is still a wall. */
-        const val WALL_FADE_FLOOR = 0.3f
-
-        const val WALL_FADE_START_M = 8f
-        const val WALL_FADE_END_M = 1.5f
-        const val MIN_RAIL_OPACITY = 0.75f
+        /** Heights above the floor: cells at 0.025, then the ribbon, then its line. */
+        const val RIBBON_Z = 0.03f
+        const val LINE_Z = 0.035f
 
         /** A drop point's head at 10 m; it shrinks with distance in the shader. */
         const val HEAD_SIZE_PX = 44f

@@ -424,7 +424,7 @@ footer{
     <li><strong>It works where the crop is.</strong> No Street View and no live network. ARCore's on-device tracking where Google Play Services for AR is installed, plain phone sensors where it is not. Sync at the office or at the gate; the visit itself needs nothing.</li>
     <li><strong>It runs on the phone the agent already carries.</strong> Android 7.0 or newer (the plugin's floor, set by ARCore), about 9 MB as a release build. No hardware to procure, lose or charge.</li>
     <li><strong>It shows a shape, not a point.</strong> An outline can be matched against the real hedge line, which means the agent can confirm the app is right — and catch it when it is wrong. A pin offers no such check.</li>
-    <li><strong>It carries crop condition to the soil.</strong> Crop greenness (NDVI), crop vigour (NDRE) and water stress (LSWI) are each graded into normal, moderate and critical zones. Every moderate or critical patch in every nearby plot stands up as a drop point taller than the boundary walls, so a problem two fields away is visible over the fence.</li>
+    <li><strong>It carries crop condition to the soil.</strong> Crop greenness (NDVI), crop vigour (NDRE) and water stress (LSWI) are each graded into normal, moderate and critical zones. Every moderate or critical patch in every nearby plot stands up as a 4.5 m drop point — the only thing standing up, since boundaries lie flat on the ground — so a problem two fields away is visible over the crop.</li>
     <li><strong>It is honest about its own error.</strong> Every reading carries where the heading came from, how old it is, and the expected error in degrees. Near a boundary the drawn edge widens to the live GNSS accuracy rather than pretending to a crisp line.</li>
     <li><strong>It asks the agent for nothing.</strong> There is no access point and no button. Open the camera, walk; within 10 m of any plot's boundary the view anchors itself to the nearest point on that boundary, and direction is worked out from the walk.</li>
   </ul>
@@ -528,7 +528,7 @@ footer{
     <li><strong>Wait a few seconds, visibly.</strong> A card over the camera ticks off <em>Camera</em>, <em>Motion tracking</em> and <em>GPS</em>, with a seconds counter, and after 20 s says to step into the open. The location stream sends the phone's last-known fix the moment it opens if it is under 30 s old, so usually there is almost no wait.</li>
     <li><strong>Walk.</strong> Until the view is anchored, a pill points at the nearest boundary of the nearest plot and gives the distance. While the agent walks, the app silently works out where north is from the shape of the walk (logic 11). No button.</li>
     <li><strong>Anchor, automatically.</strong> When GPS puts the agent within 10 m of any plot's boundary the app takes the nearest point on that boundary, whether a corner or a point computed along an edge, as where the agent is, and pins the position there (logic 12). The sheet says <em>Anchored to the X boundary</em>. It re-anchors after 60 m of walking or a loss of tracking.</li>
-    <li><strong>Look.</strong> Every nearby plot's boundary stands up as walls; the moderate (yellow) and critical (red) 3 m cells of the chosen index are painted on the ground inside them; each patch of them stands up as a 4.5 m drop point, taller than the 2.6 m walls; people and trees in front hide them; and a minimap in the corner shows all of it from above with the agent as a blue arrow. Normal ground is not drawn — only what needs a visit.</li>
+    <li><strong>Look.</strong> Every nearby plot's boundary is highlighted flat on the ground; the moderate (yellow) and critical (red) 3 m cells of the chosen index are painted on the ground inside them; each patch of them stands up as a 4.5 m drop point; people and trees in front hide them; and a minimap in the corner shows all of it from above with the agent as a blue arrow. Normal ground is not drawn — only what needs a visit.</li>
     <li><strong>Switch the index.</strong> Crop greenness (NDVI), crop vigour (NDRE) or water stress (LSWI), from the bottom sheet. The drop points and minimap change together.</li>
   </ol>
 
@@ -973,7 +973,7 @@ footer{
             <text class="t-sm" x="0" y="284">Whatever drift has accumulated is printed on the chip in degrees either way. Nothing is hidden by the relabel.</text>
           </svg>
         </div>
-        <figcaption><b>FIG 09</b><span>The sensor path's states. The walls dim as confidence falls. The old build switched its health layer off below a usable heading. Drop points are deliberately kept on in every state in this build, so the flow can be tested indoors, where GPS never gives a usable heading; the chip carries the confidence instead. On the ARCore path the lock does not expire and the plot keeps its own colour; the chip carries the confidence.</span></figcaption>
+        <figcaption><b>FIG 09</b><span>The sensor path's states. The boundaries dim as confidence falls. The old build switched its health layer off below a usable heading. Drop points are deliberately kept on in every state in this build, so the flow can be tested indoors, where GPS never gives a usable heading; the chip carries the confidence instead. On the ARCore path the lock does not expire and the plot keeps its own colour; the chip carries the confidence.</span></figcaption>
       </figure>
     </div>
   </div>
@@ -981,72 +981,52 @@ footer{
   <!-- L6 -->
   <div class="logic">
     <div class="logic-head">
-      <h3>06 · What gets drawn, and why it is a wall</h3>
+      <h3>06 · What gets drawn: boundaries flat on the ground</h3>
       <span class="logic-file">lib/core/render/overlay_geometry.dart · world_scene.dart · android/…/ArOverlayRenderer.kt</span>
     </div>
     <div class="logic-body">
       <div class="slot"><span>What it does</span>
-        <p>Every nearby plot has its boundary drawn as a line on the ground, on a dark backing, and a post at each corner. The plot the agent is in or nearest to — the <em>primary</em> plot — also has each edge stood up into a vertical panel 2.6 m tall, eye height plus a metre, with a solid rail along its top. The other plots keep only the ground line and 1.2 m posts. Beyond 30 m from the nearest edge the outline is the plot's shape; inside 30 m each edge also gets a band as wide as the live GNSS accuracy.</p>
+        <p>Every nearby plot's boundary is a <strong>ribbon on the ground</strong>, 0.6 m wide, running from the boundary into its own plot, with a bold line down its middle on a dark backing. Nothing stands up but the drop points. The line is a fixed pixel width — a little bolder on the plot the agent is in or nearest to — so a plot a few hundred metres off is still an outline even where the ribbon itself is a sliver.</p>
+      </div>
+      <div class="slot"><span>Why not walls</span>
+        <p>Earlier builds stood each edge up as a 2.6 m panel, because a flat outline on its own read as a carpet rather than a limit. With every plot within 400 m drawn at once, the panels of neighbouring plots overlapped in the camera, and it was hard to tell which fence belonged to which plot — even after the walls were pulled in and given to the nearest plot only. The field team asked for plain highlighted lines. The ribbon and the bold line answer the carpet problem without standing anything up: a band with a hard centre line reads as an edge, and the dark backing keeps it visible against bright soil.</p>
       </div>
       <div class="slot"><span>Keeping neighbours apart</span>
-        <p>The second field test put two adjoining plots side by side, one drawn red and one yellow, and three things went wrong at once. Their colours read exactly like a critical patch beside a moderate one. Their tinted floors covered the whole screen when the agent stood inside one. And their walls on the shared edge stood in the same place, so the two translucent colours mixed into a third.</p>
-        <p>So: plot colours are blues, violets and white only, and red and yellow always mean the crop (logic 09). Plots have no floor tint; the only colour on the ground is crop condition. Walls and posts stand 0.5 m inside each plot's own boundary, so a shared edge shows as two fences a metre apart, each in its own plot's colour on its own side — the boundary line itself stays exactly on the boundary. Full walls go only on the primary plot, so a row of neighbouring fences cannot stack into a wall of colour. And each plot's label stands on a point inside it, with a stalk to a dot on the ground and a strip of the plot's colour; labels are placed nearest first, and a later one is lifted clear of any it would overlap.</p>
+        <p>The ribbon lies only <em>inside</em> its own plot, starting exactly on the boundary. Two plots sharing an edge therefore show two bands side by side, each in its own colour, neither covering the other — where two lines drawn on the same boundary would merge into one of mixed colour. Plot colours are blues, violets and white only, so red and yellow always mean the crop (logic 09), and plots have no tinted floor: the only colour across the ground is crop condition. Each plot's label stands on a point inside it with a stalk to the ground and a strip of the plot's colour, and labels are lifted clear of one another.</p>
       </div>
-      <div class="slot"><span>Why not a line on the ground</span>
-        <p>The first build drew the boundary flat, and reviewers' first comment was that it read as a coloured carpet rather than a limit — a shape lying on the floor gives the eye no cue that it is an edge. A flat overlay also disappears entirely when the phone is held level, because the ground plane is then edge-on to the camera.</p>
-        <p>Wall height matters too. A wall topping out below eye level reads as floating: the eye takes the top rail for the boundary and the bottom edge for a shadow, because nothing connects it to the ground. Carrying it past eye level puts the rail against the sky or the far treeline, and the panel unmistakably stands on the earth.</p>
-      </div>
-      <div class="slot"><span>The near mode, and honesty about error</span>
-        <p>A crisp line at 5 m is a false precision claim, and the first time a farmer disputes a reading it is the line that gets blamed. So inside 30 m the edge becomes a band whose half-width is the receiver's live accuracy, built in metres so perspective narrows it with distance on its own. Bands are suppressed once the agent is closer to the edge than the accuracy itself — a band 8 m wide seen from 6 m has its near side behind the camera and floods the whole frame.</p>
-      </div>
-      <div class="slot"><span>Details that only field testing produces</span>
-        <p><strong>Painter's ordering.</strong> Translucent panels composited in ring order let the far side of a plot paint over the near side, which looks like a crease. Walls are sorted far-to-near.</p>
-        <p><strong>Fades with floors.</strong> A 2.6 m wall 3 m away subtends most of the frame, and a boundary you are standing against is the one you least need drawn over your view. Panels fade out below 8 m — but the rail never drops below 0.75 opacity, because the line <em>is</em> the boundary and losing it as you step up to the fence removes the answer at the moment you are trying to stand on it.</p>
-        <p><strong>Dark backing strokes.</strong> Every rail, post and marker is drawn twice: a dark halo, then the colour over it. A single coloured line disappears wherever the background shares its luminance, and outdoor footage is mostly bright sky, pale soil and corrugated fencing. Road signs and map labels have been drawn this way for a century.</p>
+      <div class="slot"><span>Near and far</span>
+        <p>The <em>NEAR / FAR</em> badge still switches at 30 m from the nearest edge, never the centroid. Near, the label carries the live GNSS accuracy: the honest statement of how far the drawn boundary may be from the real one. The earlier accuracy bands — translucent strips as wide as the error either side of each edge — were dropped with the walls; across several adjoining plots they overlapped just as the walls did.</p>
       </div>
       <div class="slot"><span>Drop points</span>
-        <p>Each moderate or critical patch is one drop point: a stem from the ground to 4.5 m and a round head on top, yellow or red, with a dark halo. 4.5 m is deliberate — taller than the 2.6 m walls, so a patch inside a plot beyond the near one shows over its fence, which is the whole point of seeing every nearby plot at once. The head is a screen-space point whose size scales with distance only between limits (35–130% of 44 px), so a far marker stays findable and a near one does not fill the frame. Normal ground gets no marker: the view answers "where must I go", not "what is fine". Drop points come from patches within 300 m, 60 at most, nearest first.</p>
+        <p>Each moderate or critical patch is one drop point: a stem from the ground to 4.5 m and a round head on top, yellow or red, with a dark halo. 4.5 m is deliberate — the boundaries lie flat, so the drop point is the only thing standing up, and a patch inside a plot beyond the near one shows over its fence, which is the whole point of seeing every nearby plot at once. The head is a screen-space point whose size scales with distance only between limits (35–130% of 44 px), so a far marker stays findable and a near one does not fill the frame. Normal ground gets no marker: the view answers "where must I go", not "what is fine". Drop points come from patches within 300 m, 60 at most, nearest first.</p>
         <p>The cells themselves lie on the ground under the drop points — yellow at 60% and red at 80% opacity, under the boundary lines — for every nearby plot at once, <strong>but only once the view is anchored</strong> (logic 12). Before that the scene is placed from raw GPS and moves with it, and a 3 m square that wanders by several metres paints the wrong ground; a drop point is a target, not a claim about which square metre is red, so drop points show from the start. When ARCore loses tracking the anchor is dropped and the cells go with it until the next one. Only moderate and critical cells are sent: a green carpet across several plots hid the walls, and is not what anyone walks out to see. On the ARCore path they are one triangle list in the shared scene frame, ghosted like any surface when something stands in front; on the sensor path they are projected per frame to 120 m.</p>
       </div>
       <div class="slot"><span>Drawn in ARCore's frame, with occlusion</span>
-        <p><strong>No lag.</strong> On the ARCore path the walls, rails, posts, boundary lines, graded cells and drop points are drawn by a small native GL renderer, after the camera image and with that frame's own camera matrices. Dart sends the scene — every nearby plot, triangulated by ear clipping, plus the drop points, all in one shared metric frame — when the set of plots or the index changes, and a placement (a 2-D rotation and offset into ARCore's world) only when the registration moves. The walls of all plots are sorted far-to-near together, so a near plot is never painted over by a far one.</p>
+        <p><strong>No lag.</strong> On the ARCore path the boundary ribbons and lines, graded cells and drop points are drawn by a small native GL renderer, after the camera image and with that frame's own camera matrices. Dart sends the scene — every nearby plot, triangulated by ear clipping, plus the drop points, all in one shared metric frame — when the set of plots or the index changes, and a placement (a 2-D rotation and offset into ARCore's world) only when the registration moves. The walls of all plots are sorted far-to-near together, so a near plot is never painted over by a far one.</p>
         <p><strong>Real ground.</strong> The ground is the lowest horizontal plane ARCore finds at least 0.8 m below the phone, not an assumed 1.6 m below wherever the phone is — so raising or lowering the phone no longer moves the plot.</p>
         <p><strong>Occlusion.</strong> Where the Depth API is available, each overlay fragment is compared with the measured depth at its pixel. Only something clearly in front hides it — nearer than 80% of the overlay's distance starts to, 60% fully does — so a person at 2 m hides a boundary at 16 m while the floor under the fill and the crop just inside the boundary do not. Hidden parts are not removed but ghosted ("X-ray" rendering): lines keep 60% opacity, surfaces 35%, because a boundary that vanished behind the crop it encloses would be no use. Depth reaches about 8 m; beyond it the plot is drawn normally. The badge says "occlusion on" when it is active.</p>
-        <p><strong>Colour kept.</strong> Under ARCore the plot keeps its identity colour at 85% strength or more whatever the heading confidence: a grey translucent wall was simply invisible in a white office and under a pale sky.</p>
+        <p><strong>Colour kept.</strong> Under ARCore the plot keeps its identity colour at 85% strength or more whatever the heading confidence: a grey translucent boundary was simply invisible in a white office and under a pale sky.</p>
       </div>
       <figure>
         <div class="frame">
-          <svg viewBox="0 0 720 280" role="img" aria-label="Anatomy of the overlay. Far mode shows a filled plot shape with corner posts; near mode shows accuracy bands and no fill. A distance ramp shows how wall fill fades below eight metres while the rail holds at 75 percent.">
-            <text class="t-sm" x="0" y="12">FAR MODE — nearest edge beyond 30 m</text>
-            <line class="s-rule" x1="0" y1="20" x2="330" y2="20"/>
-            <!-- far -->
-            <path d="M40 150 L150 118 L292 132 L200 176 Z" opacity=".75" stroke="none" style="fill:var(--accent-soft)"/>
-            <path class="s-ac" d="M40 150 L150 118 L292 132 L200 176 Z"/>
-            <path class="s-ac" d="M40 150 V108 M150 118 V80 M292 132 V92 M200 176 V132"/>
-            <circle cx="40" cy="108" r="4" style="fill:var(--accent)"/>
-            <circle cx="150" cy="80" r="4" style="fill:var(--accent)"/>
-            <circle cx="292" cy="92" r="4" style="fill:var(--accent)"/>
-            <circle cx="200" cy="132" r="4" style="fill:var(--accent)"/>
-            <text class="t-ac" x="150" y="72">corner posts, 2.5 m</text>
-            <text class="t-lbl" x="120" y="200">ground line + walls + rails</text>
-            <text class="t-sm" x="120" y="216">the shape is the point — it can be</text>
-            <text class="t-sm" x="120" y="230">matched against the real hedge line</text>
-
-            <line class="s-rule" x1="366" y1="20" x2="366" y2="270"/>
-            <text class="t-sm" x="400" y="12">NEAR MODE — inside 30 m</text>
-            <line class="s-rule" x1="400" y1="20" x2="720" y2="20"/>
-            <path d="M400 168 L560 120 L700 150 L540 200 Z" fill="none" stroke-width="1.6" style="stroke:var(--accent)"/>
-            <path d="M392 176 L556 126 L708 158 L544 210 Z M408 160 L564 114 L692 142 L536 190 Z"
-                  opacity=".18" fill-rule="evenodd" style="fill:var(--accent)"/>
-            <text class="t-ac" x="430" y="238">band half-width = live accuracy</text>
-            <text class="t-sm" x="430" y="254">no fill: a crisp line here would claim</text>
-            <text class="t-sm" x="430" y="268">a precision the receiver does not have</text>
-
-            <line class="s-rule" x1="0" y1="248" x2="330" y2="248"/>
-            <text class="t-sm" x="0" y="266">Switch point is measured to the nearest edge, not the centroid.</text>
+          <svg viewBox="0 0 720 220" role="img" aria-label="Two adjoining plots seen from above. Each has a ribbon running from the shared boundary into its own plot, in its own colour, with a line down the middle; the two ribbons sit side by side.">
+            <text class="t-sm" x="0" y="12">TWO PLOTS SHARING AN EDGE — from above</text>
+            <line class="s-rule" x1="0" y1="20" x2="720" y2="20"/>
+            <path d="M60 50 H360 V190 H60 Z" fill="none" stroke-width="1" style="stroke:var(--rule)"/>
+            <path d="M360 50 H660 V190 H360 Z" fill="none" stroke-width="1" style="stroke:var(--rule)"/>
+            <path d="M60 50 H360 V190 H60 Z M74 64 H346 V176 H74 Z" fill-rule="evenodd" opacity=".55" fill="#0A84FF"/>
+            <path d="M67 57 H353 V183 H67 Z" fill="none" stroke="#0B0F14" stroke-width="6" opacity=".5"/>
+            <path d="M67 57 H353 V183 H67 Z" fill="none" stroke="#0A84FF" stroke-width="3.5"/>
+            <path d="M360 50 H660 V190 H360 Z M374 64 H646 V176 H374 Z" fill-rule="evenodd" opacity=".55" fill="#BF5AF2"/>
+            <path d="M367 57 H653 V183 H367 Z" fill="none" stroke="#0B0F14" stroke-width="6" opacity=".5"/>
+            <path d="M367 57 H653 V183 H367 Z" fill="none" stroke="#BF5AF2" stroke-width="3.5"/>
+            <line x1="360" y1="40" x2="360" y2="200" stroke-dasharray="3 3" style="stroke:var(--ink)"/>
+            <text class="t-sm" x="366" y="212">the shared boundary</text>
+            <text class="t-lbl" x="150" y="126">plot A</text>
+            <text class="t-lbl" x="480" y="126">plot B</text>
           </svg>
         </div>
-        <figcaption><b>FIG 10</b><span>Two modes because the question changes with range. Far away, "which field is it"; up close, "exactly where does it end" — and up close the honest answer has a width.</span></figcaption>
+        <figcaption><b>FIG 10</b><span>Each ribbon starts on the boundary and runs into its own plot, so neighbours sit side by side instead of on top of each other. Ribbon widths exaggerated; on the ground each is 0.6 m.</span></figcaption>
       </figure>
     </div>
   </div>
@@ -1102,18 +1082,17 @@ footer{
             <line class="s-rule" x1="440" y1="20" x2="440" y2="240"/>
             <text class="t-hd" x="460" y="52">In the camera</text>
             <path class="s-ink" d="M470 220 H700"/>
-            <path d="M500 220 V200 M680 220 V200" stroke-width="1.6" style="stroke:var(--accent)"/>
-            <path d="M500 200 H680" stroke-width="2" style="stroke:var(--accent)"/>
-            <text class="t-sm" x="560" y="196">wall 2.6 m</text>
+            <path d="M500 220 H680" stroke-width="5" style="stroke:var(--accent)"/>
+            <text class="t-sm" x="520" y="212">boundary, flat on the ground</text>
             <path class="s-ink" d="M550 220 V150"/>
             <circle cx="550" cy="150" r="9" stroke="#0B0F14" stroke-width="2" style="fill:var(--sev2)"/>
             <path class="s-ink" d="M640 220 V160"/>
             <circle cx="640" cy="160" r="8" stroke="#0B0F14" stroke-width="2" style="fill:var(--sev1)"/>
-            <text class="t-sm" x="460" y="128">drop points 4.5 m — over the fence</text>
+            <text class="t-sm" x="460" y="128">drop points 4.5 m — over the crop</text>
             <text class="t-sm" x="460" y="242">one per patch · normal ground: nothing</text>
           </svg>
         </div>
-        <figcaption><b>FIG 11</b><span>From grid to drop point. The yellow and red cells are painted on the ground in the camera and on the map; each patch also gets one marker, standing taller than the wall so it reads from the next field.</span></figcaption>
+        <figcaption><b>FIG 11</b><span>From grid to drop point. The yellow and red cells are painted on the ground in the camera and on the map; each patch also gets one marker, standing 4.5 m tall so it reads from the next field.</span></figcaption>
       </figure>
     </div>
   </div>
@@ -1419,7 +1398,7 @@ footer{
     </div>
     <div>
       <h3>What happens when the heading is bad?</h3>
-      <p>The chip says so and names the source. On the sensor path the walls dim and grey. On the ARCore path the plots keep their colour and walking sets the direction by itself; where GPS is too weak for that, direction stays on the compass and the chip says so. In this build drop points stay on whatever the heading, so the flow can be tested indoors — read the chip before walking to one.</p>
+      <p>The chip says so and names the source. On the sensor path the boundaries dim and grey. On the ARCore path the plots keep their colour and walking sets the direction by itself; where GPS is too weak for that, direction stays on the compass and the chip says so. In this build drop points stay on whatever the heading, so the flow can be tested indoors — read the chip before walking to one.</p>
     </div>
     <div>
       <h3>Where did the access point go?</h3>
@@ -1427,7 +1406,7 @@ footer{
     </div>
     <div>
       <h3>Why only red and yellow?</h3>
-      <p>Because the view answers "where do I need to go". Normal ground is most of every plot; drawing it green across several plots would bury the walls and the problem patches under a carpet. Normal cells still appear on the web map, where the whole picture is the point.</p>
+      <p>Because the view answers "where do I need to go". Normal ground is most of every plot; drawing it green across several plots would bury the boundaries and the problem patches under a carpet. Normal cells still appear on the web map, where the whole picture is the point.</p>
     </div>
     <div>
       <h3>Why does the boundary disappear behind people?</h3>

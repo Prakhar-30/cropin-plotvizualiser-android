@@ -69,27 +69,23 @@ class ArOverlayPainter extends CustomPainter {
     final alpha = overlayConfidenceAlpha(confidence);
 
     if (drawGeometry) {
-      // Graded ground first: it lies under every wall.
+      // Graded ground first; the boundary ribbons lie over it.
       for (final cell in current.cells) {
         final path = _path(cell.points);
         if (path == null) continue;
         final colour = severityColour(cell.zone);
         canvas.drawPath(path, _fill(Color(colour.argb), colour.fillAlpha * alpha));
       }
-      // Farthest plot first, so a near plot's walls paint over a far one's.
-      for (final drawn in current.plots.reversed) {
-        final tint = Color(overlayTintArgb(confidence, drawn.plot.colourIndex));
-        _drawWalls(canvas, drawn.overlay, tint, alpha);
-        switch (drawn.overlay.mode) {
-          case RenderMode.far:
-            _drawFarMode(canvas, drawn.overlay, tint, alpha);
-          case RenderMode.near:
-            _drawNearMode(canvas, drawn.overlay, tint, alpha);
-        }
-        _drawPosts(canvas, drawn.overlay, tint, alpha);
+      // Farthest plot first, so a near plot's boundary paints over a far one's.
+      // The nearest plot's line is drawn a little bolder.
+      final plots = current.plots;
+      for (var i = plots.length - 1; i >= 0; i--) {
+        final drawn = plots[i];
+        _drawBoundary(canvas, drawn.overlay, Color(overlayTintArgb(confidence, drawn.plot.colourIndex)), alpha,
+            primary: i == 0);
       }
-      // Drop points stand above every wall: a walk-to target hidden behind the
-      // fence between you and it is no target at all.
+      // Drop points stand over every boundary: a walk-to target is the thing to
+      // find on screen.
       for (final drop in current.drops) {
         _drawDropPoint(canvas, drop, alpha);
       }
@@ -158,56 +154,20 @@ class ArOverlayPainter extends CustomPainter {
     return Path()..addPolygon([for (final p in points) _o(p)], true);
   }
 
-  /// Draws the standing boundary panels, farthest first as they arrive, then
-  /// every top rail over all of them so no rail is overpainted by the panel
-  /// standing behind it.
-  void _drawWalls(Canvas canvas, PlotOverlay overlay, Color tint, double alpha) {
-    for (final wall in overlay.walls) {
-      final path = _path(wall.quad);
+  /// A plot's boundary, flat on the ground: the ribbon from the boundary into
+  /// the plot, then the line down its middle on a dark backing, so it reads
+  /// against bright sky, pale soil and crop alike.
+  void _drawBoundary(Canvas canvas, PlotOverlay overlay, Color tint, double alpha, {required bool primary}) {
+    for (final ribbon in overlay.ribbons) {
+      final path = _path(ribbon.corners);
       if (path == null) continue;
-      canvas.drawPath(path, _fill(tint, PlotAlpha.wallFill * alpha * wall.opacity));
+      canvas.drawPath(path, _fill(tint, PlotAlpha.ribbon * alpha));
     }
-    for (final rail in overlay.rails) {
-      // Drawn twice: a dark backing stroke, then the colour over it. A single
-      // coloured line disappears wherever the background shares its luminance.
-      final from = _o(rail.from);
-      final to = _o(rail.to);
-      canvas.drawLine(from, to, _stroke(_outlineBacking, 0.5 * alpha * rail.opacity, 11));
-      canvas.drawLine(from, to, _stroke(tint, PlotAlpha.rail * alpha * rail.opacity, 7));
-    }
-  }
-
-  void _drawFarMode(Canvas canvas, PlotOverlay overlay, Color tint, double alpha) {
-    final path = _path(overlay.fill);
-    if (path == null) return;
-
-    // The boundary as a line on the ground, on a dark backing. No tinted floor:
-    // the only colour on the ground is crop condition.
-    canvas.drawPath(path, _stroke(_outlineBacking, 0.5 * alpha, 7));
-    canvas.drawPath(path, _stroke(tint, PlotAlpha.outline * alpha, 4));
-  }
-
-  /// Vertical posts at the corners: full height on the primary plot, short on
-  /// the others. Posts read against the horizon and stay legible when heading
-  /// is a few degrees off.
-  void _drawPosts(Canvas canvas, PlotOverlay overlay, Color tint, double alpha) {
-    for (final post in overlay.posts) {
-      final base = _o(post.base);
-      final top = _o(post.top);
-      canvas.drawLine(base, top, _stroke(_outlineBacking, 0.5 * alpha, 12));
-      canvas.drawLine(base, top, _stroke(tint, alpha, 8));
-      canvas.drawCircle(top, _px(10), _fill(tint, alpha));
-    }
-  }
-
-  void _drawNearMode(Canvas canvas, PlotOverlay overlay, Color tint, double alpha) {
-    // No fill inside 30 m: claiming an area implies knowing where its edges are
-    // to better than the fix allows.
-    for (final band in overlay.bands) {
-      final path = _path(band.corners);
-      if (path == null) continue;
-      canvas.drawPath(path, _fill(tint, 0.22 * alpha));
-      canvas.drawPath(path, _stroke(tint, 0.5 * alpha, 2));
+    for (final line in overlay.lines) {
+      final from = _o(line.from);
+      final to = _o(line.to);
+      canvas.drawLine(from, to, _stroke(_outlineBacking, 0.5 * alpha, primary ? 11 : 9));
+      canvas.drawLine(from, to, _stroke(tint, PlotAlpha.outline * alpha, primary ? 7 : 5));
     }
   }
 
