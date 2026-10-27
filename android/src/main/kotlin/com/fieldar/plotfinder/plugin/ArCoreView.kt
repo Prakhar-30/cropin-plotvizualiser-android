@@ -80,6 +80,9 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
     /** Where the plot sits in the session; see [ArOverlayRenderer.draw]. */
     @Volatile private var placement: FloatArray? = null
 
+    /** Pinch zoom: 1 is none. Applied to the camera image and the projection alike. */
+    @Volatile private var zoom = 1f
+
     /**
      * The ground's height in ARCore's world. Until a floor plane is found it
      * is assumed [ASSUMED_EYE_HEIGHT_M] below where the phone first tracked.
@@ -147,6 +150,10 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
         placement = next
     }
 
+    fun setZoom(next: Float) {
+        zoom = next
+    }
+
     override fun dispose() {
         plugin.detachArView(this)
         pause()
@@ -180,7 +187,8 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
             }
             s.setCameraTextureName(background.textureId)
             val frame = s.update()
-            background.draw(frame)
+            val z = zoom
+            background.draw(frame, z)
             val camera = frame.camera
             if (camera.trackingState == TrackingState.TRACKING) {
                 val pose = camera.pose
@@ -188,12 +196,13 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
                 overlay.updateDepth(frame, depthEnabled)
                 camera.getViewMatrix(view, 0)
                 camera.getProjectionMatrix(projection, 0, NEAR_M, FAR_M)
+                zoomProjection(projection, z)
                 overlay.draw(
                     view, projection, placement, floorY, pose.tx(), pose.tz(),
-                    viewportWidth, viewportHeight,
+                    viewportWidth, viewportHeight, z,
                 )
             }
-            emit(frame)
+            emit(frame, z)
         } catch (e: Exception) {
             // One bad frame - a camera hiccup, a session mid-pause - is not
             // worth tearing the view down for. The next frame tries again.
@@ -234,10 +243,13 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
      *
      * The timestamp is elapsedRealtime, the clock the location fixes use.
      */
-    private fun emit(frame: Frame) {
+    private fun emit(frame: Frame, zoom: Float) {
         val camera = frame.camera
         val pose = camera.displayOrientedPose
         camera.getProjectionMatrix(projection, 0, NEAR_M, FAR_M)
+        // The zoomed projection, so Dart's labels and minimap use the field of
+        // view the agent actually sees.
+        zoomProjection(projection, zoom)
         val t = pose.translation
         val q = pose.rotationQuaternion
         val event = doubleArrayOf(
@@ -269,6 +281,17 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
         else -> 1
     }
 
+    /**
+     * Magnifies a projection about the screen centre by scaling its x and y
+     * rows: clip x and y grow by [zoom], w does not, so normalised device
+     * coordinates are scaled about the centre - exactly what the background
+     * does to the camera image.
+     */
+    private fun zoomProjection(p: FloatArray, zoom: Float) {
+        if (zoom == 1f) return
+        for (i in intArrayOf(0, 4, 8, 12, 1, 5, 9, 13)) p[i] *= zoom
+    }
+
     private fun displayRotation(): Int =
         (context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager)
             ?.getDisplay(Display.DEFAULT_DISPLAY)?.rotation ?: 0
@@ -298,6 +321,10 @@ private class BackgroundRenderer {
     private val quad: FloatBuffer = floatBuffer(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))
     private val texCoords: FloatBuffer = floatBuffer(FloatArray(8))
 
+    /** The texture corners for the whole view, before zoom. */
+    private val fullTexCoords = FloatArray(8)
+    private var appliedZoom = Float.NaN
+
     fun create() {
         val textures = IntArray(1)
         GLES20.glGenTextures(1, textures, 0)
@@ -318,7 +345,7 @@ private class BackgroundRenderer {
         texCoordAttrib = GLES20.glGetAttribLocation(program, "a_TexCoord")
     }
 
-    fun draw(frame: Frame) {
+    fun draw(frame: Frame, zoom: Float) {
         if (frame.hasDisplayGeometryChanged()) {
             quad.rewind()
             texCoords.rewind()
@@ -328,6 +355,24 @@ private class BackgroundRenderer {
                 Coordinates2d.TEXTURE_NORMALIZED,
                 texCoords,
             )
+            texCoords.rewind()
+            texCoords.get(fullTexCoords)
+            appliedZoom = Float.NaN
+        }
+        if (zoom != appliedZoom) {
+            // A digital zoom: the same quad shows a smaller piece of the image,
+            // shrunk towards its centre. The mapping is affine, so the centre of
+            // the four corners is the centre of the view.
+            val cu = (fullTexCoords[0] + fullTexCoords[2] + fullTexCoords[4] + fullTexCoords[6]) / 4f
+            val cv = (fullTexCoords[1] + fullTexCoords[3] + fullTexCoords[5] + fullTexCoords[7]) / 4f
+            val zoomed = FloatArray(8) { i ->
+                val c = if (i % 2 == 0) cu else cv
+                c + (fullTexCoords[i] - c) / zoom
+            }
+            texCoords.rewind()
+            texCoords.put(zoomed)
+            texCoords.rewind()
+            appliedZoom = zoom
         }
         // No image yet: nothing valid in the texture.
         if (frame.timestamp == 0L) return

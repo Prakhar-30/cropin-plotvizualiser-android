@@ -136,6 +136,7 @@ internal class ArOverlayRenderer {
     private var uGhost = 0
     private var uPointSize = 0
     private var uRound = 0
+    private var uZoom = 0
 
     private var lineWidthMax = 1f
     private var pointSizeMax = 1f
@@ -190,6 +191,7 @@ internal class ArOverlayRenderer {
         uGhost = GLES20.glGetUniformLocation(program, "u_Ghost")
         uPointSize = GLES20.glGetUniformLocation(program, "u_PointSize")
         uRound = GLES20.glGetUniformLocation(program, "u_Round")
+        uZoom = GLES20.glGetUniformLocation(program, "u_Zoom")
 
         val range = FloatArray(2)
         GLES20.glGetFloatv(GLES20.GL_ALIASED_LINE_WIDTH_RANGE, range, 0)
@@ -278,6 +280,7 @@ internal class ArOverlayRenderer {
         cameraZ: Float,
         viewportWidth: Int,
         viewportHeight: Int,
+        zoom: Float = 1f,
     ) {
         val s = scene ?: return
         if (placement == null || placement.size < 6 || program == 0) return
@@ -310,6 +313,7 @@ internal class ArOverlayRenderer {
         GLES20.glUniform2f(uUvX, uvTransform[2] - uvTransform[0], uvTransform[3] - uvTransform[1])
         GLES20.glUniform2f(uUvY, uvTransform[4] - uvTransform[0], uvTransform[5] - uvTransform[1])
         GLES20.glUniform1i(uUseDepth, if (depthActive) 1 else 0)
+        GLES20.glUniform1f(uZoom, zoom)
         GLES20.glUniform1f(uPointSize, 1f)
         GLES20.glUniform1i(uRound, 0)
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
@@ -600,6 +604,7 @@ internal class ArOverlayRenderer {
             uniform float u_FadeFloor;
             uniform float u_Alpha;
             uniform float u_Ghost;
+            uniform float u_Zoom;
             varying vec4 v_Color;
             varying float v_ViewDepth;
             varying float v_Distance;
@@ -613,6 +618,9 @@ internal class ArOverlayRenderer {
                 float visible = 1.0;
                 if (u_UseDepth == 1) {
                     vec2 view = vec2(gl_FragCoord.x / u_Viewport.x, 1.0 - gl_FragCoord.y / u_Viewport.y);
+                    // Zoomed in, a pixel shows a point nearer the centre of the
+                    // unzoomed view, which is the frame the depth image maps to.
+                    view = vec2(0.5) + (view - vec2(0.5)) / u_Zoom;
                     vec2 uv = u_UvOrigin + u_UvX * view.x + u_UvY * view.y;
                     vec2 bytes = texture2D(u_Depth, uv).rg;
                     float real = (bytes.r * 255.0 + bytes.g * 255.0 * 256.0) / 1000.0;

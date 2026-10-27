@@ -64,6 +64,11 @@ Boundaries are drawn there and only there; this app is a reader.
    *Crop greenness*, *Crop vigour* and *Water stress* in the sheet. Normal ground
    is not drawn. The **minimap** bottom-right is centred on you: every
    plot, the red and yellow ground, the drop points. Tap it to see further.
+6. **Pinch to zoom** (up to 5x) to look closer at a distant patch or drop point;
+   double-tap, or tap the zoom pill, to go back to 1x. It is a digital zoom: the
+   camera image and the projection are magnified together, so everything drawn
+   stays on the ground it marks. Under ARCore the native view does both; on the
+   sensor path the preview is scaled and the field of view narrowed to match.
 
 The anchor uses the same GPS fix it corrects, so it cannot remove GPS error -
 see `lib/core/geo/boundary_snap.dart`. What it removes is the drift: everything

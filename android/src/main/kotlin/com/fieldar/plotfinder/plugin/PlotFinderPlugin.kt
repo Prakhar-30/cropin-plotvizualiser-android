@@ -71,6 +71,7 @@ class PlotFinderPlugin :
     private var arView: ArCoreView? = null
     private var arScene: OverlayScene? = null
     private var arPlacement: FloatArray? = null
+    private var arZoom = 1f
 
     private var activity: ActivityPluginBinding? = null
     private var pendingPermission: MethodChannel.Result? = null
@@ -118,6 +119,11 @@ class PlotFinderPlugin :
                             else -> null
                         }
                         arView?.setPlacement(arPlacement)
+                        result.success(null)
+                    }
+                    "arZoom" -> {
+                        arZoom = ((call.arguments as? Number)?.toFloat() ?: 1f).coerceIn(1f, 8f)
+                        arView?.setZoom(arZoom)
                         result.success(null)
                     }
                     "arPause" -> {
@@ -222,6 +228,7 @@ class PlotFinderPlugin :
         // platform view is still being created.
         view.setScene(arScene)
         view.setPlacement(arPlacement)
+        view.setZoom(arZoom)
     }
 
     fun detachArView(view: ArCoreView) {

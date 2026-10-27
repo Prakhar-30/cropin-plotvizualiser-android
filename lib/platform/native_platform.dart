@@ -126,6 +126,17 @@ class NativePlatform {
     }
   }
 
+  /// Digital zoom of the ARCore view, 1 for none. The native side magnifies the
+  /// camera image and the projection together, so the overlay stays on the
+  /// ground it marks; the zoomed field of view comes back with each frame.
+  Future<void> arSetZoom(double zoom) async {
+    try {
+      await _methods.invokeMethod<void>('arZoom', zoom);
+    } on Object {
+      // No ARCore view on this platform.
+    }
+  }
+
   Future<void> arPause() => _invokeQuietly('arPause');
 
   Future<void> arResume() => _invokeQuietly('arResume');

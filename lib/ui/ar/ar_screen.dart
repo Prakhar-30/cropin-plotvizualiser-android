@@ -66,6 +66,9 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
   bool _cameraStarting = false;
   (int, int, double)? _measured;
 
+  /// The zoom when the current pinch began; the pinch's scale multiplies it.
+  double _zoomAtPinchStart = 1.0;
+
   @override
   void initState() {
     super.initState();
@@ -246,28 +249,49 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                 }
                 _reportViewport(controller, boxW.toInt(), boxH.toInt());
                 return Center(
-                  child: SizedBox(
-                    width: boxW,
-                    height: boxH,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        if (arcore) const _ArCoreBox() else _CameraBox(camera: _camera),
-                        // Its own layer: the canvas repaints at sensor rate,
-                        // and without the boundary each repaint would drag the
-                        // camera texture and the chrome along with it.
-                        RepaintBoundary(
-                          child: CustomPaint(
-                            painter: ArOverlayPainter(
-                              frame: controller.frame,
-                              confidence: state.headingStatus?.confidence ?? HeadingConfidence.unreliable,
-                              accuracyM: state.accuracyM,
-                              devicePixelRatio: dpr,
-                              drawGeometry: !arcore,
+                  // Pinch to zoom, double-tap to go back to 1x. Two fingers
+                  // only: a one-finger drag is not a zoom.
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onScaleStart: (_) => _zoomAtPinchStart = controller.zoom.value,
+                    onScaleUpdate: (details) {
+                      if (details.pointerCount >= 2) controller.setZoom(_zoomAtPinchStart * details.scale);
+                    },
+                    onDoubleTap: () => controller.setZoom(1.0),
+                    child: SizedBox(
+                      width: boxW,
+                      height: boxH,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (arcore)
+                            const _ArCoreBox()
+                          else
+                            // The sensor path zooms the preview here; the overlay
+                            // follows through the narrowed intrinsics.
+                            ClipRect(
+                              child: ValueListenableBuilder<double>(
+                                valueListenable: controller.zoom,
+                                builder: (context, zoom, child) => Transform.scale(scale: zoom, child: child),
+                                child: _CameraBox(camera: _camera),
+                              ),
+                            ),
+                          // Its own layer: the canvas repaints at sensor rate,
+                          // and without the boundary each repaint would drag the
+                          // camera texture and the chrome along with it.
+                          RepaintBoundary(
+                            child: CustomPaint(
+                              painter: ArOverlayPainter(
+                                frame: controller.frame,
+                                confidence: state.headingStatus?.confidence ?? HeadingConfidence.unreliable,
+                                accuracyM: state.accuracyM,
+                                devicePixelRatio: dpr,
+                                drawGeometry: !arcore,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -330,16 +354,26 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (state.plots.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 12, bottom: 10),
-                      child: PlotMinimap(
-                        plots: state.plots,
-                        health: state.health,
-                        index: state.index,
-                        frame: controller.frame,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 12, bottom: 10),
+                        child: _ZoomPill(zoom: controller.zoom, onReset: () => controller.setZoom(1.0)),
                       ),
-                    ),
+                      const Spacer(),
+                      if (state.plots.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 12, bottom: 10),
+                          child: PlotMinimap(
+                            plots: state.plots,
+                            health: state.health,
+                            index: state.index,
+                            frame: controller.frame,
+                          ),
+                        ),
+                    ],
+                  ),
                   SizedBox(
                     width: double.infinity,
                     child: _BottomSheet(
@@ -763,4 +797,46 @@ class _ModeBadge extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The current zoom, while zoomed in. Tap to go back to 1x.
+class _ZoomPill extends StatelessWidget {
+  const _ZoomPill({required this.zoom, required this.onReset});
+
+  final ValueListenable<double> zoom;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<double>(
+        valueListenable: zoom,
+        builder: (context, value, _) => AnimatedOpacity(
+          opacity: value > 1.01 ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 150),
+          child: IgnorePointer(
+            ignoring: value <= 1.01,
+            child: Material(
+              color: PlotFinderColors.scrim,
+              shape: const StadiumBorder(),
+              child: InkWell(
+                customBorder: const StadiumBorder(),
+                onTap: onReset,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.zoom_in, size: 18, color: Colors.white),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${value.toStringAsFixed(1)}×  · tap for 1×',
+                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
 }

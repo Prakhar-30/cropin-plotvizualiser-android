@@ -12,6 +12,7 @@ import '../../core/geo/projection.dart';
 import '../../core/heading/course_over_ground_detector.dart';
 import '../../core/heading/heading_model.dart';
 import '../../core/heading/trajectory_aligner.dart';
+import '../../core/math_util.dart';
 import '../../core/motion/step_calibrator.dart';
 import '../../core/motion/step_detector.dart';
 import '../../core/render/health_geometry.dart';
@@ -28,6 +29,13 @@ const double plotViewRangeM = 400.0;
 
 /// At most this many plots are drawn at once, nearest first.
 const int maxDrawnPlots = 24;
+
+/// The furthest the pinch zoom goes. Past this a phone camera's image is mush.
+const double maxZoom = 5.0;
+
+/// The horizontal field of view after a digital zoom of [zoom] about the centre.
+double zoomedFovDeg(double horizontalFovDeg, double zoom) =>
+    toDegrees(2.0 * math.atan(math.tan(toRadians(horizontalFovDeg) / 2.0) / zoom));
 
 /// One plot as drawn this frame.
 class DrawnPlot {
@@ -226,6 +234,9 @@ class ArController extends ValueNotifier<ArUiState> {
   /// alone; see [ArFrame].
   final ValueNotifier<ArFrame?> frame = ValueNotifier(null);
 
+  /// Pinch zoom, from 1 (none) to [maxZoom].
+  final ValueNotifier<double> zoom = ValueNotifier(1.0);
+
   /// The latest attitude. Not UI state: only the overlay and telemetry use it.
   DevicePose _pose = DevicePose.unknown;
 
@@ -373,9 +384,33 @@ class ArController extends ValueNotifier<ArUiState> {
     _setIntrinsics(widthPx, heightPx, fov);
   }
 
+  /// Zooms the view by [factor], clamped to 1..[maxZoom].
+  ///
+  /// It is a digital zoom: the camera image is magnified about the centre and
+  /// the projection narrowed by the same factor, so everything drawn stays on
+  /// the ground it marks - zooming shows a distant drop point or patch bigger,
+  /// it does not move it. Under ARCore the native view does both and reports the
+  /// narrower field of view with the next frame; on the sensor path the screen
+  /// scales the preview and the intrinsics are narrowed here.
+  void setZoom(double factor) {
+    final next = factor.clamp(1.0, maxZoom).toDouble();
+    if ((next - zoom.value).abs() < 0.005) return;
+    zoom.value = next;
+    if (value.visual) {
+      unawaited(_container.platform.arSetZoom(next));
+    } else if (_baseIntrinsics case (final w, final h, final fov)) {
+      _setIntrinsics(w, h, fov);
+    }
+  }
+
+  /// The intrinsics as measured, before any sensor-path zoom.
+  (int, int, double)? _baseIntrinsics;
+
   void _setIntrinsics(int widthPx, int heightPx, double horizontalFovDeg) {
+    _baseIntrinsics = (widthPx, heightPx, horizontalFovDeg);
     _intrinsics = CameraIntrinsics(
-      horizontalFovDeg: horizontalFovDeg,
+      // Under ARCore the reported field of view is already the zoomed one.
+      horizontalFovDeg: _vio == null ? zoomedFovDeg(horizontalFovDeg, zoom.value) : horizontalFovDeg,
       viewportWidthPx: widthPx,
       viewportHeightPx: heightPx,
     );
@@ -734,7 +769,9 @@ class ArController extends ValueNotifier<ArUiState> {
     if (value.visual) {
       unawaited(_container.platform.arSetScene(null));
       unawaited(_container.platform.arSetPlacement(null));
+      unawaited(_container.platform.arSetZoom(1.0));
     }
+    zoom.dispose();
     _acceleration?.cancel();
     visualFailed.dispose();
     frame.dispose();
