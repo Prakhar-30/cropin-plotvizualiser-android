@@ -511,7 +511,7 @@ footer{
 
   <h3>The crop-condition raster</h3>
   <p><code>GET /api/plots/:id/health</code> builds the grid on demand — 3 m cells, three indices per cell — and caches it by <code>(plot, capture date)</code>. Because the samplers are deterministic, that cache key is complete — the same plot always produces the same raster, so the cache never has to be invalidated. The grid, the zone classification and the patch clustering all live in <code>shared</code>, which is what a real Supabase ingest job would call too. That is the reason they are there rather than in the route: the map and the database must never disagree about which cell is stressed.</p>
-  <p>On the map, the <em>Crop condition</em> panel switches between crop greenness, crop vigour and water stress. Each cell is painted by zone — green normal, yellow moderate, red critical — with the share of the plot in each zone and a ranked list of the moderate and critical patches, each pinned on the map. Under 720 px the side panels become a bottom sheet with tabs (Plots, Draw, Condition) and the drawing tools gain <em>Undo corner</em> and <em>Close shape</em>, because a phone has no right-click or double-click to spare.</p>
+  <p>On the map, the <em>Crop condition</em> panel — on by default — grades every saved plot at once and switches between crop greenness, crop vigour and water stress. For all plots together, the moderate and critical cells are painted yellow and red and every patch is a drop point on the map (click one for its plot, zone, area and coordinate); normal cells are left unpainted, as in the camera. The panel gives the share of all graded ground in each zone and lists the drop points, worst first. Snapshots are fetched four at a time and kept, so switching index costs nothing. Under 720 px the side panels become a bottom sheet with tabs (Plots, Draw, Condition) and the drawing tools gain <em>Undo corner</em> and <em>Close shape</em>, because a phone has no right-click or double-click to spare.</p>
 </section>
 
 <!-- ============================================ 04 MOBILE -->
@@ -524,11 +524,11 @@ footer{
 
   <h3>The agent's moments</h3>
   <ol class="steps">
-    <li><strong>Open the camera.</strong> From the plot list (<em>Open AR view</em> on any plot) — the screen is not tied to that plot. Every cached plot within 400 m is drawn, the nearest 24 at most.</li>
+    <li><strong>Sync, then start.</strong> The app opens on a home screen: how many plots the phone holds, how fresh they are, <em>Sync now</em>, and <em>Start AR view</em>. It syncs by itself on opening when there are no plots or they are over an hour old. No plot is picked — every cached plot within 400 m is drawn, the nearest 24 at most.</li>
     <li><strong>Wait a few seconds, visibly.</strong> A card over the camera ticks off <em>Camera</em>, <em>Motion tracking</em> and <em>GPS</em>, with a seconds counter, and after 20 s says to step into the open. The location stream sends the phone's last-known fix the moment it opens if it is under 30 s old, so usually there is almost no wait.</li>
     <li><strong>Walk.</strong> Until the view is anchored, a pill points at the nearest boundary of the nearest plot and gives the distance. While the agent walks, the app silently works out where north is from the shape of the walk (logic 11). No button.</li>
     <li><strong>Anchor, automatically.</strong> When GPS puts the agent within 10 m of any plot's boundary the app takes the nearest point on that boundary, whether a corner or a point computed along an edge, as where the agent is, and pins the position there (logic 12). The sheet says <em>Anchored to the X boundary</em>. It re-anchors after 60 m of walking or a loss of tracking.</li>
-    <li><strong>Look.</strong> Every nearby plot's boundary stands up as walls; each moderate (yellow) or critical (red) patch of the chosen index stands up as a 4.5 m drop point, taller than the 2.6 m walls; people and trees in front hide them; and a minimap in the corner shows all of it from above with the agent as a blue arrow. Normal ground is not drawn — only what needs a visit.</li>
+    <li><strong>Look.</strong> Every nearby plot's boundary stands up as walls; the moderate (yellow) and critical (red) 3 m cells of the chosen index are painted on the ground inside them; each patch of them stands up as a 4.5 m drop point, taller than the 2.6 m walls; people and trees in front hide them; and a minimap in the corner shows all of it from above with the agent as a blue arrow. Normal ground is not drawn — only what needs a visit.</li>
     <li><strong>Switch the index.</strong> Crop greenness (NDVI), crop vigour (NDRE) or water stress (LSWI), from the bottom sheet. The drop points and minimap change together.</li>
   </ol>
 
@@ -1002,7 +1002,7 @@ footer{
       </div>
       <div class="slot"><span>Drop points</span>
         <p>Each moderate or critical patch is one drop point: a stem from the ground to 4.5 m and a round head on top, yellow or red, with a dark halo. 4.5 m is deliberate — taller than the 2.6 m walls, so a patch inside a plot beyond the near one shows over its fence, which is the whole point of seeing every nearby plot at once. The head is a screen-space point whose size scales with distance only between limits (35–130% of 44 px), so a far marker stays findable and a near one does not fill the frame. Normal ground gets no marker: the view answers "where must I go", not "what is fine". Drop points come from patches within 300 m, 60 at most, nearest first.</p>
-        <p>The cells are no longer laid on the ground in the camera. Hundreds of translucent 3 m squares across several plots read as a carpet and hid the walls; the per-cell colouring lives in the minimap and on the web map instead.</p>
+        <p>The cells themselves lie on the ground under the drop points — yellow at 60% and red at 80% opacity, just above the plot's own fill — for every nearby plot at once. Only moderate and critical cells are sent: a green carpet across several plots hid the walls, and is not what anyone walks out to see. On the ARCore path they are one triangle list in the shared scene frame, ghosted like the fill when something stands in front; on the sensor path they are projected per frame to 120 m.</p>
       </div>
       <div class="slot"><span>Drawn in ARCore's frame, with occlusion</span>
         <p><strong>No lag.</strong> On the ARCore path the walls, rails, posts, ground fill and drop points are drawn by a small native GL renderer, after the camera image and with that frame's own camera matrices. Dart sends the scene — every nearby plot, triangulated by ear clipping, plus the drop points, all in one shared metric frame — when the set of plots or the index changes, and a placement (a 2-D rotation and offset into ARCore's world) only when the registration moves. The walls of all plots are sorted far-to-near together, so a near plot is never painted over by a far one.</p>
@@ -1109,7 +1109,7 @@ footer{
             <text class="t-sm" x="460" y="242">one per patch · normal ground: nothing</text>
           </svg>
         </div>
-        <figcaption><b>FIG 11</b><span>From grid to drop point. The cells are kept for the minimap and the web map; the camera gets one marker per patch, standing taller than the wall so it reads from the next field.</span></figcaption>
+        <figcaption><b>FIG 11</b><span>From grid to drop point. The yellow and red cells are painted on the ground in the camera and on the map; each patch also gets one marker, standing taller than the wall so it reads from the next field.</span></figcaption>
       </figure>
     </div>
   </div>
@@ -1343,7 +1343,7 @@ footer{
       <tbody>
         <tr><td>MapLibre GL JS</td><td class="mono">5.1</td><td>Open-source vector/raster map renderer, the community fork of Mapbox GL</td><td>Renders the Esri satellite basemap and owns the drawing canvas. Chosen over Mapbox GL for its licence — no token, no per-load billing.</td></tr>
         <tr><td>Turf.js</td><td class="mono">7.2</td><td>Geospatial analysis on GeoJSON</td><td>Every area, length, centroid, intersection and self-intersection test. Used because it works on the ellipsoid: <code>turf.area</code> is geodesic, so a plot's area is right at any latitude.</td></tr>
-        <tr><td>React</td><td class="mono">18.3</td><td>UI library</td><td>Panels, forms and the plot list only. Deliberately kept out of the map canvas.</td></tr>
+        <tr><td>React</td><td class="mono">18.3</td><td>UI library</td><td>Panels, forms and the saved-plot list only. Deliberately kept out of the map canvas.</td></tr>
         <tr><td>React Router</td><td class="mono">6.28</td><td>Client-side routing</td><td>Two routes: the map, and the saved-plot list.</td></tr>
         <tr><td>Vite</td><td class="mono">6.0</td><td>Build tool and dev server</td><td>Bundles the app; project references keep <code>shared</code> type-checked across workspaces.</td></tr>
         <tr><td>Express</td><td class="mono">4.21</td><td>HTTP server</td><td>The API surface. Runs as a Vercel serverless function in production and as a plain node process locally.</td></tr>
@@ -1462,7 +1462,7 @@ footer{
   <h3>In the field</h3>
   <ol class="steps">
     <li>Sync while you still have signal. Plots within 5 km, plus their crop-condition rasters.</li>
-    <li>Open any plot and tap <em>Open AR view</em>. The loader ticks off camera, motion tracking and GPS; move the phone gently side to side if motion tracking is waiting. Every plot within 400 m is drawn, not just the one you opened.</li>
+    <li>Open the app: it syncs by itself if the phone's plots are missing or over an hour old, or tap <em>Sync now</em>. Then tap <em>Start AR view</em>. The loader ticks off camera, motion tracking and GPS; move the phone gently side to side if motion tracking is waiting. Every plot within 400 m is drawn.</li>
     <li>Follow the pill to the nearest boundary. On the way, the heading chip turns green ("from your walk") without any tap.</li>
     <li>Within 10 m of a boundary the sheet says <em>Anchored to the … boundary</em>. Nothing to press.</li>
     <li>Pick crop greenness, crop vigour or water stress in the sheet. Red drop points are critical patches, yellow moderate; the minimap shows them all around you — tap it to enlarge.</li>

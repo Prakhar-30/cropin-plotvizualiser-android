@@ -308,10 +308,16 @@ Each index is classified as normal, moderate or critical. Touching moderate
 or critical cells (four-way, at least 2 cells) form a patch, and each patch
 is one drop point: a stem to 4.5 m and a round head, taller than the 2.6 m
 walls, so a patch in the next field shows over the fence. Normal ground is
-not drawn. The cells are no longer laid on the ground in the camera; they
-live in the minimap and on the web map. Drop points are not suppressed when
+not drawn. The moderate and critical cells themselves are painted on the
+ground, yellow and red, under the drop points, for every nearby plot at once.
+Drop points are not suppressed when
 the heading is weak, so the flow can be tested indoors. The values are still
 synthetic and labelled as demo values.
+
+**Entry.** The plot list and plot detail screens were removed: choosing a plot
+changed nothing in a view that shows every plot. The app opens on a home
+screen with the cached plot count, its age and *Sync now* (automatic on opening
+when the cache is empty or over an hour old), and *Start AR view*.
 
 ## Sources
 

@@ -39,9 +39,11 @@ Boundaries are drawn there and only there; this app is a reader.
 
 ## In the field
 
-1. **Sync** on the plot list while there is signal: boundaries and crop
-   condition for every plot within 5 km.
-2. **Open the AR view** (from any plot's detail page). A loader ticks off
+1. **Sync** on the home screen while there is signal: boundaries and crop
+   condition for every plot within 5 km. Opening the app syncs by itself when
+   the phone has no plots or they are over an hour old; *Sync now* is always
+   there. No plot is picked.
+2. **Start AR view** from the home screen. A loader ticks off
    *Camera*, *Motion tracking* and *GPS*; a last-known fix under 30 s old is used
    at once, so the wait is usually short.
 3. **Walk towards the plots.** Every cached plot within 400 m is drawn - walls on
@@ -55,9 +57,10 @@ Boundaries are drawn there and only there; this app is a reader.
    after you walk 60 m on, or if ARCore loses tracking. North is set from your
    walk, also automatically (`TrajectoryAligner`).
 5. **Look for drop points**: tall pins (4.5 m, above the 2.6 m walls) on every
-   moderate (yellow) and critical (red) patch, across every nearby plot. Switch
-   between *Crop greenness*, *Crop vigour* and *Water stress* in the sheet. Normal
-   ground is not drawn. The **minimap** bottom-right is centred on you: every
+   moderate (yellow) and critical (red) patch, and the moderate and critical 3 m
+   cells painted on the ground, across every nearby plot at once. Switch between
+   *Crop greenness*, *Crop vigour* and *Water stress* in the sheet. Normal ground
+   is not drawn. The **minimap** bottom-right is centred on you: every
    plot, the red and yellow ground, the drop points. Tap it to see further.
 
 The anchor uses the same GPS fix it corrects, so it cannot remove GPS error -
@@ -79,7 +82,7 @@ lib/location       LocationSource interface + fused location
 lib/core/motion    step detection, step length, step-length calibration
 lib/data           sqflite cache, HTTP sync, repositories
 lib/platform       Dart end of the native channel, monotonic clock
-lib/ui             Flutter screens: plot list, plot detail, AR view
+lib/ui             Flutter screens: home (sync + start), AR view
 lib/plot_finder.dart
                    the public API: PlotFinderScreen, PlotFinderConfig
 android/src/main/kotlin
@@ -326,9 +329,11 @@ each split into the same three zones:
 The API also groups touching moderate-or-critical cells into **patches** (two
 cells or more), and the app draws **one drop point per patch**: a 4.5 m stem with
 a round head, yellow or red, standing above the 2.6 m boundary walls so a target
-is never hidden behind the fence in front of it. Normal ground is not drawn. Drop
-points of every nearby plot show at once, nearest 60 within 300 m; the sheet
-switches the index. On ARCore they are drawn natively in the camera's GL frame,
+is never hidden behind the fence in front of it. The moderate and critical cells
+themselves are painted on the ground under them, yellow and red, for every
+nearby plot at once. Normal ground is not drawn. Drop points show the nearest 60
+within 300 m; on the sensor path cells are drawn to 120 m; the sheet switches the
+index for all of it together. On ARCore they are drawn natively in the camera's GL frame,
 ghosted rather than hidden behind nearer objects; without ARCore they are
 projected and painted like the walls.
 
