@@ -1,3 +1,70 @@
+# Flutter port — Milestones
+
+This branch (`flutter`) is the Kotlin/Compose app rebuilt in Flutter, feature for
+feature. `main` keeps the Kotlin original; nothing here changes what it does.
+
+Same rule as the original build: **revise before advancing**, and a number in
+this log must match the code.
+
+| # | Milestone | Done when |
+|---|---|---|
+| F1 | Scaffold: Flutter project, Android host (portrait, permissions, debug cleartext), Kotlin project removed from this branch | `pubspec.yaml`, `android/` host and placeholder `lib/main.dart` committed |
+| F2 | `core/geo` in Dart: ENU frame, 3x3 algebra, projection + near-plane clipping, polygon distance, position stabiliser, orientation smoother | Kotlin geo tests ported to `test/core/geo` |
+| F3 | `core/heading` in Dart: heading model, fusion, course-over-ground detector, landmark snap | Kotlin heading tests ported to `test/core/heading` |
+| F4 | `core/render` in Dart: palette, overlay geometry, health raster | Kotlin render tests ported to `test/core/render` |
+| F5 | Data: domain models, wire DTOs, mapping, HTTP client, sqflite cache (same schema as Room v3), repositories | Health DTO parsing tests ported |
+| F6 | Platform: native Android channel (rotation vectors, camera geometry, fused location, device info), `PoseSource` / `LocationSource`, simulation engine | Dart side compiles against the channel contract |
+| F7 | UI: theme, plot list, plot detail + sketch, AR screen, overlay painter, heading chip, simulation panel, permission gate | Every Compose screen has its Flutter counterpart |
+| F8 | Review pass and docs | README describes the Flutter build; no dead code |
+| F9 | Package as an embeddable Flutter plugin; standalone app moved to `example/` | A host app integrates with one dependency and one screen; CI green on Flutter 3.22 and stable |
+| F10 | First real-phone test: overlay receded while walking indoors. Step counting (PDR) fused into the position filter, step length calibrated from good GNSS; collapsible AR sheet; simulation removed | The indoor walk reproduced as a regression test and passing; research notes in `docs/research/ar-positioning.md` |
+| F11 | Second phone test: boundary shifted sideways on approach. ARCore motion tracking (VIO) as the pose and motion source, GNSS de-weighted to drift correction, access-point position pin, fallback to sensors + steps | A stuck ±15 m indoor receiver moves the drawn position < 1 m sideways over a tracked 10 m approach (regression test) |
+| F12 | Third phone test: corners swam on small hand motion, a 16 m boundary was painted over a person 2 m away, repeated Aim taps rotated the plot in a circle. Overlay drawn natively in ARCore's GL frame (no latency), floor from ARCore planes, depth occlusion with X-ray ghosting, no compass after a lock under ARCore, Aim uses the drawn position and refuses when position error swamps the bearing; Aim / I'm here always visible in the sheet | Placement maths tested as the inverse of the motion rotation; triangulation, scene and decoding tests |
+| F13 | One action instead of two: "I'm at the access point". Direction set automatically by aligning ARCore's tracked walk to GNSS (weighted 2-D Procrustes), anchored at the pin; guide pill to the access point; one confirm guard when GPS says you are far; aim moved to a fallback with guards in the right order; plot keeps its colour under ARCore, occlusion only by clearly nearer objects | Aligner tests: exact recovery, noisy winding walk, indoor fixes ignored, standing still says nothing, anchored walk-in |
+| F14 | Minimap in the AR view: north-up plan of the plot with the crop-health cells in their severity colours, ranked hotspots, the access point and the agent as a heading arrow; bottom right above the sheet, tap to enlarge; shown once at the plot | Widget test: renders and grows on tap |
+| F15 | Startup loader on the AR view (camera / motion tracking / GPS checklist with elapsed seconds and a hint after 20 s), and a faster first fix: the native side sends the newest last-known location under 30 s old the moment AR opens | Widget tests for the loader |
+| F16 | "I'm at the access point" disabled until GPS puts the agent within 50 m of it; the disabled button says how far is left, or that GPS is still coming. Replaces the far-away confirm dialog | State test for the 50 m rule |
+
+**F9, packaging for a host app.** The aim was to add nothing that could break a
+host app's build: no third-party native dependencies (framework
+`LocationManager` instead of Play Services location, native permission
+requests instead of `permission_handler`), wide Dart version ranges, no
+Flutter API newer than 3.22, no `<uses-feature required>` in the
+merged manifest, namespaced channels, portrait locked only while the AR screen
+is open, and a configurable cache file name. Integration is described in
+`INTEGRATION.md`.
+
+**How it was verified.** The port was written without a local Flutter SDK, so
+every milestone was pushed and checked by CI (`.github/workflows/flutter.yml`):
+`flutter analyze`, `flutter test`, and from F6 on a debug APK build that
+compiles the Android host, the native channel and every plugin. What CI caught:
+
+- F2: the orientation smoother's constructor defaults referred to the private
+  fields they shadowed - a compile error.
+- F6: current Flutter refuses Gradle below 8.14; the wrapper carried over from
+  the Kotlin project was 8.11.1. Moved to Gradle 8.14.3, AGP 8.11.1, Kotlin
+  2.2.20, and the `compilerOptions` DSL.
+
+**What changed in the port, on purpose.**
+
+- `CameraGeometry` corrects the FOV for the preview crop. CameraX could be sized
+  to the sensor's 4:3; the Flutter camera plugin picks its own preview size, and
+  a 16:9 stream crops exactly the axis a portrait screen's width shows.
+- Projection runs in logical pixels. Stroke widths and text sizes were tuned in
+  physical pixels, so the painter divides them by the device pixel ratio.
+- Enum values keep their original upper-case names in telemetry rows
+  (`wireName`), so fleet data from both builds reads the same.
+- The cache is the Room v3 schema byte for byte, same file and version, so
+  installing over the Kotlin build keeps the cached plots.
+
+**Not ported.** `tools/demo/OverlayDemo.kt` (an off-device PNG renderer) and the
+Kotlin-only test and type-check scripts; `flutter test` replaces the latter.
+iOS has no native channel yet - see the README.
+
+---
+
+# Original Kotlin build log
+
 # AR_Project — Milestones
 
 Two independent deliverables in two folders:

@@ -1,0 +1,39 @@
+name: plot_finder
+description: >-
+  AR plot boundary finder. Points the phone around, shows the target farm plot
+  highlighted on the ground through the camera. Offline once cached, phone
+  sensors only, no ARCore. Embeddable in a host Flutter app.
+publish_to: 'none'
+
+version: 0.3.0
+
+# Wide on purpose. This package is meant to sit inside a larger app, and any
+# constraint narrower than what the code needs is a dependency conflict waiting
+# for that app. CI checks the oldest Flutter here as well as the current one.
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+# Everything that decides where the overlay lands lives in lib/core and imports
+# nothing but dart:math. The Android plumbing - rotation vectors, camera
+# geometry, location, permissions, and the ARCore view and renderer - is this
+# package's own Kotlin. Its one native dependency is ARCore (motion tracking
+# only, declared optional); see android/src/main/kotlin and android/build.gradle.
+dependencies:
+  flutter:
+    sdk: flutter
+  camera: ">=0.10.5 <0.12.0"
+  sqflite: ">=2.2.0 <3.0.0"
+  path: ">=1.8.0 <2.0.0"
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ">=3.0.0 <6.0.0"
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.fieldar.plotfinder.plugin
+        pluginClass: PlotFinderPlugin

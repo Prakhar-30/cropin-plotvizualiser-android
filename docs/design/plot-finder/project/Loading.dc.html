@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Plot Finder – starting up</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#FFFFFF}a:hover{color:#E5E7EB}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; overflow: hidden; background: #F2F4F5; font-family: Roboto, system-ui, sans-serif; color: #1A2228; display: flex; flex-direction: column">
+  <header style="height: 56px; flex-shrink: 0; background: #234556; color: #FFFFFF; display: flex; align-items: center; gap: 4px; padding: 0 4px">
+    <a href="#" aria-label="Back" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border-radius: 24px">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    </a>
+    <div style="font-size: 18px; font-weight: 500">Plot Finder</div>
+  </header>
+  <div role="status" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 32px">
+    <div style="width: 72px; height: 72px; border-radius: 36px; background: #E3ECF0; display: flex; align-items: center; justify-content: center">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="14" fill="none" stroke="#C3D2DA" stroke-width="3"/><path d="M17 3a14 14 0 0 1 14 14" fill="none" stroke="#234556" stroke-width="3" stroke-linecap="round"/></svg>
+    </div>
+    <div style="font-size: 18px; font-weight: 700; text-align: center">Opening offline plots…</div>
+    <div style="font-size: 13px; color: #56636C; text-align: center; max-width: 260px; line-height: 18px">Same screen reads "Checking camera and location access…" while the permission dialog is up.</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

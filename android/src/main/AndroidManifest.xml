@@ -1,0 +1,24 @@
+<!--
+  Merged into the host app's manifest.
+
+  Permissions only. In particular no <uses-feature android:required="true">:
+  merged into a host, that would hide the whole host app on Google Play from
+  any device without a camera or GPS. The standalone example declares its
+  hardware requirements in its own manifest instead.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Sync is opportunistic; the feature is fully usable without it. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+        <!--
+          ARCore is optional: the host app installs everywhere, and phones
+          without ARCore use the sensor-only tracking. "required" here would
+          hide the whole host app on Google Play from those phones.
+        -->
+        <meta-data android:name="com.google.ar.core" android:value="optional" />
+    </application>
+</manifest>
