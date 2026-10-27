@@ -44,18 +44,28 @@ double overlayConfidenceAlpha(HeadingConfidence confidence) => switch (confidenc
       HeadingConfidence.unreliable => 0.45,
     };
 
-/// One plot in the scene: its ground fill, boundary and colour.
+/// One plot in the scene: its boundary, where its walls stand, and its colour.
+///
+/// No ground fill. A tinted floor across several plots - and across the whole
+/// screen when standing inside one - drowned the only colour on the ground that
+/// matters, the red and yellow of crop condition.
 class ScenePlot {
-  const ScenePlot({required this.fill, required this.ring, required this.tintArgb});
+  const ScenePlot({required this.ring, required this.walls, required this.tintArgb, required this.primary});
 
-  /// Ground fill, triangulated: (east, north) per vertex.
-  final Float32List fill;
-
-  /// Boundary, open ring: (east, north) per vertex.
+  /// Boundary, open ring: (east, north) per vertex. Drawn as a line on the ground.
   final Float32List ring;
+
+  /// Where the walls stand: the boundary pulled [boundaryWallInsetM] inwards,
+  /// so neighbours sharing an edge show as two fences, one each side.
+  final Float32List walls;
   final int tintArgb;
 
-  Map<String, Object> toMessage() => {'fill': fill, 'ring': ring, 'tint': tintArgb};
+  /// The plot the agent is in, or nearest to: the only one given full walls.
+  /// The rest get their ground line and short corner posts, so a row of
+  /// neighbouring fences cannot stack into a wall of colour.
+  final bool primary;
+
+  Map<String, Object> toMessage() => {'ring': ring, 'walls': walls, 'tint': tintArgb, 'primary': primary};
 }
 
 class WorldScene {
@@ -77,16 +87,17 @@ class WorldScene {
         'drops': drops,
         'wallHeight': boundaryWallHeightM,
         'postHeight': vertexPostHeightM,
+        'minorPostHeight': minorPostHeightM,
         'dropHeight': dropPointHeightM,
         'alpha': alpha,
         'wallAlpha': PlotAlpha.wallFill,
-        'fillAlpha': PlotAlpha.groundFill,
         'railAlpha': PlotAlpha.rail,
       };
 }
 
-/// Builds the scene for [plots], the ground [cells] graded on [index] and the
-/// drop points [patches], in the frame centred on [origin].
+/// Builds the scene for [plots], nearest first, the ground [cells] graded on
+/// [index] and the drop points [patches], in the frame centred on [origin].
+/// The first plot is the primary one.
 WorldScene buildWorldScene({
   required List<Plot> plots,
   Iterable<HealthCell> cells = const [],
@@ -100,18 +111,15 @@ WorldScene buildWorldScene({
   for (final plot in plots) {
     final boundary = openRing([for (final p in plot.ring) frame.toEnu(p)]);
     if (boundary.length < 3) continue;
-    final fill = <double>[];
-    for (final i in triangulate(boundary)) {
-      fill
-        ..add(boundary[i].east)
-        ..add(boundary[i].north);
-    }
     scenePlots.add(ScenePlot(
-      fill: Float32List.fromList(fill),
       ring: Float32List.fromList([
         for (final p in boundary) ...[p.east, p.north],
       ]),
+      walls: Float32List.fromList([
+        for (final p in insetRing(boundary, boundaryWallInsetM)) ...[p.east, p.north],
+      ]),
       tintArgb: plotColour(plot.colourIndex).argb,
+      primary: scenePlots.isEmpty,
     ));
   }
 

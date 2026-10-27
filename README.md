@@ -57,8 +57,10 @@ Boundaries are drawn there and only there; this app is a reader.
    after you walk 60 m on, or if ARCore loses tracking. North is set from your
    walk, also automatically (`TrajectoryAligner`).
 5. **Look for drop points**: tall pins (4.5 m, above the 2.6 m walls) on every
-   moderate (yellow) and critical (red) patch, and the moderate and critical 3 m
-   cells painted on the ground, across every nearby plot at once. Switch between
+   moderate (yellow) and critical (red) patch, across every nearby plot at once,
+   from the start. **Once anchored**, the moderate and critical 3 m cells are
+   painted on the ground as well; before that the scene still moves with GPS and
+   would paint the wrong ground. Switch between
    *Crop greenness*, *Crop vigour* and *Water stress* in the sheet. Normal ground
    is not drawn. The **minimap** bottom-right is centred on you: every
    plot, the red and yellow ground, the drop points. Tap it to see further.
@@ -287,14 +289,21 @@ real turn makes the estimate fall behind until the filter speeds up to catch it.
 Switched on distance to the **nearest edge**, never the centroid — an elongated
 plot's centroid can be 60 m away while the agent stands on its boundary.
 
-Boundary edges stand up as **2.6 m vertical panels** in both modes — eye height
+Neighbouring plots are kept apart: plot colours are blues, violets and white
+only (red and yellow always mean crop condition), plots have no tinted floor,
+walls stand **0.5 m inside** each plot's own boundary so a shared edge shows as
+two fences, and only the plot you are in or nearest to gets full walls - the
+rest keep their ground line and 1.2 m corner posts. Labels stand on a point
+inside each plot and are lifted clear of one another.
+
+The primary plot's boundary edges stand up as **2.6 m vertical panels** in both modes — eye height
 plus a metre — each with a solid rail along its top. A boundary drawn flat on the
 ground reads as a coloured carpet rather than a limit, and disappears entirely
 when the phone is held level, because the ground plane is then edge-on to the
 camera. A wall topping out *below* eye level reads as floating; carrying it past
 eye level puts the rail against the sky and the panel plainly stands on the earth.
 
-- **Far (>30 m)** — the panels, plus a faint ground fill, a post at each vertex,
+- **Far (>30 m)** — the panels, the boundary as a line on the ground, a post at each vertex,
   and a label at the centroid with plot id, area and distance. An edge-of-screen
   arrow points to the plot when it is outside the FOV. The *shape*, never just a
   pin: the shape is what lets the agent confirm they are looking at the right
@@ -331,7 +340,8 @@ cells or more), and the app draws **one drop point per patch**: a 4.5 m stem wit
 a round head, yellow or red, standing above the 2.6 m boundary walls so a target
 is never hidden behind the fence in front of it. The moderate and critical cells
 themselves are painted on the ground under them, yellow and red, for every
-nearby plot at once. Normal ground is not drawn. Drop points show the nearest 60
+nearby plot at once - only once the view is anchored to a boundary, and dropped
+again if ARCore loses tracking. Normal ground is not drawn. Drop points show the nearest 60
 within 300 m; on the sensor path cells are drawn to 120 m; the sheet switches the
 index for all of it together. On ARCore they are drawn natively in the camera's GL frame,
 ghosted rather than hidden behind nearer objects; without ARCore they are

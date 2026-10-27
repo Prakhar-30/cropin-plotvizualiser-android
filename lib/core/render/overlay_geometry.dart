@@ -15,6 +15,15 @@ const double nearModeThresholdM = 30.0;
 /// How tall the vertex posts stand above the ground plane.
 const double vertexPostHeightM = 2.5;
 
+/// Corner posts of the plots other than the one the agent is in or nearest to.
+/// Short enough to sit below the primary plot's walls and every drop point.
+const double minorPostHeightM = 1.2;
+
+/// How far inside its own boundary a plot's walls stand. Enough that two plots
+/// sharing an edge show two separate fences instead of one wall of mixed colour;
+/// small next to the few metres GNSS is out by anyway.
+const double boundaryWallInsetM = 0.5;
+
 /// How tall the boundary wall stands.
 ///
 /// The first field test drew the boundary flat on the ground, and the reviewers'
@@ -198,6 +207,7 @@ PlotOverlay buildPlotOverlay({
   required CameraIntrinsics intrinsics,
   required double gnssAccuracyM,
   double eyeHeight = eyeHeightM,
+  bool primary = true,
 }) {
   final enuToDevice = deviceToEnu.transpose();
   final groundUp = -eyeHeight;
@@ -229,9 +239,14 @@ PlotOverlay buildPlotOverlay({
         )
       : const <ScreenPoint>[];
 
-  // Walls are drawn in both modes. They are the boundary now; the ground fill
-  // has been demoted to a faint hint of which side of the line the crop is on.
-  final (walls, rails) = _buildWalls(ringGround, eye, enuToDevice, intrinsics);
+  // Walls are drawn in both modes, but only for the primary plot - the one the
+  // agent is in or nearest to - and stand just inside the boundary, so two
+  // plots sharing an edge show two fences rather than one of mixed colour. The
+  // other plots keep their ground line and short corner posts.
+  final wallRing = insetRing(ringGround, boundaryWallInsetM);
+  final (walls, rails) = primary
+      ? _buildWalls(wallRing, eye, enuToDevice, intrinsics)
+      : (const <OverlayWall>[], const <OverlayRail>[]);
 
   // Accuracy bands are suppressed once the agent is closer to the edge than
   // the accuracy itself. A band is a slab `gnssAccuracyM` wide lying on the
@@ -246,11 +261,12 @@ PlotOverlay buildPlotOverlay({
       : const <OverlayBand>[];
 
   final posts = <OverlayPost>[];
-  if (mode == RenderMode.far) {
-    for (final vertex in ringGround) {
+  if (mode == RenderMode.far || !primary) {
+    final postHeight = primary ? vertexPostHeightM : minorPostHeightM;
+    for (final vertex in wallRing) {
       final base = projectDevice(toDevice(vertex, eye, enuToDevice), intrinsics);
       final top = projectDevice(
-        toDevice(Enu(vertex.east, vertex.north, vertex.up + vertexPostHeightM), eye, enuToDevice),
+        toDevice(Enu(vertex.east, vertex.north, vertex.up + postHeight), eye, enuToDevice),
         intrinsics,
       );
       if (base != null && top != null) posts.add(OverlayPost(base, top));

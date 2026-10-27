@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plot_finder/core/geo/arcore_pose.dart';
 import 'package:plot_finder/core/geo/enu.dart';
 import 'package:plot_finder/core/render/health_geometry.dart';
+import 'package:plot_finder/core/render/overlay_geometry.dart';
 import 'package:plot_finder/core/render/plot_palette.dart';
 import 'package:plot_finder/core/render/world_scene.dart';
 import 'package:plot_finder/core/math_util.dart';
@@ -125,7 +126,14 @@ void main() {
       expect(scene.plots[0].ring.length, 8);
       expect(scene.plots[0].ring[0], closeTo(-5.0, 1e-3));
       expect(scene.plots[0].ring[1], closeTo(-5.0, 1e-3));
-      expect(scene.plots[0].fill.length, 12);
+      expect(scene.plots[0].walls.length, 8);
+      // Walls stand 0.5 m inside the boundary: the south-west corner moves
+      // north-east by half a metre on each axis.
+      expect(scene.plots[0].walls[0], closeTo(-5.0 + boundaryWallInsetM, 1e-3));
+      expect(scene.plots[0].walls[1], closeTo(-5.0 + boundaryWallInsetM, 1e-3));
+      expect(scene.plots[0].primary, isTrue, reason: 'the first plot given is the nearest');
+      expect(scene.plots[1].primary, isFalse);
+      expect(scene.toMessage().containsKey('fillAlpha'), isFalse, reason: 'plots have no tinted floor');
       expect(scene.plots[1].ring[0], closeTo(15.0, 1e-3), reason: 'the second plot, 20 m east, same frame');
       expect(scene.plots[0].tintArgb, plotColour(0).argb);
       expect(scene.plots[1].tintArgb, plotColour(3).argb);

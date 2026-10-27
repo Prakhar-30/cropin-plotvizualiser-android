@@ -86,6 +86,7 @@ class ArOverlayPainter extends CustomPainter {
           case RenderMode.near:
             _drawNearMode(canvas, drawn.overlay, tint, alpha);
         }
+        _drawPosts(canvas, drawn.overlay, tint, alpha);
       }
       // Drop points stand above every wall: a walk-to target hidden behind the
       // fence between you and it is no target at all.
@@ -103,14 +104,25 @@ class ArOverlayPainter extends CustomPainter {
       }
     }
 
-    // A label per plot: which plot, how big, how far.
-    for (final drawn in current.plots) {
+    // A label per plot, pinned to a point on the ground inside it: which plot,
+    // how big, how far. Nearest first, and each later one is lifted clear of
+    // those already placed, so neighbouring plots never print over each other.
+    final placed = <Rect>[];
+    for (final (i, drawn) in current.plots.indexed) {
       final label = drawn.overlay.label;
       if (label == null) continue;
       final near = drawn.overlay.mode == RenderMode.near;
       final text = '${drawn.plot.name}  ${drawn.plot.areaHectares.toStringAsFixed(2)} ha  '
           '${label.distanceM.toStringAsFixed(0)} m${near ? '  ±${accuracyM.toStringAsFixed(0)} m' : ''}';
-      _drawLabel(canvas, text, label.at, Color(overlayTintArgb(confidence, drawn.plot.colourIndex)), alpha);
+      _drawLabel(
+        canvas,
+        text,
+        label.at,
+        Color(overlayTintArgb(confidence, drawn.plot.colourIndex)),
+        alpha,
+        placed,
+        primary: i == 0,
+      );
     }
   }
 
@@ -169,13 +181,16 @@ class ArOverlayPainter extends CustomPainter {
     final path = _path(overlay.fill);
     if (path == null) return;
 
-    // Demoted to a hint. The walls carry the boundary; this only says which side
-    // of it the crop is on.
-    canvas.drawPath(path, _fill(tint, PlotAlpha.groundFill * alpha));
-    canvas.drawPath(path, _stroke(tint, PlotAlpha.outline * alpha, 3));
+    // The boundary as a line on the ground, on a dark backing. No tinted floor:
+    // the only colour on the ground is crop condition.
+    canvas.drawPath(path, _stroke(_outlineBacking, 0.5 * alpha, 7));
+    canvas.drawPath(path, _stroke(tint, PlotAlpha.outline * alpha, 4));
+  }
 
-    // Vertical posts at the corners. Posts read against the horizon and stay
-    // legible when heading is a few degrees off.
+  /// Vertical posts at the corners: full height on the primary plot, short on
+  /// the others. Posts read against the horizon and stay legible when heading
+  /// is a few degrees off.
+  void _drawPosts(Canvas canvas, PlotOverlay overlay, Color tint, double alpha) {
     for (final post in overlay.posts) {
       final base = _o(post.base);
       final top = _o(post.top);
@@ -226,21 +241,53 @@ class ArOverlayPainter extends CustomPainter {
     canvas.drawCircle(centre, _px(3), _fill(Colors.white, 0.75));
   }
 
-  void _drawLabel(Canvas canvas, String text, ScreenPoint at, Color tint, double alpha) {
+  /// A label standing on [at], a ground point inside its plot, with a stalk
+  /// down to a dot on that point. Lifted above any rectangle in [placed] it
+  /// would overlap, then added to it.
+  void _drawLabel(
+    Canvas canvas,
+    String text,
+    ScreenPoint at,
+    Color tint,
+    double alpha,
+    List<Rect> placed, {
+    required bool primary,
+  }) {
     final painter = TextPainter(
-      text: TextSpan(text: text, style: TextStyle(color: Colors.white.withAlpha(alpha8(alpha)), fontSize: _px(34))),
+      text: TextSpan(
+        text: text,
+        style: TextStyle(color: Colors.white.withAlpha(alpha8(alpha)), fontSize: _px(primary ? 34 : 28)),
+      ),
       textDirection: TextDirection.ltr,
     )..layout();
     final padding = _px(14);
-    final rect = Rect.fromLTWH(
+    final height = painter.height + _px(14);
+    var rect = Rect.fromLTWH(
       at.x - painter.width / 2 - padding,
-      at.y - _px(48),
+      at.y - _px(16) - height,
       painter.width + padding * 2,
-      _px(52),
+      height,
     );
+    for (var tries = 0; tries < 6 && placed.any((r) => r.overlaps(rect.inflate(_px(4)))); tries++) {
+      rect = rect.translate(0, -(height + _px(8)));
+    }
+    placed.add(rect);
+
+    final ground = _o(at);
+    canvas.drawLine(ground, Offset(ground.dx, rect.bottom), _stroke(tint, 0.9 * alpha, 3));
+    canvas.drawCircle(ground, _px(7), _fill(_outlineBacking, 0.6 * alpha));
+    canvas.drawCircle(ground, _px(5), _fill(tint, alpha));
     canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(_px(8))), _fill(_labelBackground, alpha * 0.8));
-    painter.paint(canvas, Offset(at.x - painter.width / 2, rect.center.dy - painter.height / 2));
-    canvas.drawCircle(_o(at), _px(5), _fill(tint, alpha));
+    // A strip of the plot's colour on the left says which outline it belongs to.
+    canvas.drawRRect(
+      RRect.fromRectAndCorners(
+        Rect.fromLTWH(rect.left, rect.top, _px(6), rect.height),
+        topLeft: Radius.circular(_px(8)),
+        bottomLeft: Radius.circular(_px(8)),
+      ),
+      _fill(tint, alpha),
+    );
+    painter.paint(canvas, Offset(rect.left + padding, rect.center.dy - painter.height / 2));
   }
 
   @override

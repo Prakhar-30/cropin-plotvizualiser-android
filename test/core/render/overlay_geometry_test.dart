@@ -37,8 +37,10 @@ void main() {
     double pitchDeg = 0.0,
     double accuracyM = 6.0,
     LatLng agentAt = agent,
+    bool primary = true,
   }) =>
       buildPlotOverlay(
+        primary: primary,
         ring: ring,
         centroid: centroidOf(ring),
         agent: agentAt,
@@ -318,5 +320,19 @@ void main() {
     expect(wallOpacity(1.0), 0.0);
     expect(wallOpacity(4.75), closeTo(0.5, 1e-9));
     expect(math.max(wallOpacity(1.0), minRailOpacity), minRailOpacity);
+  });
+
+  test('only the primary plot gets walls; the others get a ground line and short posts', () {
+    final ring = square(100.0, 40.0);
+    final primary = overlay(ring);
+    final other = overlay(ring, primary: false);
+    expect(primary.walls, isNotEmpty);
+    expect(other.walls, isEmpty);
+    expect(other.rails, isEmpty);
+    expect(other.fill, isNotEmpty, reason: 'the boundary line on the ground stays');
+    expect(other.posts.length, primary.posts.length);
+    double height(OverlayPost p) => p.base.y - p.top.y;
+    expect(height(other.posts.first), lessThan(height(primary.posts.first)),
+        reason: 'minor posts are shorter than the primary plot\'s');
   });
 }

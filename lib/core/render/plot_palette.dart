@@ -19,14 +19,14 @@ class PlotColour {
 /// Stored as 0xAARRGGBB with full alpha; the renderer applies [PlotAlpha] to the
 /// surface it is drawing rather than baking transparency in here.
 const List<PlotColour> plotColours = [
-  PlotColour(0, 'red', 0xFFFF3B30),
-  PlotColour(1, 'orange', 0xFFFF9F0A),
-  PlotColour(2, 'yellow', 0xFFFFD60A),
-  PlotColour(3, 'cyan', 0xFF64D2FF),
-  PlotColour(4, 'blue', 0xFF0A84FF),
-  PlotColour(5, 'purple', 0xFFBF5AF2),
-  PlotColour(6, 'pink', 0xFFFF375F),
-  PlotColour(7, 'white', 0xFFF2F2F7),
+  PlotColour(0, 'blue', 0xFF0A84FF),
+  PlotColour(1, 'cyan', 0xFF64D2FF),
+  PlotColour(2, 'purple', 0xFFBF5AF2),
+  PlotColour(3, 'white', 0xFFF2F2F7),
+  PlotColour(4, 'magenta', 0xFFE040FB),
+  PlotColour(5, 'indigo', 0xFF5E5CE6),
+  PlotColour(6, 'lavender', 0xFFC7B8FF),
+  PlotColour(7, 'orchid', 0xFFF49CFF),
 ];
 
 /// Opacity each surface is drawn at, shared with the web tool.

@@ -79,4 +79,37 @@ void main() {
   test('an empty ring is infinitely far away', () {
     expect(distanceToNearestEdgeM(const [], const Enu(0.0, 0.0)), double.infinity);
   });
+
+  group('insetRing', () {
+    const ccw = [Enu(0, 0), Enu(10, 0), Enu(10, 10), Enu(0, 10), Enu(0, 0)];
+
+    test('moves every edge inwards by the distance, either winding', () {
+      for (final ring in [ccw, ccw.reversed.toList()]) {
+        final inset = insetRing(ring, 0.5);
+        expect(inset.length, 4, reason: 'closing repeat dropped');
+        for (final p in inset) {
+          expect(p.east, anyOf(closeTo(0.5, 1e-9), closeTo(9.5, 1e-9)));
+          expect(p.north, anyOf(closeTo(0.5, 1e-9), closeTo(9.5, 1e-9)));
+        }
+      }
+    });
+
+    test('two plots sharing an edge get walls a metre apart', () {
+      const east = [Enu(10, 0), Enu(20, 0), Enu(20, 10), Enu(10, 10), Enu(10, 0)];
+      final a = insetRing(ccw, 0.5).map((p) => p.east).reduce((x, y) => x > y ? x : y);
+      final b = insetRing(east, 0.5).map((p) => p.east).reduce((x, y) => x < y ? x : y);
+      expect(b - a, closeTo(1.0, 1e-9));
+    });
+
+    test('keeps the height and caps a needle corner', () {
+      const needle = [Enu(0, 0, -1.6), Enu(100, 1, -1.6), Enu(0, 2, -1.6)];
+      final inset = insetRing(needle, 0.5);
+      for (final p in inset) {
+        expect(p.up, -1.6);
+      }
+      final tip = inset[1];
+      expect(hypot(tip.east - 100, tip.north - 1), lessThanOrEqualTo(1.5 + 1e-9),
+          reason: 'mitre capped at three times the inset');
+    });
+  });
 }

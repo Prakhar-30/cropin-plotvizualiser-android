@@ -450,7 +450,9 @@ class _BottomSheet extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            state.snapped ? 'Anchored to the boundary - walk freely' : 'Anchors automatically within 10 m of a boundary',
+            state.snapped
+                ? 'Anchored - crop condition shown on the ground'
+                : 'Drop points only - ground colouring starts once anchored within 10 m of a boundary',
             style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
           ),
         ],

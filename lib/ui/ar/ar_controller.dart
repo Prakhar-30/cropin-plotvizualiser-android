@@ -281,7 +281,7 @@ class ArController extends ValueNotifier<ArUiState> {
       plots: plots,
       health: health,
       loaded: true,
-      message: () => plots.isEmpty ? 'No plots cached - sync on the plot list first' : null,
+      message: () => plots.isEmpty ? 'No plots cached - sync on the home screen first' : null,
     );
     // Plots synced before crop condition existed have no snapshot. One quiet
     // attempt each; failing to reach the network is the normal rural case.
@@ -400,6 +400,14 @@ class ArController extends ValueNotifier<ArUiState> {
       // laid against anything after, and the snap is no longer held by it.
       _aligner.reset();
       _snapPoint = null;
+      if (value.snapped) {
+        // The anchor no longer holds, so the ground colouring goes with it until
+        // the next one.
+        value = value.copyWith(
+          snappedTo: () => null,
+          message: () => 'Tracking lost - walk to a boundary to anchor again',
+        );
+      }
     }
     _wasTracking = status.tracking;
     final fov = status.horizontalFovDeg;
@@ -552,14 +560,20 @@ class ArController extends ValueNotifier<ArUiState> {
       state.index,
       identityHashCode(state.health),
       confidence,
+      state.snapped,
     );
     if (key == _sentSceneKey) return;
     _sentSceneKey = key;
     final agent = _agentPosition ?? origin;
     final scene = buildWorldScene(
       plots: _nearby,
+      // Ground cells only once anchored. Before that the scene is placed from
+      // raw GPS and moves with it, and a 3 m square that wanders by several
+      // metres paints the wrong ground; a drop point is a target, not a claim
+      // about which square metre is red, so it is shown from the start.
       cells: [
-        for (final plot in _nearby) ...?state.health[plot.id]?.cells,
+        if (state.snapped)
+          for (final plot in _nearby) ...?state.health[plot.id]?.cells,
       ],
       index: state.index,
       patches: nearbyPatches(state.patches, agent, state.index),
@@ -599,10 +613,11 @@ class ArController extends ValueNotifier<ArUiState> {
     if (frame != null && intrinsics != null && agent != null) {
       final eyeHeight = _vio?.eyeHeightM ?? eyeHeightM;
       final drawn = <DrawnPlot>[
-        for (final plot in _nearby)
+        for (final (i, plot) in _nearby.indexed)
           DrawnPlot(
             plot,
             buildPlotOverlay(
+              primary: i == 0,
               ring: plot.ring,
               centroid: plot.centroid,
               agent: agent,
@@ -624,7 +639,7 @@ class ArController extends ValueNotifier<ArUiState> {
               intrinsics: intrinsics,
               eyeHeight: eyeHeight,
             );
-      final cells = state.visual
+      final cells = state.visual || !state.snapped
           ? const <CellPolygon>[]
           : buildCellPolygons(
               cells: [
