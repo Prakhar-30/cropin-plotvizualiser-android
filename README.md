@@ -1,22 +1,22 @@
 # Plot Finder (Flutter) — AR plot finder
 
-> **This is the `flutter` branch.** The app has been rebuilt in Flutter, feature
-> for feature; `main` keeps the original Kotlin/Compose app. The port kept every
-> algorithm; the October 2026 field tests then added ARCore motion tracking, a
-> single "I'm at the access point" action, direction from the walk, native
-> rendering with occlusion, a minimap and a startup loader - see
-> [In the field](#in-the-field) and [Why not ARCore](#why-not-arcore). Every step
-> is logged milestone by milestone in [`MILESTONES.md`](MILESTONES.md).
+> **This is the `flutter_updated_flow` branch** - the updated flow on top of the
+> Flutter app (`flutter` keeps the previous one, `main` the original Kotlin
+> app). No access point: the view shows **every nearby plot at once**, anchors
+> itself to the nearest plot boundary automatically, and marks crop problems as
+> **drop points** - crop greenness (NDVI), crop vigour (NDRE) and water stress
+> (LSWI), moderate in yellow and critical in red. See [In the field](#in-the-field).
+> It pairs with the web repo's `flutter_updated_flow` branch. Every step is
+> logged in [`MILESTONES.md`](MILESTONES.md).
 >
 > It is packaged as a **Flutter plugin** so another Flutter app can embed it with
 > one dependency and one screen - see [`INTEGRATION.md`](INTEGRATION.md). The
 > standalone app lives in `example/`.
 
 
-A field agent is dispatched to a farm plot, arrives at the nearest road, and is
-surrounded by visually identical fields. This app points the phone around, shows
-the target plot highlighted on the ground through the camera, and shows roughly
-where its boundary runs.
+A field agent arrives among visually identical fields. This app points the phone
+around and shows, through the camera, where every nearby plot's boundary runs and
+which patches of crop need a visit.
 
 Plots come from the companion web tool, which lives in its own repository:
 **[cropin-PlotVisualizer](https://github.com/Prakhar-30/cropin-PlotVisualizer)**.
@@ -39,35 +39,39 @@ Boundaries are drawn there and only there; this app is a reader.
 
 ## In the field
 
-1. **Pick the plot** from the cached list, open its detail page, tap
-   **Find this plot**.
-2. **A loader** over the camera ticks off *Camera*, *Motion tracking* and *GPS*
-   with a seconds counter, and after 20 s says to step into the open. The
-   location stream sends a last-known fix under 30 s old the moment it opens, so
-   the wait is usually short.
-3. **Walk to the access point** following the arrow pill. Meanwhile the app
-   works out north by itself, by fitting ARCore's tracked walk to the GNSS fixes
-   taken along it (`TrajectoryAligner`). No aiming step.
-4. **Tap "I'm at the access point"** - the one button. It stays disabled until
-   GPS puts you within **50 m** of the access point, and says how far is left.
-   Tapping fixes your position to the surveyed point; each step into the plot
-   then refines the direction.
-5. **Look**: walls on the boundary, crop-health cells on the ground, people and
-   trees in front hiding it (where the phone has ARCore depth), and a **minimap**
-   bottom-right - north up, health colours, ranked hotspots, you as a blue
-   arrow. Tap it to enlarge.
+1. **Sync** on the plot list while there is signal: boundaries and crop
+   condition for every plot within 5 km.
+2. **Open the AR view** (from any plot's detail page). A loader ticks off
+   *Camera*, *Motion tracking* and *GPS*; a last-known fix under 30 s old is used
+   at once, so the wait is usually short.
+3. **Walk towards the plots.** Every cached plot within 400 m is drawn - walls on
+   its boundary, its name and distance - and a pill points to the nearest
+   boundary. No plot needs to be chosen.
+4. **No button to press.** Once GPS puts you within **10 m** of any plot's
+   boundary, the session anchors itself to the nearest point on it - a corner, or
+   a point computed on the edge between two corners. From then on ARCore carries
+   every step and GPS only corrects slow drift, so the overlay stops moving with
+   each fix. Standing on the boundary at that moment makes it exact. It re-anchors
+   after you walk 60 m on, or if ARCore loses tracking. North is set from your
+   walk, also automatically (`TrajectoryAligner`).
+5. **Look for drop points**: tall pins (4.5 m, above the 2.6 m walls) on every
+   moderate (yellow) and critical (red) patch, across every nearby plot. Switch
+   between *Crop greenness*, *Crop vigour* and *Water stress* in the sheet. Normal
+   ground is not drawn. The **minimap** bottom-right is centred on you: every
+   plot, the red and yellow ground, the drop points. Tap it to see further.
 
-Where GPS is too weak for the walk to set the direction (indoors, mostly), the
-expanded sheet offers the fallback: *Direction off? Aim at the access point and
-tap*, from at least 10 m away.
+The anchor uses the same GPS fix it corrects, so it cannot remove GPS error -
+see `lib/core/geo/boundary_snap.dart`. What it removes is the drift: everything
+after the anchor is measured, not guessed.
 
 ## Layout
 
 ```
 lib/core/geo       ENU frame, pinhole projection, near-plane clipping, polygon
-                   distance, position stabiliser, orientation smoother, camera FOV
+                   distance, position stabiliser, orientation smoother, camera
+                   FOV, boundary snap (the automatic anchor)
 lib/core/heading   heading fusion, trajectory alignment (direction from the
-                   walk), course-over-ground detection, landmark snap
+                   walk), course-over-ground detection
 lib/core/render    what to draw: screen-space overlay for the sensor path, the
                    world scene and placement for the native ARCore renderer
 lib/pose           PoseSource interface: sensor and ARCore (VIO) implementations
@@ -175,7 +179,7 @@ in the neighbour's field. So heading is never a bare number.
 | Source | Error | When |
 |---|---|---|
 | `COURSE_OVER_GROUND` | 3–5° | sensor path: walked >20 m in a straight line at >0.7 m/s. ARCore path: the tracked walk fitted to GNSS (any route), error reported per fit |
-| `LANDMARK_SNAP` | 2–3° | aimed at a known point and tapped (now a fallback in the sheet) |
+| `LANDMARK_SNAP` | 2–3° | no longer offered: it needed the access point (kept for telemetry history) |
 | `MAGNETOMETER` | 15–25° | fallback only |
 
 Course over ground comes from `Location.bearing` accumulated over a walking
@@ -203,20 +207,13 @@ are for. The carried heading did not become more accurate; it simply is not
 stale at a minute, and its drift is bounded separately by the 10° trim ceiling
 and printed on the chip in degrees either way.
 
-**Landmark snap**: the agent aims the crosshair at the plot's access point (whose
-coordinates are cached) and taps. Both endpoints are known, so the true bearing
-is computable outright; the crosshair's horizontal offset from the optical centre
-is subtracted. One tap, heading pinned. Refused inside 10 m, where the agent's
-own fix error would dominate the bearing.
-
 **On the ARCore path** ARCore's visually tracked yaw is the carrier. A lock lasts
 the whole visit and the compass gets no say over it (indoors it rotated the plot
 about a standing agent); before any lock the compass offset is smoothed over 3 s.
 The walk lock is the trajectory aligner: ARCore's tracked path, rotated onto the
-GNSS fixes taken along it (weighted 2-D Procrustes), anchored at the access-point
-pin when there is one. Fixes worse than 15 m are ignored, and a fit is used only
-under 10°. The landmark snap takes its bearing from the same position the plot is
-drawn from, and checks "too close" (under 10 m) before "position too uncertain".
+GNSS fixes taken along it (weighted 2-D Procrustes), anchored at the automatic
+boundary snap point. Fixes worse than 15 m are ignored, and a fit is used only
+under 10°.
 
 ## Holding the overlay still
 
@@ -315,36 +312,29 @@ marker is stroked twice, a dark halo under the colour: a single coloured line
 vanishes wherever the background shares its luminance, and outdoor footage is
 mostly bright sky, pale soil and corrugated steel.
 
-## Crop health on the ground
+## Crop condition as drop points
 
-The boundary answers *where is the plot*; this answers *which part of it do I
-need to walk to*. Cells arrive from the API already graded and already trimmed to
-the boundary, and are projected against the same eye, the same ENU frame and the
-same ground plane as the boundary itself — a raster computed in its own frame
-would sit metres outside the plot that is supposed to contain it.
+Every plot is graded by the web tool in fixed **3 m cells** on three indices,
+each split into the same three zones:
 
-- **Grid size is per plot**, not fixed: √area ÷ 15, rounded to 0.5 m, clamped
-  2–10 m. A fixed 10 m grid gave a small plot a 3×3 raster, which cannot show
-  *where inside* a problem is and cannot form a hotspot at all, since a cluster
-  needs three touching stressed cells. Small plots silently reported no problems.
-- **Three layers**, cycled by one button: off → problem areas → all cells.
-  Problem areas is the default, because a plot is mostly healthy and painting
-  every cell buries the two that matter under a green wash.
-- **Hotspots are numbered** worst-first, deterministically, so the same plot
-  always ranks its markers the same way and marker 1 means something.
-- **Suppressed below a usable heading.** If the heading is UNRELIABLE the layer
-  switches itself off — a coloured patch drawn on the wrong ground is worse than
-  no patch at all.
-- Range-culled at 150 m and capped at the nearest 500 cells: past that the
-  ground plane is nearly edge-on and the raster stops being a map of the field,
-  becoming a coloured smear along the horizon that reads as a rendering error.
+| Index | Shown as | Critical (red) | Moderate (yellow) | Normal |
+|---|---|---|---|---|
+| NDVI | Crop greenness | < 0.35 | 0.35 – 0.55 | ≥ 0.55 |
+| NDRE | Crop vigour | < 0.20 | 0.20 – 0.35 | ≥ 0.35 |
+| LSWI | Water stress | < 0.05 | 0.05 – 0.20 | ≥ 0.20 |
 
-**The values are synthetic.** Deterministic noise seeded from the plot id, shaped
-to give a healthy field with one or two stressed patches, so the whole path from
-raster to hotspot to a walk-to coordinate could be built and demonstrated. The
-API returns `synthetic: true` with an explanatory note and the app labels it on
-screen. Real Sentinel-2 NDVI means replacing one function; nothing downstream
-knows where the numbers came from.
+The API also groups touching moderate-or-critical cells into **patches** (two
+cells or more), and the app draws **one drop point per patch**: a 4.5 m stem with
+a round head, yellow or red, standing above the 2.6 m boundary walls so a target
+is never hidden behind the fence in front of it. Normal ground is not drawn. Drop
+points of every nearby plot show at once, nearest 60 within 300 m; the sheet
+switches the index. On ARCore they are drawn natively in the camera's GL frame,
+ghosted rather than hidden behind nearer objects; without ARCore they are
+projected and painted like the walls.
+
+**The values are demonstration values**, deterministic per plot and shaped like a
+real field, and labelled as such in the app bar. Real Sentinel-2 means replacing
+the server's samplers; nothing in the app knows where the numbers came from.
 
 ## Heading confidence chip
 
@@ -388,7 +378,7 @@ So ARCore is now used for **motion tracking only** — on-device visual-inertial
 odometry, no Street View, no network. `VioPoseSource` implements the same
 `PoseSource` seam: ARCore's yaw becomes the heading fusion's carrier, its
 frame-to-frame displacement moves the position filter directly, and GNSS is
-weighted down to a slow drift correction. "I'm at the access point" pins the
+weighted down to a slow drift correction. The automatic boundary snap pins the
 absolute position, and the tracked walk sets the direction. The plot itself is
 drawn natively in ARCore's own GL frame, on the detected floor, occluded by
 nearer objects where depth is available. Phones without ARCore keep the sensor

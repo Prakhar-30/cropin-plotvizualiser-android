@@ -278,6 +278,41 @@ to nothing up close.
 until the agent aims at the access point. In open fields, the intended use,
 the walk sets it.
 
+## Updated flow: no access point, every nearby plot, drop points
+
+Branch `flutter_updated_flow`. Two requests drove it. Surveying an access
+point for every plot was a cost nobody wanted to pay. And the camera should
+show crop condition for all the plots around the agent, not just one.
+
+**The access point is gone.** `lib/core/geo/boundary_snap.dart` computes the
+nearest point on any nearby plot's boundary. For each edge it takes the foot
+of the perpendicular, clamped to the edge's ends, so the result is a corner or
+a point along an edge. When GPS puts the agent within 10 m of that point, the
+app pins the position there and anchors the trajectory aligner to it.
+Nothing is tapped. It re-anchors after 60 m of walking or after a loss of
+ARCore tracking.
+
+The limitation, stated plainly: the anchor is chosen *from* the GPS fix, so it
+inherits the fix's error. A surveyed access point removed that error because
+the agent confirmed standing on it. The automatic anchor does not; it buys
+stillness and one shared frame, not accuracy. Expect the scene to sit within
+the receiver's open-sky error, 3–5 m.
+
+**Every nearby plot** within 400 m (24 at most) is sent to the renderer as
+one scene in a shared local frame, so one placement moves them all. Walls of
+all plots are depth-sorted together.
+
+**Crop condition as drop points.** The grid is a fixed 3 m. Each cell has
+NDVI, NDRE and LSWI, shown as crop greenness, crop vigour and water stress.
+Each index is classified as normal, moderate or critical. Touching moderate
+or critical cells (four-way, at least 2 cells) form a patch, and each patch
+is one drop point: a stem to 4.5 m and a round head, taller than the 2.6 m
+walls, so a patch in the next field shows over the fence. Normal ground is
+not drawn. The cells are no longer laid on the ground in the camera; they
+live in the minimap and on the web map. Drop points are not suppressed when
+the heading is weak, so the flow can be tested indoors. The values are still
+synthetic and labelled as demo values.
+
 ## Sources
 
 1. Azuma, *A Survey of Augmented Reality* (1997) — [PDF](https://sreal.ucf.edu/wp-content/uploads/2017/02/Azuma1998.pdf)

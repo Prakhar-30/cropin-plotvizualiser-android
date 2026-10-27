@@ -23,7 +23,7 @@
   --accent-soft:#DEE2F8;
   --warn:#C23B1C;
   --warn-soft:#F6E2DB;
-  --sev0:#2FD44E; --sev1:#FFE81A; --sev2:#FF8A00; --sev3:#FF2118;
+  --sev0:#2FD44E; --sev1:#FFD60A; --sev2:#FF2118;
   --disp:"Spline Sans","Segoe UI",system-ui,sans-serif;
   --body:"Newsreader",Georgia,"Times New Roman",serif;
   --mono:"Spline Sans Mono","SFMono-Regular",Consolas,monospace;
@@ -247,12 +247,12 @@ footer{
   <div class="masthead-inner">
     <div class="stamp">Builder's manual <span>/</span> Plot Finder <span>/</span> 27 Oct 2026 · Flutter</div>
     <h1>Finding a boundary that isn't there</h1>
-    <p class="dek">Two pieces of software. One draws a farm plot on satellite imagery; the other stands in that field and shows you where its edges run, through the camera, with no signal — using ARCore only to track the phone's own motion, never its Geospatial service. This is how both work, and why each part is built the way it is.</p>
+    <p class="dek">Two pieces of software. One draws a farm plot on satellite imagery; the other stands in that field and shows you where its edges run and where its crop needs attention, through the camera, with no signal — using ARCore only to track the phone's own motion, never its Geospatial service. This is how both work, and why each part is built the way it is.</p>
     <dl class="meta-strip">
       <div><dt>Web tool</dt><dd>React 18 · MapLibre 5</dd></div>
       <div><dt>API</dt><dd>Express 4 · PostGIS</dd></div>
       <div><dt>Mobile</dt><dd>Flutter plugin · ARCore motion</dd></div>
-      <div><dt>Tests</dt><dd>190 Flutter · 17 API</dd></div>
+      <div><dt>Tests</dt><dd>176 Flutter · 18 API</dd></div>
       <div><dt>Release APK</dt><dd>9.1 MB arm64</dd></div>
     </dl>
   </div>
@@ -401,7 +401,7 @@ footer{
 
         <rect class="f-card" x="392" y="210" width="328" height="66"/>
         <text class="t-hd" x="404" y="232">AR view</text>
-        <text class="t-sm" x="404" y="249">ARCore motion tracking · GNSS 1 Hz · access-point pin</text>
+        <text class="t-sm" x="404" y="249">ARCore motion tracking · GNSS 1 Hz · boundary anchor</text>
         <text class="t-sm" x="404" y="263">→ ENU frame → placement → drawn in ARCore's GL frame</text>
 
         <path class="s-ac" d="M467 96 V120" marker-end="url(#a1)"/>
@@ -424,14 +424,14 @@ footer{
     <li><strong>It works where the crop is.</strong> No Street View and no live network. ARCore's on-device tracking where Google Play Services for AR is installed, plain phone sensors where it is not. Sync at the office or at the gate; the visit itself needs nothing.</li>
     <li><strong>It runs on the phone the agent already carries.</strong> Android 7.0 or newer (the plugin's floor, set by ARCore), about 9 MB as a release build. No hardware to procure, lose or charge.</li>
     <li><strong>It shows a shape, not a point.</strong> An outline can be matched against the real hedge line, which means the agent can confirm the app is right — and catch it when it is wrong. A pin offers no such check.</li>
-    <li><strong>It carries the crop-health layer to the soil.</strong> The stressed patch stops being a picture in an office and becomes ground you can stand on, with a numbered marker telling you which one to walk to first.</li>
+    <li><strong>It carries crop condition to the soil.</strong> Crop greenness (NDVI), crop vigour (NDRE) and water stress (LSWI) are each graded into normal, moderate and critical zones. Every moderate or critical patch in every nearby plot stands up as a drop point taller than the boundary walls, so a problem two fields away is visible over the fence.</li>
     <li><strong>It is honest about its own error.</strong> Every reading carries where the heading came from, how old it is, and the expected error in degrees. Near a boundary the drawn edge widens to the live GNSS accuracy rather than pretending to a crisp line.</li>
-    <li><strong>It asks the agent for one thing.</strong> Walk to the access point following the arrow, tap <em>I'm at the access point</em>. Direction is worked out from the walk itself, with no aiming step.</li>
+    <li><strong>It asks the agent for nothing.</strong> There is no access point and no button. Open the camera, walk; within 10 m of any plot's boundary the view anchors itself to the nearest point on that boundary, and direction is worked out from the walk.</li>
   </ul>
 
   <div class="note warn">
     <span class="note-k">Stated plainly</span>
-    <p>The crop-health values in the system today are <strong>synthetic</strong> — deterministic noise seeded from the plot id, shaped to produce a healthy field with one or two stressed patches. They are not derived from satellite imagery. Every API response carries <code>synthetic: true</code> and a note saying so, and the app labels it on screen. Wiring real Sentinel-2 NDVI means replacing one function, <code>syntheticNdviSampler</code>; nothing downstream of it knows where the numbers came from.</p>
+    <p>The crop-health values in the system today are <strong>synthetic</strong> — deterministic noise seeded from the plot id, shaped so that 85–90% of a plot reads normal with a few believable moderate and critical patches, separately for NDVI, NDRE and LSWI. They are not derived from satellite imagery. Every API response carries <code>synthetic: true</code> and a note saying so, and the app labels it "demo values" on screen. Wiring real Sentinel-2 indices means replacing one function, <code>syntheticSamplers</code>; nothing downstream of it knows where the numbers came from.</p>
   </div>
 </section>
 
@@ -448,37 +448,31 @@ footer{
 
   <figure>
     <div class="frame">
-      <svg viewBox="0 0 720 236" role="img" aria-label="Draw state machine: idle, drawing, awaiting access point, ready. Transitions are click, double-click, drag, right-click, and save.">
+      <svg viewBox="0 0 720 236" role="img" aria-label="Draw state machine: idle, drawing, ready. Transitions are click, double-click or Close shape, drag, right-click or Undo corner, and save.">
         <defs>
           <marker id="a3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
             <path d="M0 0 L8 4 L0 8 z" style="fill:var(--accent)"/>
           </marker>
         </defs>
         <g>
-          <rect class="f-card" x="0" y="40" width="120" height="52"/>
+          <rect class="f-card" x="0" y="40" width="140" height="52"/>
           <text class="t-hd" x="14" y="62">idle</text>
           <text class="t-sm" x="14" y="79">nothing drawn</text>
 
-          <rect class="f-ac" x="180" y="40" width="140" height="52"/>
-          <text class="t-hd" x="194" y="62">drawing</text>
-          <text class="t-sm" x="194" y="79">placing vertices</text>
+          <rect class="f-ac" x="220" y="40" width="170" height="52"/>
+          <text class="t-hd" x="234" y="62">drawing</text>
+          <text class="t-sm" x="234" y="79">placing vertices</text>
 
-          <rect class="f-card" x="380" y="40" width="150" height="52"/>
-          <text class="t-hd" x="394" y="62">awaiting access</text>
-          <text class="t-sm" x="394" y="79">drop the gate pin</text>
-
-          <rect class="f-card" x="590" y="40" width="130" height="52"/>
-          <text class="t-hd" x="604" y="62">ready</text>
-          <text class="t-sm" x="604" y="79">Save enabled</text>
+          <rect class="f-card" x="600" y="40" width="120" height="52"/>
+          <text class="t-hd" x="614" y="62">ready</text>
+          <text class="t-sm" x="614" y="79">Save enabled</text>
         </g>
-        <path class="s-ac" d="M120 66 H176" marker-end="url(#a3)"/>
-        <text class="t-ac" x="126" y="58">click</text>
-        <path class="s-ac" d="M320 66 H376" marker-end="url(#a3)"/>
-        <text class="t-ac" x="322" y="58">dbl-click</text>
-        <path class="s-ac" d="M530 66 H586" marker-end="url(#a3)"/>
-        <text class="t-ac" x="536" y="58">click</text>
-        <path class="s-ac" d="M250 40 C250 8 200 8 200 36" marker-end="url(#a3)"/>
-        <text class="t-ac" x="206" y="16">click · drag · right-click</text>
+        <path class="s-ac" d="M140 66 H216" marker-end="url(#a3)"/>
+        <text class="t-ac" x="150" y="58">click</text>
+        <path class="s-ac" d="M390 66 H596" marker-end="url(#a3)"/>
+        <text class="t-ac" x="398" y="58">dbl-click · Close shape</text>
+<path class="s-ac" d="M330 40 C330 8 280 8 280 36" marker-end="url(#a3)"/>
+        <text class="t-ac" x="286" y="16">click · drag · right-click · Undo corner</text>
 
         <line class="s-rule" x1="0" y1="124" x2="720" y2="124"/>
         <text class="t-sm" x="0" y="144">LIVE, ON EVERY CHANGE — computed in the browser by the same code the server runs</text>
@@ -497,14 +491,14 @@ footer{
         <text class="t-sm" x="0" y="224">The agent sees the exact message the API would return, before they press anything.</text>
       </svg>
     </div>
-    <figcaption><b>FIG 03</b><span>The draw controller. Double-click closes the ring; the access point is a separate required field, never derived from the polygon — a gate is a real place, not a centroid.</span></figcaption>
+    <figcaption><b>FIG 03</b><span>The draw controller. Double-click — or <em>Close shape</em>, which is what a phone has instead — closes the ring and the plot is ready to save. There is no access point any more: the app anchors itself to whichever point of the boundary the agent reaches first.</span></figcaption>
   </figure>
 
   <h3>What happens on save</h3>
   <p>The browser POSTs the ring. The server does not trust a single number in it.</p>
 
   <ol class="steps">
-    <li><strong>Validate.</strong> One validator, in <code>shared</code>, run by both sides: ring closed, at least three distinct vertices, no self-intersection, area greater than zero and under the 500 ha ceiling, name and note within length limits, access point a real lat/lng.</li>
+    <li><strong>Validate.</strong> One validator, in <code>shared</code>, run by both sides: ring closed, at least three distinct vertices, no self-intersection, area greater than zero and under the 500 ha ceiling, name and note within length limits.</li>
     <li><strong>Recompute.</strong> Area and centroid are calculated server-side from the ring with Turf and written from that calculation — never taken from the request body. A client that lies about its area cannot persist the lie.</li>
     <li><strong>Store once.</strong> The boundary goes into PostGIS as <code>geography(Polygon,4326)</code>. Bounding boxes, radius searches and distances are derived from it by PostGIS on demand rather than stored alongside, so there is no second copy to drift. <code>area_sq_m</code> is the one persisted derivative, because it is the number a surveyor agreed to — and a CHECK constraint rejects any row whose stored area differs from the true geodesic area by more than 1%.</li>
     <li><strong>Assign a colour.</strong> <code>fieldar.pick_colour_index()</code> picks a palette slot 0–7 that no other plot within 500 m is using, so adjacent plots are never the same colour on screen. The database stores the slot number, not the colour — re-theming both clients is then a palette edit, not a data migration.</li>
@@ -512,28 +506,30 @@ footer{
 
   <div class="note">
     <span class="note-k">Migration policy</span>
-    <p>Everything lives in its own <code>fieldar</code> schema. Every statement is <code>CREATE … IF NOT EXISTS</code> or <code>CREATE OR REPLACE</code>; there is no <code>DROP TABLE</code>, <code>TRUNCATE</code> or <code>DELETE</code> anywhere in the migrations. Running them against a Supabase project that already holds other data is a no-op on that data.</p>
+    <p>Everything lives in its own <code>fieldar</code> schema. Migrations 001 and 002 are additive only — <code>CREATE … IF NOT EXISTS</code> or <code>CREATE OR REPLACE</code>. Migration <code>003_updated_flow.sql</code> is the one deliberate exception: it starts the data fresh for the new flow, deleting every row in <code>fieldar.plots</code>, dropping the <code>access_point</code> column and narrowing severity to 0–2, in one transaction. It touches nothing outside the <code>fieldar</code> schema and its <code>public.fieldar_*</code> wrappers.</p>
   </div>
 
-  <h3>The health raster</h3>
-  <p><code>GET /api/plots/:id/health</code> builds the grid on demand and caches it by <code>(plot, capture date, cell size)</code>. Because the sampler is deterministic, that cache key is complete — the same plot always produces the same raster, so the cache never has to be invalidated. The grid, the severity banding and the hotspot clustering all live in <code>shared</code>, which is what a real Supabase ingest job would call too. That is the reason they are there rather than in the route: the map and the database must never disagree about which cell is stressed.</p>
+  <h3>The crop-condition raster</h3>
+  <p><code>GET /api/plots/:id/health</code> builds the grid on demand — 3 m cells, three indices per cell — and caches it by <code>(plot, capture date)</code>. Because the samplers are deterministic, that cache key is complete — the same plot always produces the same raster, so the cache never has to be invalidated. The grid, the zone classification and the patch clustering all live in <code>shared</code>, which is what a real Supabase ingest job would call too. That is the reason they are there rather than in the route: the map and the database must never disagree about which cell is stressed.</p>
+  <p>On the map, the <em>Crop condition</em> panel switches between crop greenness, crop vigour and water stress. Each cell is painted by zone — green normal, yellow moderate, red critical — with the share of the plot in each zone and a ranked list of the moderate and critical patches, each pinned on the map. Under 720 px the side panels become a bottom sheet with tabs (Plots, Draw, Condition) and the drawing tools gain <em>Undo corner</em> and <em>Close shape</em>, because a phone has no right-click or double-click to spare.</p>
 </section>
 
 <!-- ============================================ 04 MOBILE -->
 <section id="mobile">
   <p class="eyebrow">Sheet 04</p>
   <h2>How the mobile app works</h2>
-  <p class="lede">A Flutter plugin that a host app opens with one widget. Every read goes to the local database and nothing on screen waits for the network. In the field the agent is asked to do exactly one thing.</p>
+  <p class="lede">A Flutter plugin that a host app opens with one widget. Every read goes to the local database and nothing on screen waits for the network. In the field the agent is asked to do nothing but walk.</p>
 
   <p>The mobile side is now a Flutter package, <code>plot_finder</code>, with its standalone app in <code>example/</code>. All of the reasoning — frames, filters, heading, geometry — is plain Dart under <code>lib/core</code> and runs in unit tests with no device. The Android plumbing is the package's own Kotlin plugin: location from the framework's <code>LocationManager</code>, rotation vectors, the accelerometer, permissions, camera geometry, and the ARCore view that draws the camera image and the plot. A host app such as Cropin Grow adds one dependency and pushes <code>PlotFinderScreen</code>; see <code>INTEGRATION.md</code>.</p>
 
-  <h3>The agent's two moments</h3>
+  <h3>The agent's moments</h3>
   <ol class="steps">
-    <li><strong>Pick the plot.</strong> The list shows cached plots with distance; the detail page shows the outline, access point and facts. <em>Find this plot</em> opens the camera.</li>
+    <li><strong>Open the camera.</strong> From the plot list (<em>Open AR view</em> on any plot) — the screen is not tied to that plot. Every cached plot within 400 m is drawn, the nearest 24 at most.</li>
     <li><strong>Wait a few seconds, visibly.</strong> A card over the camera ticks off <em>Camera</em>, <em>Motion tracking</em> and <em>GPS</em>, with a seconds counter, and after 20 s says to step into the open. The location stream sends the phone's last-known fix the moment it opens if it is under 30 s old, so usually there is almost no wait.</li>
-    <li><strong>Walk there.</strong> A pill under the heading chip points at the access point and gives the distance. While the agent walks, the app silently works out where north is from the shape of the walk (logic 11). No button.</li>
-    <li><strong>Say "I'm at the access point".</strong> The one action on the screen. It stays disabled until GPS puts the agent within 50 m of the access point, and its label says why. Tapping it fixes the position to the surveyed point; from then on every step into the plot refines the direction.</li>
-    <li><strong>Look.</strong> The boundary stands up as walls, the crop-health cells lie on the ground, people and trees in front hide it, and a minimap in the corner shows the whole field from above with the agent as a blue arrow.</li>
+    <li><strong>Walk.</strong> Until the view is anchored, a pill points at the nearest boundary of the nearest plot and gives the distance. While the agent walks, the app silently works out where north is from the shape of the walk (logic 11). No button.</li>
+    <li><strong>Anchor, automatically.</strong> When GPS puts the agent within 10 m of any plot's boundary the app takes the nearest point on that boundary, whether a corner or a point computed along an edge, as where the agent is, and pins the position there (logic 12). The sheet says <em>Anchored to the X boundary</em>. It re-anchors after 60 m of walking or a loss of tracking.</li>
+    <li><strong>Look.</strong> Every nearby plot's boundary stands up as walls; each moderate (yellow) or critical (red) patch of the chosen index stands up as a 4.5 m drop point, taller than the 2.6 m walls; people and trees in front hide them; and a minimap in the corner shows all of it from above with the agent as a blue arrow. Normal ground is not drawn — only what needs a visit.</li>
+    <li><strong>Switch the index.</strong> Crop greenness (NDVI), crop vigour (NDRE) or water stress (LSWI), from the bottom sheet. The drop points and minimap change together.</li>
   </ol>
 
   <figure>
@@ -574,7 +570,7 @@ footer{
         <rect class="f-ac" x="248" y="126" width="200" height="34"/>
         <text class="t-lbl" x="258" y="147">Position stabiliser</text>
         <rect class="f-card" x="248" y="172" width="200" height="34"/>
-        <text class="t-lbl" x="258" y="193">Pin at the access point</text>
+        <text class="t-lbl" x="258" y="193">Boundary anchor (auto)</text>
         <rect class="f-card" x="248" y="218" width="200" height="40"/>
         <text class="t-lbl" x="258" y="235">Fallback only:</text>
         <text class="t-sm" x="258" y="250">orientation smoother · PDR</text>
@@ -590,8 +586,8 @@ footer{
 
         <rect class="f-card" x="500" y="34" width="220" height="56"/>
         <text class="t-hd" x="512" y="54">World scene</text>
-        <text class="t-sm" x="512" y="71">plot + cells in its own metres</text>
-        <text class="t-sm" x="512" y="83">sent once per plot / layer</text>
+        <text class="t-sm" x="512" y="71">all nearby plots + drop points</text>
+        <text class="t-sm" x="512" y="83">sent when the set or index changes</text>
 
         <rect class="f-ac" x="500" y="104" width="220" height="56"/>
         <text class="t-hd" x="512" y="124">Placement</text>
@@ -612,13 +608,13 @@ footer{
         <line class="s-rule" x1="0" y1="282" x2="720" y2="282"/>
         <rect class="f-card" x="0" y="298" width="440" height="56"/>
         <text class="t-hd" x="12" y="318">sqflite cache</text>
-        <text class="t-sm" x="12" y="335">boundary ring + health snapshot, read once when the screen opens</text>
+        <text class="t-sm" x="12" y="335">every plot + its condition snapshot, read once when the screen opens</text>
         <path class="s-ac" d="M440 326 H496" marker-end="url(#a4)"/>
 
         <rect class="f-card" x="500" y="290" width="220" height="70"/>
         <text class="t-hd" x="512" y="310">Flutter, on top</text>
         <text class="t-sm" x="512" y="327">label · guide pill · minimap</text>
-        <text class="t-sm" x="512" y="339">loader · chip · one button</text>
+        <text class="t-sm" x="512" y="339">loader · index switch · no button</text>
         <path class="s-ac" d="M610 244 V286" marker-end="url(#a4)"/>
 
         <text class="t-sm" x="0" y="384">Without ARCore the same conditioning feeds the older path: rotation vectors and counted steps,</text>
@@ -629,10 +625,10 @@ footer{
   </figure>
 
   <h3>The frame loop</h3>
-  <p>On the ARCore path there are two loops. The GL thread runs at camera rate: it draws the camera image, then draws the plot with that same frame's view and projection matrices, so the boundary cannot lag the picture — the sliding corner seen in the third field test was exactly that lag, when the plot was still painted by Flutter a frame or two late. Dart runs at sensor and fix rate: it updates the position and heading, and sends the renderer a new <em>placement</em> only when the plot's registration on the earth has actually moved (a pin, a heading lock, a GNSS drift correction). Walking does not move it, because the agent's position and ARCore's camera move together. Flutter repaints only what is text or furniture: the label, the guide pill, the minimap's arrow.</p>
+  <p>On the ARCore path there are two loops. The GL thread runs at camera rate: it draws the camera image, then draws the plot with that same frame's view and projection matrices, so the boundary cannot lag the picture — the sliding corner seen in the third field test was exactly that lag, when the plot was still painted by Flutter a frame or two late. Dart runs at sensor and fix rate: it updates the position and heading, and sends the renderer a new <em>placement</em> only when the scene's registration on the earth has actually moved (an anchor, a heading lock, a GNSS drift correction). All nearby plots share one local frame, so one placement moves them together. Walking does not move it, because the agent's position and ARCore's camera move together. Flutter repaints only what is text or furniture: the label, the guide pill, the minimap's arrow.</p>
   <p>Without ARCore — an unsupported phone, or a session that fails to start — the screen falls back by itself to the original design: the camera plugin's preview, rotation vectors and counted steps, projected in Dart and painted on a Flutter canvas.</p>
 
-  <p>One thing worth being precise about, because it is the question the team will ask first: <strong>the camera does not recognise anything.</strong> ARCore tracks feature points in the image to measure how the phone moves, measures depth for occlusion, and finds the floor plane; nothing looks for fields, fences or crops. Where the plot is comes from its stored coordinates, GNSS and the access-point pin. That is why a crop row cannot move the boundary — and why the app cannot correct a wrong boundary by looking at the scene.</p>
+  <p>One thing worth being precise about, because it is the question the team will ask first: <strong>the camera does not recognise anything.</strong> ARCore tracks feature points in the image to measure how the phone moves, measures depth for occlusion, and finds the floor plane; nothing looks for fields, fences or crops. Where the plot is comes from its stored coordinates, GNSS and the automatic boundary anchor. That is why a crop row cannot move the boundary — and why the app cannot correct a wrong boundary by looking at the scene.</p>
 </section>
 
 
@@ -801,7 +797,7 @@ footer{
       <div class="slot"><span>What the field tests added</span>
         <p><strong>Counted steps.</strong> The first indoor test walked 9 m towards a plot and the boundary walked away: under a roof the receiver reported near-zero Doppler speed, the filter took the agent for standing still, and froze. Steps are now detected from the accelerometer (peak-valley on its magnitude), sized by Weinberg's model with a gain calibrated against good GNSS, and each one moves the estimate <em>and</em> the drawn position at once. Steps, not Doppler, decide moving versus still.</p>
         <p><strong>Camera tracking.</strong> Where ARCore runs, its frame-to-frame camera displacement replaces the steps entirely: measured, not modelled, to centimetres. While it flows, fixes count three times less and the drawn position absorbs GNSS corrections at no more than 5 cm/s, so a receiver drifting under a roof cannot slide the boundary sideways as the agent closes in.</p>
-        <p><strong>The pin.</strong> <em>I'm at the access point</em> replaces the estimate with the surveyed point outright, and fixes then count ten times less again. It is offered only within 50 m by GPS, so a tap from the next field cannot place the plot.</p>
+        <p><strong>The anchor.</strong> The boundary anchor (logic 12) replaces the estimate with the nearest point on the boundary outright, and fixes then count ten times less again. It used to be a button at a surveyed access point; it is now automatic and fires only within 10 m of a boundary by GPS, so it cannot place the agent in a field they are not beside.</p>
       </div>
       <figure>
         <div class="frame">
@@ -923,7 +919,7 @@ footer{
       </div>
       <div class="slot"><span>The three sources</span>
         <p><strong>Course over ground (3–5°).</strong> <code>Location.bearing</code> is derived from GNSS motion, not from the magnetic field, so nothing on the ground can corrupt it. The detector accumulates a window and requires 20 m of walking, at least five samples, speed above 0.7 m/s, accuracy better than 25 m, no gap longer than 5 s — and a mean absolute bearing spread under 8°. That last test is what makes it safe: a window where the agent turned would average its two legs into a confident heading pointing between them, so the window is discarded outright rather than averaged.</p>
-        <p><strong>Landmark snap (2–3°).</strong> The agent aims the crosshair at a feature whose coordinates are already cached — the plot's own access point — and taps. Both endpoints are known so the bearing is simply computable; the only correction is for the crosshair not sitting on the optical centre. Refused below 10 m, because at 3 m a 2 m error in your own fix is a 34° bearing error.</p>
+        <p><strong>The walk itself (a few degrees).</strong> On the ARCore path, the trajectory aligner (logic 11) — the tracked walk laid over the GNSS fixes taken along it. The landmark snap that used to sit here (aim at the access point and tap) was removed with the access point.</p>
         <p><strong>Magnetometer (15–25°).</strong> Fallback, and never a resting state. Once a fix exists the compass is demoted to trimming slow gyro drift — 300 s time constant, and a hard ±10° ceiling on how far it may ever pull a lock. Without that ceiling a magnetically disturbed site would walk a good lock onto the neighbouring field slowly enough that nobody notices.</p>
       </div>
       <div class="slot"><span>Two sensors, one job each</span>
@@ -931,7 +927,7 @@ footer{
       </div>
       <div class="slot"><span>On the ARCore path</span>
         <p>ARCore's yaw becomes the carrier instead of the game rotation vector. It is visually tracked and drifts well under a degree a minute, so two rules change: a lock lasts the whole visit rather than lapsing to the compass after three minutes, and the compass gets <strong>no</strong> authority over a lock — indoors and beside steel it rotated the plot about a standing agent. Before any lock the compass offset is smoothed over 3 s so a compass-placed plot does not shake.</p>
-        <p>The walk lock is replaced by the trajectory aligner (logic 11), which needs no straight walk. The landmark snap is no longer a main button: it sits in the expanded sheet as a fallback for weak GPS, takes its bearing from the same position the plot is drawn from (taken from the raw fix, repeated taps once walked the plot round the agent in a circle), and checks "too close to aim" before "position too uncertain".</p>
+        <p>The walk lock is replaced by the trajectory aligner (logic 11), which needs no straight walk. There is no aiming fallback any more: where GPS is too weak for the aligner, direction stays on the compass and the chip says so.</p>
       </div>
       <figure>
         <div class="frame">
@@ -948,9 +944,9 @@ footer{
             <text class="t-hd" x="14" y="62">LOCKED</text>
             <text class="t-sm" x="14" y="80">fix younger than 60 s</text>
             <text class="t-sm" x="14" y="94">overlay at full strength</text>
-            <text class="t-sm" x="14" y="108">health layer available</text>
+            <text class="t-sm" x="14" y="108">drop points drawn</text>
 
-            <rect x="260" y="40" width="200" height="76" stroke-width="2" style="fill:var(--card-2);stroke:var(--sev2)"/>
+            <rect x="260" y="40" width="200" height="76" stroke-width="2" style="fill:var(--card-2);stroke:var(--sev1)"/>
             <text class="t-hd" x="274" y="62">HOLDING</text>
             <text class="t-sm" x="274" y="80">gyro-carried, 60 s – 180 s</text>
             <text class="t-sm" x="274" y="94">overlay at 85%</text>
@@ -960,14 +956,14 @@ footer{
             <text class="t-hd" x="534" y="62">UNRELIABLE</text>
             <text class="t-sm" x="534" y="80">no fix, or lock expired</text>
             <text class="t-sm" x="534" y="94">overlay at 45%, greyed</text>
-            <text class="t-sm" x="534" y="108">health layer suppressed</text>
+            <text class="t-sm" x="534" y="108">drop points still drawn</text>
 
             <path class="s-ac" d="M200 66 H256" marker-end="url(#a8)"/>
             <text class="t-ac" x="204" y="58">60 s</text>
             <path class="s-ac" d="M460 66 H516" marker-end="url(#a8)"/>
             <text class="t-ac" x="464" y="58">180 s</text>
             <path class="s-ac" d="M620 116 C620 152 100 152 100 120" marker-end="url(#a8)"/>
-            <text class="t-ac" x="290" y="148">walk 20 m straight, or snap to the access point</text>
+            <text class="t-ac" x="290" y="148">walk 20 m straight</text>
 
             <line class="s-rule" x1="0" y1="176" x2="720" y2="176"/>
             <text class="t-sm" x="0" y="196">WHY THE FRESH WINDOW IS 60 s, NOT 30 s</text>
@@ -977,7 +973,7 @@ footer{
             <text class="t-sm" x="0" y="284">Whatever drift has accumulated is printed on the chip in degrees either way. Nothing is hidden by the relabel.</text>
           </svg>
         </div>
-        <figcaption><b>FIG 09</b><span>The sensor path's states. The overlay dims as confidence falls, and the health layer switches itself off entirely below a usable heading — a coloured patch on the wrong ground is worse than no patch. On the ARCore path the lock does not expire and the plot keeps its own colour; the chip carries the confidence.</span></figcaption>
+        <figcaption><b>FIG 09</b><span>The sensor path's states. The walls dim as confidence falls. The old build switched its health layer off below a usable heading. Drop points are deliberately kept on in every state in this build, so the flow can be tested indoors, where GPS never gives a usable heading; the chip carries the confidence instead. On the ARCore path the lock does not expire and the plot keeps its own colour; the chip carries the confidence.</span></figcaption>
       </figure>
     </div>
   </div>
@@ -1004,8 +1000,12 @@ footer{
         <p><strong>Fades with floors.</strong> A 2.6 m wall 3 m away subtends most of the frame, and a boundary you are standing against is the one you least need drawn over your view. Panels fade out below 8 m — but the rail never drops below 0.75 opacity, because the line <em>is</em> the boundary and losing it as you step up to the fence removes the answer at the moment you are trying to stand on it.</p>
         <p><strong>Dark backing strokes.</strong> Every rail, post and marker is drawn twice: a dark halo, then the colour over it. A single coloured line disappears wherever the background shares its luminance, and outdoor footage is mostly bright sky, pale soil and corrugated fencing. Road signs and map labels have been drawn this way for a century.</p>
       </div>
+      <div class="slot"><span>Drop points</span>
+        <p>Each moderate or critical patch is one drop point: a stem from the ground to 4.5 m and a round head on top, yellow or red, with a dark halo. 4.5 m is deliberate — taller than the 2.6 m walls, so a patch inside a plot beyond the near one shows over its fence, which is the whole point of seeing every nearby plot at once. The head is a screen-space point whose size scales with distance only between limits (35–130% of 44 px), so a far marker stays findable and a near one does not fill the frame. Normal ground gets no marker: the view answers "where must I go", not "what is fine". Drop points come from patches within 300 m, 60 at most, nearest first.</p>
+        <p>The cells are no longer laid on the ground in the camera. Hundreds of translucent 3 m squares across several plots read as a carpet and hid the walls; the per-cell colouring lives in the minimap and on the web map instead.</p>
+      </div>
       <div class="slot"><span>Drawn in ARCore's frame, with occlusion</span>
-        <p><strong>No lag.</strong> On the ARCore path the walls, rails, posts, ground fill and health cells are drawn by a small native GL renderer, after the camera image and with that frame's own camera matrices. Dart sends the plot once, triangulated by ear clipping in its own metric frame, and a placement (a 2-D rotation and offset into ARCore's world) only when the registration moves.</p>
+        <p><strong>No lag.</strong> On the ARCore path the walls, rails, posts, ground fill and drop points are drawn by a small native GL renderer, after the camera image and with that frame's own camera matrices. Dart sends the scene — every nearby plot, triangulated by ear clipping, plus the drop points, all in one shared metric frame — when the set of plots or the index changes, and a placement (a 2-D rotation and offset into ARCore's world) only when the registration moves. The walls of all plots are sorted far-to-near together, so a near plot is never painted over by a far one.</p>
         <p><strong>Real ground.</strong> The ground is the lowest horizontal plane ARCore finds at least 0.8 m below the phone, not an assumed 1.6 m below wherever the phone is — so raising or lowering the phone no longer moves the plot.</p>
         <p><strong>Occlusion.</strong> Where the Depth API is available, each overlay fragment is compared with the measured depth at its pixel. Only something clearly in front hides it — nearer than 80% of the overlay's distance starts to, 60% fully does — so a person at 2 m hides a boundary at 16 m while the floor under the fill and the crop just inside the boundary do not. Hidden parts are not removed but ghosted ("X-ray" rendering): lines keep 60% opacity, surfaces 35%, because a boundary that vanished behind the crop it encloses would be no use. Depth reaches about 8 m; beyond it the plot is drawn normally. The badge says "occlusion on" when it is active.</p>
         <p><strong>Colour kept.</strong> Under ARCore the plot keeps its identity colour at 85% strength or more whatever the heading confidence: a grey translucent wall was simply invisible in a white office and under a pale sky.</p>
@@ -1050,100 +1050,85 @@ footer{
   <!-- L7 -->
   <div class="logic">
     <div class="logic-head">
-      <h3>07 · The health grid — and the answer to "3×3 or 10×10?"</h3>
+      <h3>07 · The condition grid — 3 m cells, three indices</h3>
       <span class="logic-file">shared/src/health.ts · service/src/routes/health.ts</span>
     </div>
     <div class="logic-body">
       <div class="slot"><span>The short answer</span>
-        <p><strong>Neither. The cell size is computed per plot</strong>, sized so that roughly fifteen cells span the plot's width, rounded to the nearest half metre and clamped between 2 m and 10 m. For the plot the team walked — PLT-7013, 886 m² — that comes out at 2 m cells on a 19 × 16 grid, of which <strong>221 cells</strong> fall inside the boundary. It is not a fixed 3×3 and not a fixed 10×10.</p>
+        <p><strong>3 × 3 m cells, fixed, for every plot.</strong> Each cell carries three values — NDVI, NDRE and LSWI — and each value is classified into a zone: normal, moderate or critical. The earlier build sized cells per plot (√area ÷ 15, 2–10 m); this flow fixes them at 3 m so that every plot, and every drop point, is on the same ground scale.</p>
       </div>
-      <div class="slot"><span>Why it is adaptive</span>
-        <p>It used to be a fixed 10 m, matching Sentinel-2's native red/NIR resolution. That is right for a five-hectare field and useless for a small one: a 30 m plot came back as a 3 × 3 grid, which is not a map of anything — it cannot show <em>where inside the plot</em> a problem is, which is the only question the layer exists to answer. Worse, nine cells cannot form a hotspot at all, because a cluster needs three touching stressed cells, so small plots silently reported that they had no problems.</p>
-        <p>The clamps are not arbitrary in either direction. The 2 m floor exists because below the imagery's own ground resolution a finer grid is interpolation dressed up as detail. The 10 m ceiling exists because going coarser than the native resolution throws away measurements that were actually taken. And the half-metre rounding exists because the exact figure is a cache key — an irrational one would mean every request rebuilt the raster from scratch.</p>
+      <div class="slot"><span>The three indices and their zones</span>
+        <p>Each index is shown to the agent by what it means, not by its acronym. Two edges per index split it into three zones; below the lower edge is critical, between the edges moderate, above the upper edge normal. The edges are conservative on purpose: calling healthy ground a problem sends an agent on a pointless walk, which is how a tool like this loses its audience.</p>
       </div>
-      <div class="slot"><span>How a cell is built</span>
-        <p>The grid is laid out in <em>metres</em>, anchored at the polygon's south-west corner, so cells are square on the ground rather than square in degrees. A cell is kept only if its centre falls inside the boundary — which is what makes every hotspot centroid a legal walk-to target, since it is the mean of points each already inside the plot. Then the kept square is intersected with the boundary, because keeping a cell on its centre still leaves up to half of it hanging over the fence, and the layer's whole claim is that it describes <em>this</em> plot.</p>
-        <p>NDVI bands at 0.25 / 0.40 / 0.55 — the conventional break points, and deliberately conservative. Calling a healthy cell stressed sends an agent on a pointless walk, which is how a tool like this loses its audience.</p>
-      </div>
-      <figure>
-        <div class="frame">
-          <svg viewBox="0 0 720 300" role="img" aria-label="Left: a small plot on a fixed ten metre grid producing a three by three raster with no usable detail. Right: the same plot at two metre cells producing 221 cells and two visible hotspots.">
-            <text class="t-wn" x="0" y="12">FIXED 10 m — 886 m² plot → 3 × 3</text>
-            <line class="s-rule" x1="0" y1="20" x2="320" y2="20"/>
-            <g>
-              <path d="M30 50 H270 V250 H30 Z" fill="none" stroke-width="1.6" style="stroke:var(--warn)"/>
-              <g class="s-rule"><path d="M110 50 V250 M190 50 V250 M30 116 H270 M30 183 H270"/></g>
-              <rect x="30" y="50" width="80" height="66" opacity=".3" style="fill:var(--sev0)"/>
-              <rect x="110" y="50" width="80" height="66" opacity=".3" style="fill:var(--sev0)"/>
-              <rect x="190" y="50" width="80" height="66" opacity=".3" style="fill:var(--sev0)"/>
-              <rect x="30" y="116" width="80" height="67" opacity=".3" style="fill:var(--sev0)"/>
-              <rect x="110" y="116" width="80" height="67" opacity=".45" style="fill:var(--sev1)"/>
-              <rect x="190" y="116" width="80" height="67" opacity=".3" style="fill:var(--sev0)"/>
-              <rect x="30" y="183" width="80" height="67" opacity=".3" style="fill:var(--sev0)"/>
-              <rect x="110" y="183" width="80" height="67" opacity=".3" style="fill:var(--sev0)"/>
-              <rect x="190" y="183" width="80" height="67" opacity=".3" style="fill:var(--sev0)"/>
-            </g>
-            <text class="t-wn" x="0" y="272">9 cells · 0 hotspots · nowhere to walk to</text>
-            <text class="t-sm" x="0" y="290">A cluster needs 3 touching stressed cells. Nine can rarely make one.</text>
-
-            <line class="s-rule" x1="360" y1="20" x2="360" y2="290"/>
-            <text class="t-ac" x="400" y="12">ADAPTIVE — √886 / 15 ≈ 2.0 m → 19 × 16</text>
-            <line class="s-rule" x1="400" y1="20" x2="720" y2="20"/>
-            <g>
-              <path d="M410 50 H690 V250 H410 Z" fill="none" stroke-width="1.6" style="stroke:var(--accent)"/>
-              <g class="s-rule" opacity=".45">
-                <path d="M424 50 V250 M438 50 V250 M452 50 V250 M466 50 V250 M480 50 V250 M494 50 V250 M508 50 V250 M522 50 V250 M536 50 V250 M550 50 V250 M564 50 V250 M578 50 V250 M592 50 V250 M606 50 V250 M620 50 V250 M634 50 V250 M648 50 V250 M662 50 V250 M676 50 V250"/>
-                <path d="M410 62 H690 M410 75 H690 M410 87 H690 M410 100 H690 M410 112 H690 M410 125 H690 M410 137 H690 M410 150 H690 M410 162 H690 M410 175 H690 M410 187 H690 M410 200 H690 M410 212 H690 M410 225 H690 M410 237 H690"/>
-              </g>
-              <rect x="410" y="50" width="280" height="200" opacity=".22" style="fill:var(--sev0)"/>
-              <!-- hotspot 1 -->
-              <rect x="466" y="87" width="56" height="50" opacity=".68" style="fill:var(--sev2)"/>
-              <rect x="480" y="100" width="28" height="25" opacity=".8" style="fill:var(--sev3)"/>
-              <!-- hotspot 2 -->
-              <rect x="592" y="162" width="42" height="38" opacity=".68" style="fill:var(--sev2)"/>
-              <rect x="606" y="175" width="14" height="12" opacity=".8" style="fill:var(--sev3)"/>
-              <circle cx="494" cy="112" r="10" stroke="#0B0F14" stroke-width="2" style="fill:var(--sev3)"/>
-              <text x="494" y="116" text-anchor="middle" font-family="Spline Sans Mono, monospace" font-size="11" font-weight="600" fill="#fff">1</text>
-              <circle cx="613" cy="181" r="10" stroke="#0B0F14" stroke-width="2" style="fill:var(--sev2)"/>
-              <text x="613" y="185" text-anchor="middle" font-family="Spline Sans Mono, monospace" font-size="11" font-weight="600" fill="#fff">2</text>
-            </g>
-            <text class="t-ac" x="400" y="272">221 cells inside the ring · 2 hotspots · ranked walk order</text>
-            <text class="t-sm" x="400" y="290">Measured from the live API, 27 Aug 2026.</text>
-          </svg>
-        </div>
-        <figcaption><b>FIG 11</b><span>Same plot, same NDVI field, same code. The only difference is one line that sizes the cell to the plot instead of to the satellite.</span></figcaption>
-      </figure>
-
       <div class="tablewrap">
         <table>
-          <caption>Live values from the deployed API, 27 Aug 2026.</caption>
-          <thead><tr><th>Plot</th><th class="mono">Area</th><th class="mono">Cell</th><th class="mono">Grid</th><th class="mono">Cells kept</th><th class="mono">Hotspots</th></tr></thead>
+          <thead><tr><th>Shown as</th><th>Index</th><th>What it reads</th><th class="mono">Critical</th><th class="mono">Moderate</th><th class="mono">Normal</th></tr></thead>
           <tbody>
-            <tr><td>PLT-7013 Cropin3</td><td class="num">886 m²</td><td class="num">2.0 m</td><td class="num">19 × 16</td><td class="num">221</td><td class="num">2</td></tr>
-            <tr><td>PLT-3948 cropin plot</td><td class="num">774 m²</td><td class="num">2.0 m</td><td class="num">14 × 15</td><td class="num">196</td><td class="num">2</td></tr>
-            <tr><td>PLT-9504 cropin plot 2</td><td class="num">42 m²</td><td class="num">2.0 m</td><td class="num">4 × 4</td><td class="num">9</td><td class="num">0</td></tr>
+            <tr><td>Crop greenness</td><td class="mono">NDVI</td><td>Canopy cover and chlorophyll, from red and near-infrared</td><td class="num">&lt; 0.35</td><td class="num">0.35–0.55</td><td class="num">≥ 0.55</td></tr>
+            <tr><td>Crop vigour</td><td class="mono">NDRE</td><td>Chlorophyll in a dense canopy, from red-edge — keeps reading after NDVI saturates</td><td class="num">&lt; 0.20</td><td class="num">0.20–0.35</td><td class="num">≥ 0.35</td></tr>
+            <tr><td>Water stress</td><td class="mono">LSWI</td><td>Leaf and soil water, from near- and short-wave infrared</td><td class="num">&lt; 0.05</td><td class="num">0.05–0.20</td><td class="num">≥ 0.20</td></tr>
           </tbody>
         </table>
       </div>
-      <p>PLT-9504 is the honest edge case: 42 m² is smaller than a squash court, the 2 m floor stops the grid refining further, and nine cells still cannot form a cluster. The layer reports zero hotspots — correctly — and the app words that as "no problem areas found", never as "healthy".</p>
+      <div class="slot"><span>How a cell is built</span>
+        <p>The grid is laid out in <em>metres</em>, anchored at the polygon's south-west corner, so cells are square on the ground rather than square in degrees. A cell is kept only if its centre falls inside the boundary — which is what keeps every patch centroid a point inside the plot. Then the kept square is intersected with the boundary, because keeping a cell on its centre still leaves up to half of it hanging over the fence, and the layer's whole claim is that it describes <em>this</em> plot.</p>
+        <p>A 0.17 ha demo plot is about 190 cells. The synthetic samplers place a few stress blobs per index, independently, tuned so that 85–90% of a plot reads normal — believable, not alarming.</p>
+      </div>
+      <figure>
+        <div class="frame">
+          <svg viewBox="0 0 720 250" role="img" aria-label="A plot on a 3 metre grid. Most cells are normal; two patches of moderate cells, one with critical cells at its centre, each produce one drop point.">
+            <text class="t-ac" x="0" y="12">ONE INDEX, ONE PLOT — 3 m cells, normal ground not drawn in the camera</text>
+            <line class="s-rule" x1="0" y1="20" x2="720" y2="20"/>
+            <g>
+              <path d="M40 40 H400 V220 H40 Z" fill="none" stroke-width="1.6" style="stroke:var(--accent)"/>
+              <g class="s-rule" opacity=".45">
+                <path d="M70 40 V220 M100 40 V220 M130 40 V220 M160 40 V220 M190 40 V220 M220 40 V220 M250 40 V220 M280 40 V220 M310 40 V220 M340 40 V220 M370 40 V220"/>
+                <path d="M40 70 H400 M40 100 H400 M40 130 H400 M40 160 H400 M40 190 H400"/>
+              </g>
+              <rect x="40" y="40" width="360" height="180" opacity=".18" style="fill:var(--sev0)"/>
+              <rect x="100" y="70" width="90" height="60" opacity=".6" style="fill:var(--sev1)"/>
+              <rect x="130" y="100" width="30" height="30" opacity=".85" style="fill:var(--sev2)"/>
+              <rect x="100" y="100" width="30" height="30" opacity=".85" style="fill:var(--sev2)"/>
+              <rect x="280" y="160" width="60" height="30" opacity=".6" style="fill:var(--sev1)"/>
+              <rect x="310" y="130" width="30" height="30" opacity=".6" style="fill:var(--sev1)"/>
+              <circle cx="130" cy="115" r="9" stroke="#0B0F14" stroke-width="2" style="fill:var(--sev2)"/>
+              <circle cx="315" cy="165" r="9" stroke="#0B0F14" stroke-width="2" style="fill:var(--sev1)"/>
+            </g>
+            <text class="t-sm" x="40" y="242">one drop point per patch, on its worst cells</text>
+            <line class="s-rule" x1="440" y1="20" x2="440" y2="240"/>
+            <text class="t-hd" x="460" y="52">In the camera</text>
+            <path class="s-ink" d="M470 220 H700"/>
+            <path d="M500 220 V200 M680 220 V200" stroke-width="1.6" style="stroke:var(--accent)"/>
+            <path d="M500 200 H680" stroke-width="2" style="stroke:var(--accent)"/>
+            <text class="t-sm" x="560" y="196">wall 2.6 m</text>
+            <path class="s-ink" d="M550 220 V150"/>
+            <circle cx="550" cy="150" r="9" stroke="#0B0F14" stroke-width="2" style="fill:var(--sev2)"/>
+            <path class="s-ink" d="M640 220 V160"/>
+            <circle cx="640" cy="160" r="8" stroke="#0B0F14" stroke-width="2" style="fill:var(--sev1)"/>
+            <text class="t-sm" x="460" y="128">drop points 4.5 m — over the fence</text>
+            <text class="t-sm" x="460" y="242">one per patch · normal ground: nothing</text>
+          </svg>
+        </div>
+        <figcaption><b>FIG 11</b><span>From grid to drop point. The cells are kept for the minimap and the web map; the camera gets one marker per patch, standing taller than the wall so it reads from the next field.</span></figcaption>
+      </figure>
     </div>
   </div>
 
   <!-- L8 -->
   <div class="logic">
     <div class="logic-head">
-      <h3>08 · Hotspot clustering</h3>
-      <span class="logic-file">shared/src/health.ts · findHotspots()</span>
+      <h3>08 · Patch clustering — one drop point per patch</h3>
+      <span class="logic-file">shared/src/health.ts · findPatches()</span>
     </div>
     <div class="logic-body">
       <div class="slot"><span>What it does</span>
-        <p>Flood-fills touching cells at severity 2 or worse into clusters, discards clusters smaller than three cells, then ranks them: worst band first, then largest, then lowest index value. A cluster's band is its <em>worst</em> cell, not its average — a patch with a dead centre matters more than its edges suggest.</p>
+        <p>Per index, flood-fills touching cells in the moderate or critical zone into patches, discards patches smaller than two cells (one 3 m cell alone is as likely to be noise as a problem), then ranks them: worst zone first, then largest, then lowest mean value. A patch's zone is its <em>worst</em> cell, not its average — a patch with a dead centre matters more than its edges suggest — and its drop point stands on the centroid of those worst cells, so a red marker never lands on yellow ground.</p>
       </div>
       <div class="slot"><span>Why four-way connectivity, not eight</span>
-        <p>Diagonal-only neighbours share a single corner on the ground. Chaining through them merges two genuinely separate problems into one hotspot and puts its centroid in the healthy gap between them — a walk-to point that is not a problem at all. Four-way keeps them separate and gives the agent two markers to visit.</p>
+        <p>Diagonal-only neighbours share a single corner on the ground. Chaining through them merges two genuinely separate problems into one patch and puts its centroid in the healthy gap between them — a walk-to point that is not a problem at all. Four-way keeps them separate and gives the agent two drop points to visit.</p>
       </div>
       <div class="slot"><span>Why ties break deterministically</span>
-        <p>The rank is what the field agent's route is built from. Two visits to the same plot must produce the same numbered markers in the same order, or the agent cannot trust that marker 1 means anything.</p>
+        <p>Two visits to the same plot must produce the same drop points in the same order, or the agent cannot trust that the marker they walked to last week is the one they see today. The web panel lists patches in this rank.</p>
       </div>
       <figure>
         <div class="frame">
@@ -1154,12 +1139,12 @@ footer{
               <g class="s-rule">
                 <path d="M40 40 H280 M40 78 H280 M40 116 H280 M40 154 H280 M40 40 V154 M100 40 V154 M160 40 V154 M220 40 V154 M280 40 V154"/>
               </g>
-              <rect x="40" y="40" width="60" height="38" opacity=".7" style="fill:var(--sev2)"/>
-              <rect x="100" y="40" width="60" height="38" opacity=".7" style="fill:var(--sev2)"/>
-              <rect x="40" y="78" width="60" height="38" opacity=".7" style="fill:var(--sev3)"/>
-              <rect x="160" y="116" width="60" height="38" opacity=".7" style="fill:var(--sev2)"/>
-              <rect x="220" y="116" width="60" height="38" opacity=".7" style="fill:var(--sev2)"/>
-              <rect x="220" y="78" width="60" height="38" opacity=".7" style="fill:var(--sev3)"/>
+              <rect x="40" y="40" width="60" height="38" opacity=".7" style="fill:var(--sev1)"/>
+              <rect x="100" y="40" width="60" height="38" opacity=".7" style="fill:var(--sev1)"/>
+              <rect x="40" y="78" width="60" height="38" opacity=".7" style="fill:var(--sev2)"/>
+              <rect x="160" y="116" width="60" height="38" opacity=".7" style="fill:var(--sev1)"/>
+              <rect x="220" y="116" width="60" height="38" opacity=".7" style="fill:var(--sev1)"/>
+              <rect x="220" y="78" width="60" height="38" opacity=".7" style="fill:var(--sev2)"/>
               <path class="s-wn s-dash" d="M40 40 H160 V78 H100 V116 H160 V154 H280 V78 H220 V116"/>
               <circle cx="160" cy="97" r="8" fill="none" stroke-width="2" style="stroke:var(--warn)"/>
               <path class="s-wn" d="M154 91 L166 103 M166 91 L154 103"/>
@@ -1173,19 +1158,19 @@ footer{
               <g class="s-rule">
                 <path d="M420 40 H660 M420 78 H660 M420 116 H660 M420 154 H660 M420 40 V154 M480 40 V154 M540 40 V154 M600 40 V154 M660 40 V154"/>
               </g>
-              <rect x="420" y="40" width="60" height="38" opacity=".7" style="fill:var(--sev2)"/>
-              <rect x="480" y="40" width="60" height="38" opacity=".7" style="fill:var(--sev2)"/>
-              <rect x="420" y="78" width="60" height="38" opacity=".7" style="fill:var(--sev3)"/>
-              <rect x="540" y="116" width="60" height="38" opacity=".7" style="fill:var(--sev2)"/>
-              <rect x="600" y="116" width="60" height="38" opacity=".7" style="fill:var(--sev2)"/>
-              <rect x="600" y="78" width="60" height="38" opacity=".7" style="fill:var(--sev3)"/>
-              <circle cx="460" cy="66" r="11" stroke="#0B0F14" stroke-width="2" style="fill:var(--sev3)"/>
+              <rect x="420" y="40" width="60" height="38" opacity=".7" style="fill:var(--sev1)"/>
+              <rect x="480" y="40" width="60" height="38" opacity=".7" style="fill:var(--sev1)"/>
+              <rect x="420" y="78" width="60" height="38" opacity=".7" style="fill:var(--sev2)"/>
+              <rect x="540" y="116" width="60" height="38" opacity=".7" style="fill:var(--sev1)"/>
+              <rect x="600" y="116" width="60" height="38" opacity=".7" style="fill:var(--sev1)"/>
+              <rect x="600" y="78" width="60" height="38" opacity=".7" style="fill:var(--sev2)"/>
+              <circle cx="460" cy="66" r="11" stroke="#0B0F14" stroke-width="2" style="fill:var(--sev2)"/>
               <text x="460" y="70" text-anchor="middle" font-family="Spline Sans Mono, monospace" font-size="11" font-weight="600" fill="#fff">1</text>
-              <circle cx="622" cy="112" r="11" stroke="#0B0F14" stroke-width="2" style="fill:var(--sev3)"/>
+              <circle cx="622" cy="112" r="11" stroke="#0B0F14" stroke-width="2" style="fill:var(--sev2)"/>
               <text x="622" y="116" text-anchor="middle" font-family="Spline Sans Mono, monospace" font-size="11" font-weight="600" fill="#fff">2</text>
-              <text class="t-ac" x="452" y="176">both centroids land on stressed cells</text>
+              <text class="t-ac" x="452" y="176">both drop points land on problem cells</text>
             </g>
-            <text class="t-sm" x="0" y="200">Minimum cluster size is 3 cells. Below that a "hotspot" is as likely to be one noisy pixel as a real problem.</text>
+            <text class="t-sm" x="0" y="200">Minimum patch size is 2 cells (18 m²). Below that a patch is as likely to be one noisy pixel as a real problem.</text>
           </svg>
         </div>
         <figcaption><b>FIG 12</b><span>A one-word choice in a flood fill, worth a wasted field visit either way.</span></figcaption>
@@ -1205,13 +1190,12 @@ footer{
       </div>
       <div class="slot"><span>Why the colours are what they are</span>
         <p>Both backgrounds this app runs against — satellite imagery of farmland, and a phone camera pointed at a field — are dominated by green and brown. <strong>There is no green in the plot palette</strong>: a green boundary on a green crop is the one combination guaranteed to disappear. White is included because the first field test happened after dark, where it reads better than any hue.</p>
-        <p>The severity ramp originally ran green → yellow → amber → brown, chosen so the bad end described the ground rather than alarming about it. Outdoors that reasoning failed on its own terms: amber and brown <em>are</em> the colour of dry soil, so the two worst bands were painting earth-colour onto earth and vanishing. A grading layer has to contrast with the ground it grades, not match it. The bad end is now red.</p>
+        <p>The severity ramp originally ran green → yellow → amber → brown, chosen so the bad end described the ground rather than alarming about it. Outdoors that reasoning failed on its own terms: amber and brown <em>are</em> the colour of dry soil, so the two worst bands were painting earth-colour onto earth and vanishing. A grading layer has to contrast with the ground it grades, not match it. The bad end became red, and with three zones the ramp is now simply green, yellow, red — the colours everyone already reads as fine, watch, act.</p>
       </div>
       <ul class="swatchrow">
-        <li><i style="background:#2FD44E"></i>0 Healthy · α .22</li>
-        <li><i style="background:#FFE81A"></i>1 Mild · α .55</li>
-        <li><i style="background:#FF8A00"></i>2 Stressed · α .68</li>
-        <li><i style="background:#FF2118"></i>3 Critical · α .80</li>
+        <li><i style="background:#2FD44E"></i>0 Normal · α .25</li>
+        <li><i style="background:#FFD60A"></i>1 Moderate · α .60</li>
+        <li><i style="background:#FF2118"></i>2 Critical · α .80</li>
       </ul>
       <div class="slot"><span>The guard, and why it is there</span>
         <p>This mechanism failed silently once and it is worth recording. When the severity ramp was first added to the generator, the values were interpolated <em>while editing the generator</em> and pasted in as literals. The output looked perfect, <code>--check</code> passed forever after — because the generator and the files it wrote were equally stale — and a colour change committed to <code>palette.json</code> reached neither language. A build was shipped and field-tested with the old ramp.</p>
@@ -1228,7 +1212,7 @@ footer{
             <rect class="f-ac" x="0" y="60" width="150" height="60"/>
             <text class="t-hd" x="12" y="82">palette.json</text>
             <text class="t-sm" x="12" y="99">8 plot colours</text>
-            <text class="t-sm" x="12" y="112">4 severity bands + α</text>
+            <text class="t-sm" x="12" y="112">3 zones + α</text>
 
             <path class="s-ac" d="M150 90 H206" marker-end="url(#a9)"/>
             <rect class="f-card" x="210" y="60" width="150" height="60"/>
@@ -1269,8 +1253,8 @@ footer{
         <p>The sqflite database is the source of truth. Every screen reads from it and nothing on screen ever waits for the network. Sync is an explicit action: fetch plots within 5 km of the agent, replace the cached set, then fetch each plot's health raster concurrently, tolerating individual failures.</p>
       </div>
       <div class="slot"><span>Design decisions worth defending</span>
-        <p><strong>Rasters are a separate endpoint.</strong> A health snapshot is an order of magnitude larger than a boundary and has a different lifetime — a boundary is drawn once, a raster is re-derived whenever new imagery lands. Bundling them would force a re-download of every boundary to refresh one raster.</p>
-        <p><strong>Raster failures do not fail the sync.</strong> The health layer is an extra. A sync that lands every boundary and misses one raster is a success; reporting it as a failure sends the agent hunting for signal they do not need. The counts are reported separately so a shortfall is visible rather than looking like plots that happen to be healthy.</p>
+        <p><strong>Rasters are a separate endpoint.</strong> A health snapshot is an order of magnitude larger than a boundary and has a different lifetime — a boundary is drawn once, a raster is re-derived whenever new imagery lands. Bundling them would force a re-download of every boundary to refresh one raster. Moving from one index to three per cell roughly doubles a raster's size; the figures below are from the single-index build and are kept as an order of magnitude.</p>
+        <p><strong>Raster failures do not fail the sync.</strong> Crop condition is an extra. The AR screen also fetches, quietly, any snapshot a nearby plot is missing when it opens. A sync that lands every boundary and misses one raster is a success; reporting it as a failure sends the agent hunting for signal they do not need. The counts are reported separately so a shortfall is visible rather than looking like plots that happen to be healthy.</p>
         <p><strong>An empty radius widens to everything.</strong> "0 plots near you" is indistinguishable on screen from "the sync failed", and the honest reading of an empty radius is usually that the boundary was drawn somewhere else.</p>
         <p><strong>Timeouts are short</strong> — 5 s connect, 8 s read. At a rural site the radio either works within a couple of seconds or it does not work at all, and a request hanging for thirty seconds is a spinner the agent watches instead of a cached plot they could already be walking to.</p>
       </div>
@@ -1317,11 +1301,30 @@ footer{
       </div>
       <div class="slot"><span>Why it replaced the walk lock</span>
         <p>The sensor path's course-over-ground lock needs 20 m of <em>straight</em> walking, because GNSS bearing is only meaningful along a straight leg. A real approach winds between bunds. With the tracked path supplying the shape, any route counts in full, and accuracy grows with the lever arm: in the tests a winding 60 m approach with ±5 m fixes recovers the direction to within a few degrees.</p>
-        <p>Field agents were also clear that aiming at the access point and tapping, as a separate step, made no sense to them. The aligner makes direction a by-product of walking there.</p>
+        <p>Field agents were also clear that aiming at a point and tapping, as a separate step, made no sense to them. The aligner makes direction a by-product of walking.</p>
       </div>
-      <div class="slot"><span>The pin as an anchor, and the guards</span>
-        <p>When the agent taps <em>I'm at the access point</em>, that point enters the fit as an anchor known to a metre. It pins the fit's centre, so every step away from it — in any direction — refines the yaw; about 35 m of walking into the plot is enough.</p>
+      <div class="slot"><span>The boundary anchor, and the guards</span>
+        <p>When the app anchors to a boundary point (logic 12), that point enters the fit as an anchor. It pins the fit's centre, so every step away from it — in any direction — refines the yaw; about 35 m of walking is enough. The fit weights it as known to a metre, as it did the surveyed access point — but the point was chosen from a GPS fix, so its error is the fix's error, not a metre (see logic 12).</p>
         <p>The fit reports its own error: the rotation's variance is the inverse of Σ w·r² (each fix's weight times its squared distance from the centre), inflated five-fold because successive fixes are correlated rather than independent, and widened further when the fixes scatter more than their claimed accuracy. A fit is offered as a lock only under 10°. Fixes worse than 15 m are ignored — indoors, at ±50–100 m, the aligner says nothing rather than lock a guess — and a loss of ARCore tracking discards everything measured before it, since the session's frame may have shifted.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- L12 -->
+  <div class="logic">
+    <div class="logic-head">
+      <h3>12 · The automatic boundary anchor</h3>
+      <span class="logic-file">lib/core/geo/boundary_snap.dart · lib/ui/ar/ar_controller.dart</span>
+    </div>
+    <div class="logic-body">
+      <div class="slot"><span>What it does</span>
+        <p>Replaces the access point. For every nearby plot it finds the nearest point on the boundary to the agent: for each edge, the foot of the perpendicular from the agent, clamped to the edge's ends — so it is a corner when a corner is nearest and a computed point along an edge otherwise. The nearest of those across all plots is the candidate. When GPS puts the agent within 10 m of it, the position is pinned there and the trajectory aligner takes it as its anchor. No button, no confirmation. Deep inside a large plot, more than 10 m from every edge, nothing fires until the agent nears an edge; the plots are still drawn from GPS meanwhile.</p>
+      </div>
+      <div class="slot"><span>When it fires again</span>
+        <p>Once per approach. It re-anchors after 60 m of walking from the last anchor — a different plot, or the far side of the same one — and after ARCore loses tracking, because the session's frame may have moved. Between anchors, ARCore carries the position to centimetres.</p>
+      </div>
+      <div class="slot"><span>What it can and cannot fix — stated plainly</span>
+        <p>The anchor does not add information GPS did not have. A surveyed access point was a place the agent <em>confirmed</em> standing on; the nearest boundary point is chosen <em>from</em> the GPS fix, so if the fix is 6 m out, the anchor is chosen from a position 6 m out. What it does buy is stillness and a shared frame: from the anchor on, the overlay stops following GPS wander and ARCore holds it, and every plot is registered from the same point. Expect the 3–5 m of open-sky GNSS error to remain in where the scene sits; the boundary band in near mode is drawn to that error for exactly this reason.</p>
       </div>
     </div>
   </div>
@@ -1359,19 +1362,19 @@ footer{
       <tbody>
         <tr><td>Flutter / Dart</td><td class="mono">≥3.22 / ≥3.4</td><td>Cross-platform UI toolkit and language</td><td>Every screen, and all of the maths under <code>lib/core</code>. Packaged as a plugin so the Cropin Grow app can embed it with one dependency; CI analyses and tests on 3.22.3 and on the current stable release.</td></tr>
         <tr><td>ARCore</td><td class="mono">1.44.0</td><td>Google's on-device AR runtime</td><td>Motion tracking, horizontal planes (to find the floor) and depth (for occlusion). Declared <code>optional</code> in the manifest, so the app installs everywhere and falls back to sensors where it is missing. It is the plugin's only native dependency and the reason its minSdk is 24.</td></tr>
-        <tr><td>OpenGL ES 3</td><td class="mono">—</td><td>The phone's graphics API</td><td>A ~400-line renderer draws ARCore's camera image and then the plot in the same frame, with the depth texture for occlusion. No engine.</td></tr>
+        <tr><td>OpenGL ES 3</td><td class="mono">—</td><td>The phone's graphics API</td><td>A ~500-line renderer draws ARCore's camera image and then every nearby plot and drop point in the same frame, with the depth texture for occlusion. No engine.</td></tr>
         <tr><td>camera</td><td class="mono">0.10.5–0.11</td><td>Flutter's camera plugin</td><td>The preview on the sensor fallback only; under ARCore, ARCore owns the camera.</td></tr>
-        <tr><td>sqflite</td><td class="mono">2.x</td><td>SQLite for Flutter</td><td>The offline cache: plots, health snapshots, telemetry.</td></tr>
+        <tr><td>sqflite</td><td class="mono">2.x</td><td>SQLite for Flutter</td><td>The offline cache: plots, crop-condition snapshots, telemetry. Schema version 4 drops the access-point columns and the old snapshots on upgrade.</td></tr>
         <tr><td>LocationManager</td><td class="mono">Android</td><td>The framework's own location service</td><td>1 Hz fixes (the fused provider on Android 12+, GNSS before), plus the last-known fix on open. Used instead of Play Services location so the plugin cannot force a clashing <code>play-services-location</code> version on the host app.</td></tr>
         <tr><td>dart:io HttpClient</td><td class="mono">SDK</td><td>Dart's HTTP client</td><td>Four endpoints, 5 s connect and 8 s read timeouts, gzip requested and decompressed transparently.</td></tr>
-        <tr><td>flutter_test</td><td class="mono">SDK</td><td>Test framework</td><td>190 tests: geometry, filters, heading, step detection, the aligner, scene placement and widgets — all without a device.</td></tr>
+        <tr><td>flutter_test</td><td class="mono">SDK</td><td>Test framework</td><td>176 tests: geometry, filters, heading, step detection, the aligner, the boundary anchor, the multi-plot scene, drop points and widgets — all without a device.</td></tr>
       </tbody>
     </table>
   </div>
 
   <div class="note">
     <span class="note-k">Not used, on purpose</span>
-    <p><strong>ARCore Geospatial, Cloud Anchors, Street View</strong> — they need coverage and a network that farmland lacks. <strong>Filament / Sceneform / Unity</strong> — the plot is a few dozen polygons; a 3D engine would add tens of megabytes to the host app for nothing. <strong>Play Services location, permission_handler</strong> — version clashes with a host app are the commonest way an embedded plugin breaks a build. <strong>A map SDK</strong> — the corner minimap is a hand-drawn north-up plan of one plot, which needs no tiles.</p>
+    <p><strong>ARCore Geospatial, Cloud Anchors, Street View</strong> — they need coverage and a network that farmland lacks. <strong>Filament / Sceneform / Unity</strong> — the plot is a few dozen polygons; a 3D engine would add tens of megabytes to the host app for nothing. <strong>Play Services location, permission_handler</strong> — version clashes with a host app are the commonest way an embedded plugin breaks a build. <strong>A map SDK</strong> — the corner minimap is a hand-drawn north-up plan of the nearby plots around the agent, which needs no tiles.</p>
   </div>
 </section>
 
@@ -1383,24 +1386,24 @@ footer{
 
   <div class="faq">
     <div>
-      <h3>What grid size do we use — 3×3 or 10×10?</h3>
-      <p>Neither; it is computed per plot. Cell size = √area ÷ 15, rounded to the nearest 0.5 m, clamped to 2–10 m. The plot we walked came out at 2 m cells, a 19 × 16 grid, 221 cells inside the ring, 2 hotspots. A fixed 10 m grid is what produced the useless 3 × 3 the question is remembering — see FIG 11.</p>
+      <h3>What grid size do we use?</h3>
+      <p>3 × 3 m cells, fixed, for every plot. Each cell carries NDVI, NDRE and LSWI, each graded normal, moderate or critical. Touching moderate or critical cells form a patch, and each patch of two or more cells becomes one drop point — see FIG 11.</p>
     </div>
     <div>
       <h3>How does the camera know where it is?</h3>
-      <p>On the earth, from GNSS — and exactly, once the agent taps <em>I'm at the access point</em>. From there ARCore tracks how the phone moves, to centimetres, from feature points in the image and the motion sensors. North comes from lining up that tracked walk with the GNSS fixes taken along it. The camera does not recognise fields or fences; it measures its own motion and the depth of what is in front of it. Without ARCore the camera is only a backdrop and the gyroscope and counted steps do the work.</p>
+      <p>On the earth, from GNSS — and held still once the agent comes within 10 m of a boundary, where the app anchors itself to the nearest point on it. From there ARCore tracks how the phone moves, to centimetres, from feature points in the image and the motion sensors. North comes from lining up that tracked walk with the GNSS fixes taken along it. The camera does not recognise fields or fences; it measures its own motion and the depth of what is in front of it. Without ARCore the camera is only a backdrop and the gyroscope and counted steps do the work.</p>
     </div>
     <div>
       <h3>How is distance computed?</h3>
-      <p>Convert both positions into the local metric frame — multiply the latitude difference by 110,540 and the longitude difference by cos(lat) × 111,320 — then take the hypotenuse. The label on screen shows range to the plot centroid; the near/far mode switch uses the perpendicular distance to the nearest edge, which is the number that matters when you are walking up to a boundary.</p>
+      <p>Convert both positions into the local metric frame — multiply the latitude difference by 110,540 and the longitude difference by cos(lat) × 111,320 — then take the hypotenuse. The label on screen shows range to each plot's centroid; the near/far mode switch uses the perpendicular distance to the nearest edge, which is the number that matters when you are walking up to a boundary.</p>
     </div>
     <div>
       <h3>How accurate is it, honestly?</h3>
-      <p>Position: 3–5 m in the open, the receiver's own accuracy, which the app displays — about a metre after the access-point pin, then held by ARCore as the agent walks. Heading: a few degrees once the walk has set it, 2–3° after a landmark snap, 15–25° on the compass alone. Indoors GNSS is ±50–100 m and the app falls back to the compass for direction. Since sideways error is range × sin(heading error), expect roughly 1–2 m of lateral error at 30 m on a good lock. At the boundary itself the accuracy band is drawn to the receiver's live figure rather than a crisp line, so the drawing never claims more than it has.</p>
+      <p>Position: 3–5 m in the open, the receiver's own accuracy, which the app displays. The automatic boundary anchor stops it wandering and ARCore holds it from there, but it cannot remove the error of the fix it was chosen from — a surveyed access point could, and that is the trade this flow makes for having no button. Heading: a few degrees once the walk has set it, 15–25° on the compass alone. Indoors GNSS is ±50–100 m and the app falls back to the compass for direction. Since sideways error is range × sin(heading error), expect roughly 1–2 m of lateral error at 30 m on a good lock. At the boundary itself the accuracy band is drawn to the receiver's live figure rather than a crisp line, so the drawing never claims more than it has.</p>
     </div>
     <div>
       <h3>How big is the app, and what does a visit cost in data?</h3>
-      <p>The standalone release APK is 9.1 MB for arm64; embedded in Cropin Grow the plugin adds the ARCore client library and a few hundred kilobytes of its own. All seven boundaries are 1.1 kB gzipped. A health raster is 0.8–8.4 kB gzipped depending on plot size. A full sync of the current dataset is about 25 kB. <strong>A plot visit after sync transfers nothing at all</strong> — the AR screen never opens a socket.</p>
+      <p>The standalone release APK is 9.1 MB for arm64; embedded in Cropin Grow the plugin adds the ARCore client library and a few hundred kilobytes of its own. All seven boundaries are 1.1 kB gzipped. A crop-condition raster was 0.8–8.4 kB gzipped with one index; with three indices per 3 m cell, expect roughly twice that. A full sync of the current dataset is about 25 kB. <strong>A plot visit after sync transfers nothing at all</strong> — the AR screen never opens a socket.</p>
     </div>
     <div>
       <h3>Does it need internet? Does it need ARCore?</h3>
@@ -1408,19 +1411,23 @@ footer{
     </div>
     <div>
       <h3>Is the crop-health data real?</h3>
-      <p>No, and the system says so everywhere. It is deterministic synthetic NDVI seeded from the plot id, present so the whole path from raster to hotspot to a walk-to coordinate could be built and demonstrated. The API returns <code>synthetic: true</code> with an explanatory note and the app labels it on screen. Connecting real Sentinel-2 means replacing one function; every consumer downstream takes an index sampler and knows nothing about its source.</p>
+      <p>No, and the system says so everywhere. It is deterministic synthetic NDVI, NDRE and LSWI seeded from the plot id — believable values, mostly normal with a few problem patches — present so the whole path from raster to patch to a drop point in the camera could be built and demonstrated. The API returns <code>synthetic: true</code> with an explanatory note and the app labels it "demo values" on screen. Connecting real Sentinel-2 means replacing one function; every consumer downstream takes an index sampler and knows nothing about its source.</p>
     </div>
     <div>
       <h3>What happens when the heading is bad?</h3>
-      <p>The chip says so and names the source. On the sensor path the overlay dims and greys and the crop-health layer switches off, because a coloured patch on the wrong ground is worse than no patch. On the ARCore path the plot keeps its colour and walking sets the direction by itself; where GPS is too weak for that, the expanded sheet offers the fallback: step 10 m from the access point, aim at it, and tap.</p>
+      <p>The chip says so and names the source. On the sensor path the walls dim and grey. On the ARCore path the plots keep their colour and walking sets the direction by itself; where GPS is too weak for that, direction stays on the compass and the chip says so. In this build drop points stay on whatever the heading, so the flow can be tested indoors — read the chip before walking to one.</p>
     </div>
     <div>
-      <h3>Why is "I'm at the access point" greyed out?</h3>
-      <p>Because GPS puts you more than 50 m from it, and the button says how far. The rule stops a tap from the next field placing the plot in the wrong one. In the open, GPS error is a few metres and the button enables as you arrive; indoors it can read beyond 50 m while you stand on the spot.</p>
+      <h3>Where did the access point go?</h3>
+      <p>It was removed. The app needs one known point to hold the view still, and it now uses the nearest point on any plot's boundary, chosen automatically once GPS puts the agent within 10 m of it. There is no button to press and nothing to survey when drawing a plot. The cost is honesty about accuracy: see "How accurate is it".</p>
+    </div>
+    <div>
+      <h3>Why only red and yellow?</h3>
+      <p>Because the view answers "where do I need to go". Normal ground is most of every plot; drawing it green across several plots would bury the walls and the problem patches under a carpet. Normal cells still appear on the web map, where the whole picture is the point.</p>
     </div>
     <div>
       <h3>Why does the boundary disappear behind people?</h3>
-      <p>Occlusion, from ARCore's depth: anything clearly nearer than the boundary hides it, as a real fence would be hidden. It is only ghosted, never removed, so it stays findable through a crop row. It works to about 8 m and on phones that support depth.</p>
+      <p>Occlusion, from ARCore's depth: anything clearly nearer than the boundary hides it, as a real fence would be hidden. It is only ghosted, never removed, so it — and the drop points — stay findable through a crop row. It works to about 8 m and on phones that support depth.</p>
     </div>
     <div>
       <h3>Can the phone edit a boundary?</h3>
@@ -1439,32 +1446,33 @@ footer{
     <li><code>npm install</code> at <code>plot-web/</code> — one npm workspace root covering <code>shared</code>, <code>service</code> and <code>web</code>.</li>
     <li><code>npm run build:shared</code> first, always. The other two workspaces compile against its emitted types, not its source.</li>
     <li><code>npm run dev:api</code> and <code>npm run dev:web</code> in two terminals. With no Supabase credentials in the environment the API falls back to SQLite, so it runs with nothing to provision.</li>
-    <li><code>npm run test:api</code> for the 17 API tests. <code>node tools/gen-palette.mjs --check</code> fails the build if either generated palette has drifted from <code>palette.json</code>.</li>
+    <li>Run <code>service/sql/003_updated_flow.sql</code> once in the Supabase SQL editor before deploying this flow — it deletes every plot and drops the access-point column, so the data starts fresh. Then <code>npm run seed</code> for demo plots if wanted.</li>
+    <li><code>npm run test:api</code> for the API tests. <code>node tools/gen-palette.mjs --check</code> fails the build if either generated palette has drifted from <code>palette.json</code>.</li>
   </ol>
 
   <h3>Android (Flutter)</h3>
   <ol class="steps">
     <li>Flutter 3.22 or newer. <code>flutter pub get</code> at the repository root (the plugin) and in <code>example/</code> (the standalone app).</li>
-    <li><code>flutter analyze</code> — infos are fatal in CI — and <code>flutter test</code> for all 190 tests. No emulator, no device.</li>
+    <li><code>flutter analyze</code> — infos are fatal in CI — and <code>flutter test</code> for all 176 tests. No emulator, no device.</li>
     <li><code>cd example &amp;&amp; flutter build apk --release --target-platform android-arm64</code>. The API defaults to the deployed service; override it with <code>--dart-define=PLOT_API_BASE_URL=https://your-api/</code>.</li>
-    <li>Every push to the <code>flutter</code> branch builds a debug APK and a release arm64 APK in GitHub Actions; download the <code>plot-finder-release-arm64-apk</code> artifact, unzip it, and install the APK from a file manager.</li>
+    <li>Every push to the <code>flutter</code> or <code>flutter_updated_flow</code> branch builds a debug APK and a release arm64 APK in GitHub Actions; download the <code>plot-finder-release-arm64-apk</code> artifact, unzip it, and install the APK from a file manager.</li>
     <li>To embed in another app, follow <code>INTEGRATION.md</code>: one dependency, one <code>PlotFinderScreen</code> push.</li>
   </ol>
 
   <h3>In the field</h3>
   <ol class="steps">
-    <li>Sync while you still have signal. Plots within 5 km, plus their health rasters.</li>
-    <li>Open the plot and tap <em>Find this plot</em>. The loader ticks off camera, motion tracking and GPS; move the phone gently side to side if motion tracking is waiting.</li>
-    <li>Follow the arrow pill to the access point. On the way, the heading chip turns green ("from your walk") without any tap.</li>
-    <li>At the access point — the button enables within 50 m — tap <em>I'm at the access point</em>. Then walk into the plot; each step refines the direction.</li>
-    <li>Use the corner minimap to see where you are in the field and where the red patches lie; tap it to enlarge. Walk to hotspot 1 first — hotspots are ranked worst-first, deterministically.</li>
-    <li>Read the chip before trusting the overlay. If GPS is weak and direction stays on the compass, open the sheet and use <em>Direction off? Aim at the access point</em> from 10 m away.</li>
+    <li>Sync while you still have signal. Plots within 5 km, plus their crop-condition rasters.</li>
+    <li>Open any plot and tap <em>Open AR view</em>. The loader ticks off camera, motion tracking and GPS; move the phone gently side to side if motion tracking is waiting. Every plot within 400 m is drawn, not just the one you opened.</li>
+    <li>Follow the pill to the nearest boundary. On the way, the heading chip turns green ("from your walk") without any tap.</li>
+    <li>Within 10 m of a boundary the sheet says <em>Anchored to the … boundary</em>. Nothing to press.</li>
+    <li>Pick crop greenness, crop vigour or water stress in the sheet. Red drop points are critical patches, yellow moderate; the minimap shows them all around you — tap it to enlarge.</li>
+    <li>Read the chip before trusting the overlay. Indoors GPS is ±50–100 m and the plots will sit wherever that puts them; the drop points are still drawn so the flow can be tried at a desk.</li>
   </ol>
 
   <footer>
-    Plot Finder · builder's manual · revision of 27 October 2026 (Flutter branch)<br>
+    Plot Finder · builder's manual · revision of 27 October 2026 (<code>flutter_updated_flow</code> branch: 3 m cells, three indices, drop points on every nearby plot, automatic boundary anchor)<br>
     Web tool and API: its own repository — React 18, Express 4, Supabase PostGIS, deployed on Vercel.<br>
-    Mobile: this repository's <code>flutter</code> branch — Flutter plugin <code>plot_finder</code> with an <code>example/</code> app, plugin minSdk 24, ARCore motion tracking (optional).<br>
+    Mobile: this repository's <code>flutter_updated_flow</code> branch — Flutter plugin <code>plot_finder</code> with an <code>example/</code> app, plugin minSdk 24, ARCore motion tracking (optional).<br>
     API measurements were taken from the deployed API on 27 August 2026; mobile figures are from the October 2026 Flutter build. Field-test findings behind the October changes are in <code>docs/research/ar-positioning.md</code>.
   </footer>
 </section>
