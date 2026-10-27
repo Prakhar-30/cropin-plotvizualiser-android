@@ -23,8 +23,9 @@ internal class ScenePlot(
 )
 
 /**
- * Every nearby plot and every drop point, as Dart describes them, in one local
- * metric frame: east, north and up in metres from a fixed origin, true north up.
+ * Every nearby plot, its moderate and critical ground cells and every drop
+ * point, as Dart describes them, in one local metric frame: east, north and up
+ * in metres from a fixed origin, true north up.
  *
  * Built when the nearby plots, the crop-condition index or the snapshots
  * change - never per frame. What moves per frame is only the camera, which
@@ -32,6 +33,8 @@ internal class ScenePlot(
  */
 internal class OverlayScene(
     val plots: List<ScenePlot>,
+    /** Moderate and critical ground cells, triangles: (east, north, r, g, b, a) per vertex. */
+    val cells: FloatArray,
     /** Drop points: (east, north, r, g, b) per point. */
     val drops: FloatArray,
     val wallHeight: Float,
@@ -64,6 +67,7 @@ internal class OverlayScene(
             }
             return OverlayScene(
                 plots = plots,
+                cells = floats(map["cells"]),
                 drops = floats(map["drops"]),
                 wallHeight = number("wallHeight", 2.6f),
                 postHeight = number("postHeight", 2.5f),
@@ -138,6 +142,9 @@ internal class ArOverlayRenderer {
 
     private var scene: OverlayScene? = null
     private var plots: List<PlotBuffers> = emptyList()
+    private var cellPositions: FloatBuffer? = null
+    private var cellColors: FloatBuffer? = null
+    private var cellVertexCount = 0
     private var dropStems: FloatBuffer? = null
     private var dropHeads: FloatBuffer? = null
     private var dropColors: FloatBuffer? = null
@@ -203,6 +210,7 @@ internal class ArOverlayRenderer {
         scene = next
         if (next == null) {
             plots = emptyList()
+            cellVertexCount = 0
             dropCount = 0
         } else if (program != 0) {
             build(next)
@@ -303,8 +311,8 @@ internal class ArOverlayRenderer {
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, depthTexture)
         GLES20.glUniform1i(uDepth, 0)
 
-        // Ground first - every plot's fill and outline - because everything
-        // else stands on it.
+        // Ground first - every plot's fill, the graded cells on it, then the
+        // outlines - because everything else stands on it.
         GLES20.glUniform1f(uGhost, SURFACE_GHOST)
         noFade()
         for (p in plots) {
@@ -312,6 +320,12 @@ internal class ArOverlayRenderer {
                 color(p.tintR, p.tintG, p.tintB, s.fillAlpha * s.alpha)
                 drawArrays(p.fill, null, GLES20.GL_TRIANGLES, 0, p.fillCount)
             }
+        }
+        if (cellVertexCount > 0) {
+            GLES20.glUniform1f(uAlpha, s.alpha)
+            drawArrays(cellPositions!!, cellColors, GLES20.GL_TRIANGLES, 0, cellVertexCount)
+        }
+        for (p in plots) {
             if (p.outlineCount > 1) {
                 lineWidth(4f)
                 color(p.tintR, p.tintG, p.tintB, 0.9f * s.alpha)
@@ -420,6 +434,19 @@ internal class ArOverlayRenderer {
 
     private fun build(s: OverlayScene) {
         plots = s.plots.map { buildPlot(it, s) }
+
+        // Graded cells lie just above the plot fill, so the two never fight.
+        cellVertexCount = s.cells.size / 6
+        val cellXyz = FloatArray(cellVertexCount * 3)
+        val cellRgba = FloatArray(cellVertexCount * 4)
+        for (i in 0 until cellVertexCount) {
+            cellXyz[i * 3] = s.cells[i * 6]
+            cellXyz[i * 3 + 1] = s.cells[i * 6 + 1]
+            cellXyz[i * 3 + 2] = 0.025f
+            System.arraycopy(s.cells, i * 6 + 2, cellRgba, i * 4, 4)
+        }
+        cellPositions = buffer(cellXyz)
+        cellColors = buffer(cellRgba)
 
         // Drop points: a stem as a line from the ground to the top, a head as
         // one point at the top. Both coloured by the point's zone.
