@@ -1,9 +1,12 @@
 # Plot Finder (Flutter) — AR plot finder
 
 > **This is the `flutter` branch.** The app has been rebuilt in Flutter, feature
-> for feature; `main` keeps the original Kotlin/Compose app. The algorithms, the
-> numbers and the reasoning below are unchanged by the port. How it was done is
-> logged milestone by milestone in [`MILESTONES.md`](MILESTONES.md).
+> for feature; `main` keeps the original Kotlin/Compose app. The port kept every
+> algorithm; the October 2026 field tests then added ARCore motion tracking, a
+> single "I'm at the access point" action, direction from the walk, native
+> rendering with occlusion, a minimap and a startup loader - see
+> [In the field](#in-the-field) and [Why not ARCore](#why-not-arcore). Every step
+> is logged milestone by milestone in [`MILESTONES.md`](MILESTONES.md).
 >
 > It is packaged as a **Flutter plugin** so another Flutter app can embed it with
 > one dependency and one screen - see [`INTEGRATION.md`](INTEGRATION.md). The
@@ -21,8 +24,10 @@ Boundaries are drawn there and only there; this app is a reader.
 
 > **Start here:** [`docs/builders-manual.html`](docs/builders-manual.html) is the
 > full builder's manual — the problem, both halves of the system, every algorithm
-> with its reasoning, the library inventory, and 14 diagrams. Open it in a
-> browser. This README is the operational summary.
+> with its reasoning, the library inventory, and 14 diagrams — revised for this
+> branch in October 2026. Open it in a browser. This README is the operational
+> summary; the field-test research is in
+> [`docs/research/ar-positioning.md`](docs/research/ar-positioning.md).
 
 ## Hard constraints
 
@@ -32,14 +37,40 @@ Boundaries are drawn there and only there; this app is a reader.
 | **Offline once cached** | Rural sites have no data. Every read is from the local SQLite cache; sync is an explicit, optional action |
 | **No ARCore Geospatial API** | It depends on Google's Visual Positioning System, which needs Street View coverage farmland does not have — and it reports confident accuracy figures while silently falling back to raw GPS. See [Why not ARCore](#why-not-arcore) |
 
+## In the field
+
+1. **Pick the plot** from the cached list, open its detail page, tap
+   **Find this plot**.
+2. **A loader** over the camera ticks off *Camera*, *Motion tracking* and *GPS*
+   with a seconds counter, and after 20 s says to step into the open. The
+   location stream sends a last-known fix under 30 s old the moment it opens, so
+   the wait is usually short.
+3. **Walk to the access point** following the arrow pill. Meanwhile the app
+   works out north by itself, by fitting ARCore's tracked walk to the GNSS fixes
+   taken along it (`TrajectoryAligner`). No aiming step.
+4. **Tap "I'm at the access point"** - the one button. It stays disabled until
+   GPS puts you within **50 m** of the access point, and says how far is left.
+   Tapping fixes your position to the surveyed point; each step into the plot
+   then refines the direction.
+5. **Look**: walls on the boundary, crop-health cells on the ground, people and
+   trees in front hiding it (where the phone has ARCore depth), and a **minimap**
+   bottom-right - north up, health colours, ranked hotspots, you as a blue
+   arrow. Tap it to enlarge.
+
+Where GPS is too weak for the walk to set the direction (indoors, mostly), the
+expanded sheet offers the fallback: *Direction off? Aim at the access point and
+tap*, from at least 10 m away.
+
 ## Layout
 
 ```
 lib/core/geo       ENU frame, pinhole projection, near-plane clipping, polygon
                    distance, position stabiliser, orientation smoother, camera FOV
-lib/core/heading   heading fusion, course-over-ground detection, landmark snap
-lib/core/render    what to draw, in screen coordinates
-lib/pose           PoseSource interface + sensor implementation
+lib/core/heading   heading fusion, trajectory alignment (direction from the
+                   walk), course-over-ground detection, landmark snap
+lib/core/render    what to draw: screen-space overlay for the sensor path, the
+                   world scene and placement for the native ARCore renderer
+lib/pose           PoseSource interface: sensor and ARCore (VIO) implementations
 lib/location       LocationSource interface + fused location
 lib/core/motion    step detection, step length, step-length calibration
 lib/data           sqflite cache, HTTP sync, repositories
@@ -48,8 +79,9 @@ lib/ui             Flutter screens: plot list, plot detail, AR view
 lib/plot_finder.dart
                    the public API: PlotFinderScreen, PlotFinderConfig
 android/src/main/kotlin
-                   the plugin's native side: rotation vectors, camera geometry,
-                   location, permissions, device info
+                   the plugin's native side: rotation vectors, accelerometer,
+                   camera geometry, location, permissions, device info, and the
+                   ARCore view + GL renderer (ArCoreView.kt, ArOverlayRenderer.kt)
 example/           the standalone app, which embeds the package like any host
 ```
 
@@ -93,7 +125,7 @@ sizing CameraX to the sensor.
 flutter test
 ```
 
-**159 tests.** Every Kotlin test was ported, with the same hand-computed expected values —
+**190 tests.** Every Kotlin test was ported, with the same hand-computed expected values —
 derived from the documented model rather than by calling the code back on
 itself. They cover the ENU frame, projection and clipping, the position and
 orientation filters, heading fusion, the overlay builders, the health raster and
@@ -142,8 +174,8 @@ in the neighbour's field. So heading is never a bare number.
 
 | Source | Error | When |
 |---|---|---|
-| `COURSE_OVER_GROUND` | 3–5° | walked >20 m in a straight line at >0.7 m/s |
-| `LANDMARK_SNAP` | 2–3° | aimed at a known point and tapped |
+| `COURSE_OVER_GROUND` | 3–5° | sensor path: walked >20 m in a straight line at >0.7 m/s. ARCore path: the tracked walk fitted to GNSS (any route), error reported per fit |
+| `LANDMARK_SNAP` | 2–3° | aimed at a known point and tapped (now a fallback in the sheet) |
 | `MAGNETOMETER` | 15–25° | fallback only |
 
 Course over ground comes from `Location.bearing` accumulated over a walking
@@ -176,6 +208,15 @@ coordinates are cached) and taps. Both endpoints are known, so the true bearing
 is computable outright; the crosshair's horizontal offset from the optical centre
 is subtracted. One tap, heading pinned. Refused inside 10 m, where the agent's
 own fix error would dominate the bearing.
+
+**On the ARCore path** ARCore's visually tracked yaw is the carrier. A lock lasts
+the whole visit and the compass gets no say over it (indoors it rotated the plot
+about a standing agent); before any lock the compass offset is smoothed over 3 s.
+The walk lock is the trajectory aligner: ARCore's tracked path, rotated onto the
+GNSS fixes taken along it (weighted 2-D Procrustes), anchored at the access-point
+pin when there is one. Fixes worse than 15 m are ignored, and a fit is used only
+under 10°. The landmark snap takes its bearing from the same position the plot is
+drawn from, and checks "too close" (under 10 m) before "position too uncertain".
 
 ## Holding the overlay still
 
@@ -311,9 +352,10 @@ Persistent, not optional:
 
 - **Locked** (green) — heading from a recent walk or snap
 - **Holding** (amber) — gyro-carried, showing seconds since the last fix
-- **Unreliable** (grey) — compass only. The overlay greys out and the chip reads
-  *"walk a few steps to lock direction"*, which turns the worst failure mode into
-  a two-second user action.
+- **Unreliable** (grey) — compass only. On the sensor path the overlay greys out;
+  on the ARCore path it keeps the plot's colour, because a grey translucent wall
+  is invisible against a white wall or a pale sky. The chip reads *"walk a few
+  steps to lock direction"*, which turns the worst failure mode into a short walk.
 
 ## Telemetry
 
@@ -346,9 +388,11 @@ So ARCore is now used for **motion tracking only** — on-device visual-inertial
 odometry, no Street View, no network. `VioPoseSource` implements the same
 `PoseSource` seam: ARCore's yaw becomes the heading fusion's carrier, its
 frame-to-frame displacement moves the position filter directly, and GNSS is
-weighted down to a slow drift correction. An "I'm standing at the access
-point" button pins the absolute position. Phones without ARCore keep the
-sensor path. Details and sources: `docs/research/ar-positioning.md`.
+weighted down to a slow drift correction. "I'm at the access point" pins the
+absolute position, and the tracked walk sets the direction. The plot itself is
+drawn natively in ARCore's own GL frame, on the detected floor, occluded by
+nearer objects where depth is available. Phones without ARCore keep the sensor
+path. Details and sources: `docs/research/ar-positioning.md`.
 
 ## Out of scope for v0
 
@@ -361,14 +405,19 @@ already carries the columns a boundary edit would need.
 
 | File | What |
 |---|---|
-| [`docs/builders-manual.html`](docs/builders-manual.html) | Written for the Kotlin app; every algorithm and number in it still holds for this port, but file names and libraries refer to `main`. **The main document.** Problem statement, both halves of the system, all ten logics with their reasoning, full library inventory, 14 diagrams. Written for someone who has never seen the code. |
+| [`docs/builders-manual.html`](docs/builders-manual.html) | **The main document**, revised for this branch in October 2026. Problem statement, both halves of the system, all eleven logics with their reasoning (including ARCore tracking, the access-point pin, direction from the walk and depth occlusion), full library inventory, 14 diagrams. Written for someone who has never seen the code. |
+| [`docs/research/ar-positioning.md`](docs/research/ar-positioning.md) | The field tests and the literature behind each fix: PDR, VIO, latency and occlusion, the one-action flow. |
+| [`INTEGRATION.md`](INTEGRATION.md) | Embedding the plugin in another Flutter app. |
 | [`MILESTONES.md`](MILESTONES.md) | The build log — what each milestone covered and what is outstanding. |
 | `docs/archive/` | Superseded drafts, kept for history. Not current. |
 
 ## Build notes
 
-- Flutter, Android host in `android/`, min SDK 26, portrait-locked (the overlay
-  maths assumes the screen frame the sensor matrix is remapped into).
+- Flutter plugin (minSdk 24, ARCore's floor) with its example app in `example/`
+  (minSdk 26); the AR screen is portrait-locked while open (the overlay maths
+  assumes the screen frame the sensor matrix is remapped into).
+- CI builds a debug APK and a release arm64 APK on every push; take the
+  `plot-finder-release-arm64-apk` artifact from the run.
 - `cd example && flutter run` for a debug build; `flutter build apk --release`
   there for the one to put on a phone.
 - The API base URL defaults to the deployed service,

@@ -16,8 +16,9 @@ environment:
 
 # Everything that decides where the overlay lands lives in lib/core and imports
 # nothing but dart:math. The Android plumbing - rotation vectors, camera
-# geometry, location, permissions - is this package's own Kotlin, with no
-# third-party native dependencies; see android/src/main/kotlin.
+# geometry, location, permissions, and the ARCore view and renderer - is this
+# package's own Kotlin. Its one native dependency is ARCore (motion tracking
+# only, declared optional); see android/src/main/kotlin and android/build.gradle.
 dependencies:
   flutter:
     sdk: flutter

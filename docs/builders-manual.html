@@ -245,15 +245,15 @@ footer{
 <body>
 <header class="masthead">
   <div class="masthead-inner">
-    <div class="stamp">Builder's manual <span>/</span> Plot Finder <span>/</span> 27 Aug 2026</div>
+    <div class="stamp">Builder's manual <span>/</span> Plot Finder <span>/</span> 27 Oct 2026 · Flutter</div>
     <h1>Finding a boundary that isn't there</h1>
-    <p class="dek">Two pieces of software. One draws a farm plot on satellite imagery; the other stands in that field and shows you where its edges run, through the camera, with no signal and no ARCore. This is how both work, and why each part is built the way it is.</p>
+    <p class="dek">Two pieces of software. One draws a farm plot on satellite imagery; the other stands in that field and shows you where its edges run, through the camera, with no signal — using ARCore only to track the phone's own motion, never its Geospatial service. This is how both work, and why each part is built the way it is.</p>
     <dl class="meta-strip">
       <div><dt>Web tool</dt><dd>React 18 · MapLibre 5</dd></div>
       <div><dt>API</dt><dd>Express 4 · PostGIS</dd></div>
-      <div><dt>Mobile</dt><dd>Kotlin · CameraX · Compose</dd></div>
-      <div><dt>Tests</dt><dd>125 unit · 17 API</dd></div>
-      <div><dt>Debug APK</dt><dd>12.8 MB</dd></div>
+      <div><dt>Mobile</dt><dd>Flutter plugin · ARCore motion</dd></div>
+      <div><dt>Tests</dt><dd>190 Flutter · 17 API</dd></div>
+      <div><dt>Release APK</dt><dd>9.1 MB arm64</dd></div>
     </dl>
   </div>
 </header>
@@ -331,6 +331,7 @@ footer{
 
   <h3>Why the obvious answers were rejected</h3>
   <p><strong>ARCore Geospatial API.</strong> Google's own answer to this, and genuinely excellent — where it works. It resolves your pose by matching the camera against Street View imagery, so it needs Street View coverage, a live network connection at the moment of use, and a Play Services download. Rural farmland has none of the first and unreliable amounts of the second. A tool that degrades to nothing at the site it was built for is not a tool.</p>
+  <p>That rejection is of the <em>Geospatial</em> service only. Since the October field tests the app does use ARCore's plain <strong>motion tracking</strong> — on-device visual-inertial odometry that needs no Street View, no network and no API key — because GNSS alone could not hold a boundary still at close range. Sheet 04 explains why, and the app runs without it on phones that lack it.</p>
   <p><strong>RTK / external GNSS.</strong> Centimetre accuracy, and the correct answer if someone is paying for a survey. It is a second device, a subscription to a correction network, and a training burden, for a job whose tolerance is a couple of metres.</p>
   <p><strong>A better map screen.</strong> Cheap and already tried. Looking down at a top-down map and then up at a field requires the agent to do the projection in their head, which is exactly the step that goes wrong.</p>
 </section>
@@ -339,7 +340,7 @@ footer{
 <section id="solution">
   <p class="eyebrow">Sheet 02</p>
   <h2>The solution</h2>
-  <p class="lede">Draw the boundary where it actually is — standing up, in the camera, at the right distance — using only the sensors every Android phone already has.</p>
+  <p class="lede">Draw the boundary where it actually is — standing up, in the camera, at the right distance — using the phone's own GNSS, motion sensors and on-device camera tracking — nothing from the network once the plot is cached.</p>
 
   <p>The system is deliberately split in two, and the split is the most important architectural decision in the project:</p>
 
@@ -352,7 +353,7 @@ footer{
 
   <figure>
     <div class="frame">
-      <svg viewBox="0 0 720 300" role="img" aria-label="System map: browser draws a plot, posts it to the Express API, which validates and stores it in Supabase PostGIS. The Android app syncs plots and health rasters into a Room cache, and the AR view reads only from that cache.">
+      <svg viewBox="0 0 720 300" role="img" aria-label="System map: browser draws a plot, posts it to the Express API, which validates and stores it in Supabase PostGIS. The Flutter app syncs plots and health rasters into a sqflite cache, and the AR view reads only from that cache.">
         <defs>
           <marker id="a1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
             <path d="M0 0 L8 4 L0 8 z" style="fill:var(--accent)"/>
@@ -391,24 +392,24 @@ footer{
 
         <rect class="f-card" x="392" y="36" width="150" height="60"/>
         <text class="t-hd" x="404" y="58">Sync</text>
-        <text class="t-sm" x="404" y="76">Retrofit + OkHttp</text>
+        <text class="t-sm" x="404" y="76">dart:io HttpClient</text>
         <text class="t-sm" x="404" y="88">gzip on the wire</text>
 
         <rect class="f-ac" x="392" y="124" width="150" height="58"/>
-        <text class="t-hd" x="404" y="146">Room cache</text>
+        <text class="t-hd" x="404" y="146">sqflite cache</text>
         <text class="t-sm" x="404" y="164">the source of truth</text>
 
         <rect class="f-card" x="392" y="210" width="328" height="66"/>
         <text class="t-hd" x="404" y="232">AR view</text>
-        <text class="t-sm" x="404" y="249">GNSS 1 Hz · rotation vectors ~50 Hz · CameraX preview</text>
-        <text class="t-sm" x="404" y="263">→ ENU frame → pinhole projection → Compose Canvas</text>
+        <text class="t-sm" x="404" y="249">ARCore motion tracking · GNSS 1 Hz · access-point pin</text>
+        <text class="t-sm" x="404" y="263">→ ENU frame → placement → drawn in ARCore's GL frame</text>
 
         <path class="s-ac" d="M467 96 V120" marker-end="url(#a1)"/>
         <path class="s-ac" d="M467 182 V206" marker-end="url(#a1)"/>
 
         <rect class="f-card" x="570" y="124" width="150" height="58"/>
         <text class="t-hd" x="582" y="146">Sensors</text>
-        <text class="t-sm" x="582" y="164">no ARCore, no RTK</text>
+        <text class="t-sm" x="582" y="164">no Geospatial, no RTK</text>
         <path class="s-ink" d="M645 182 V206" marker-end="url(#a2)"/>
 
         <path class="s-rule s-dash" d="M366 28 V286"/>
@@ -420,11 +421,12 @@ footer{
 
   <h3>Why this helps, concretely</h3>
   <ul>
-    <li><strong>It works where the crop is.</strong> No Street View, no live network, no vendor AR runtime. Sync at the office or at the gate; the visit itself needs nothing.</li>
-    <li><strong>It runs on the phone the agent already carries.</strong> Minimum Android 8.0, ~13 MB installed. No hardware to procure, lose or charge.</li>
+    <li><strong>It works where the crop is.</strong> No Street View and no live network. ARCore's on-device tracking where Google Play Services for AR is installed, plain phone sensors where it is not. Sync at the office or at the gate; the visit itself needs nothing.</li>
+    <li><strong>It runs on the phone the agent already carries.</strong> Android 7.0 or newer (the plugin's floor, set by ARCore), about 9 MB as a release build. No hardware to procure, lose or charge.</li>
     <li><strong>It shows a shape, not a point.</strong> An outline can be matched against the real hedge line, which means the agent can confirm the app is right — and catch it when it is wrong. A pin offers no such check.</li>
     <li><strong>It carries the crop-health layer to the soil.</strong> The stressed patch stops being a picture in an office and becomes ground you can stand on, with a numbered marker telling you which one to walk to first.</li>
     <li><strong>It is honest about its own error.</strong> Every reading carries where the heading came from, how old it is, and the expected error in degrees. Near a boundary the drawn edge widens to the live GNSS accuracy rather than pretending to a crisp line.</li>
+    <li><strong>It asks the agent for one thing.</strong> Walk to the access point following the arrow, tap <em>I'm at the access point</em>. Direction is worked out from the walk itself, with no aiming step.</li>
   </ul>
 
   <div class="note warn">
@@ -521,124 +523,130 @@ footer{
 <section id="mobile">
   <p class="eyebrow">Sheet 04</p>
   <h2>How the mobile app works</h2>
-  <p class="lede">Every read goes to the local database and nothing on screen ever waits for the network. Sync is a separate, explicit action that refills the cache when there happens to be signal.</p>
+  <p class="lede">A Flutter plugin that a host app opens with one widget. Every read goes to the local database and nothing on screen waits for the network. In the field the agent is asked to do exactly one thing.</p>
 
-  <p>Open the app and you get a list of cached plots. Pick one, tap <em>Find in AR</em>, and the camera opens. From that moment three independent streams are running, at three very different rates, and the entire app is the business of turning them into pixels that sit still.</p>
+  <p>The mobile side is now a Flutter package, <code>plot_finder</code>, with its standalone app in <code>example/</code>. All of the reasoning — frames, filters, heading, geometry — is plain Dart under <code>lib/core</code> and runs in unit tests with no device. The Android plumbing is the package's own Kotlin plugin: location from the framework's <code>LocationManager</code>, rotation vectors, the accelerometer, permissions, camera geometry, and the ARCore view that draws the camera image and the plot. A host app such as Cropin Grow adds one dependency and pushes <code>PlotFinderScreen</code>; see <code>INTEGRATION.md</code>.</p>
+
+  <h3>The agent's two moments</h3>
+  <ol class="steps">
+    <li><strong>Pick the plot.</strong> The list shows cached plots with distance; the detail page shows the outline, access point and facts. <em>Find this plot</em> opens the camera.</li>
+    <li><strong>Wait a few seconds, visibly.</strong> A card over the camera ticks off <em>Camera</em>, <em>Motion tracking</em> and <em>GPS</em>, with a seconds counter, and after 20 s says to step into the open. The location stream sends the phone's last-known fix the moment it opens if it is under 30 s old, so usually there is almost no wait.</li>
+    <li><strong>Walk there.</strong> A pill under the heading chip points at the access point and gives the distance. While the agent walks, the app silently works out where north is from the shape of the walk (logic 11). No button.</li>
+    <li><strong>Say "I'm at the access point".</strong> The one action on the screen. It stays disabled until GPS puts the agent within 50 m of the access point, and its label says why. Tapping it fixes the position to the surveyed point; from then on every step into the plot refines the direction.</li>
+    <li><strong>Look.</strong> The boundary stands up as walls, the crop-health cells lie on the ground, people and trees in front hide it, and a minimap in the corner shows the whole field from above with the agent as a blue arrow.</li>
+  </ol>
 
   <figure>
     <div class="frame">
-      <svg viewBox="0 0 720 400" role="img" aria-label="Mobile pipeline. GNSS at 1 Hz feeds the course-over-ground detector and the position stabiliser. Rotation vectors at 50 Hz feed the orientation smoother and heading fusion. Camera characteristics give intrinsics. All three converge on an ENU frame and a pinhole projection that draws to a Compose canvas.">
+      <svg viewBox="0 0 720 420" role="img" aria-label="Mobile pipeline. ARCore motion tracking, GNSS and the phone's motion sensors feed the trajectory aligner, heading fusion and position stabiliser. Their output places the plot in ARCore's world, and a native renderer draws it in the same GL frame as the camera image. Flutter draws only text and furniture on top: label, guide pill, minimap and loader.">
         <defs>
           <marker id="a4" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
             <path d="M0 0 L8 4 L0 8 z" style="fill:var(--accent)"/>
           </marker>
         </defs>
 
-        <!-- column headers -->
         <text class="t-sm" x="0" y="12">INPUT</text>
         <text class="t-sm" x="248" y="12">CONDITIONING</text>
-        <text class="t-sm" x="500" y="12">GEOMETRY</text>
+        <text class="t-sm" x="500" y="12">PLACE AND DRAW</text>
         <line class="s-rule" x1="0" y1="20" x2="720" y2="20"/>
 
-        <!-- GNSS row -->
-        <rect class="f-card" x="0" y="34" width="200" height="56"/>
-        <text class="t-hd" x="12" y="54">Fused location</text>
-        <text class="t-sm" x="12" y="71">1 Hz · lat, lng, accuracy,</text>
-        <text class="t-sm" x="12" y="83">Doppler speed, bearing</text>
+        <rect class="f-ac" x="0" y="34" width="200" height="70"/>
+        <text class="t-hd" x="12" y="54">ARCore, motion only</text>
+        <text class="t-sm" x="12" y="71">30 Hz camera pose + projection</text>
+        <text class="t-sm" x="12" y="83">floor plane · depth image</text>
+        <text class="t-sm" x="12" y="95">no Geospatial, no network</text>
 
-        <rect class="f-ac" x="248" y="26" width="200" height="34"/>
-        <text class="t-lbl" x="258" y="47">Course-over-ground detector</text>
-        <rect class="f-ac" x="248" y="68" width="200" height="34"/>
-        <text class="t-lbl" x="258" y="89">Position stabiliser</text>
+        <rect class="f-card" x="0" y="118" width="200" height="56"/>
+        <text class="t-hd" x="12" y="138">GNSS</text>
+        <text class="t-sm" x="12" y="155">1 Hz · accuracy, speed</text>
+        <text class="t-sm" x="12" y="167">last-known fix on open</text>
 
-        <path class="s-ac" d="M200 54 C222 54 226 43 244 43" marker-end="url(#a4)"/>
-        <path class="s-ac" d="M200 68 C222 68 226 85 244 85" marker-end="url(#a4)"/>
+        <rect class="f-card" x="0" y="188" width="200" height="70"/>
+        <text class="t-hd" x="12" y="208">Phone sensors</text>
+        <text class="t-sm" x="12" y="225">magnetic rotation vector</text>
+        <text class="t-sm" x="12" y="237">fallback: game vector,</text>
+        <text class="t-sm" x="12" y="249">accelerometer steps</text>
 
-        <!-- sensor row -->
-        <rect class="f-card" x="0" y="112" width="200" height="70"/>
-        <text class="t-hd" x="12" y="132">Rotation vectors</text>
-        <text class="t-sm" x="12" y="149">~50 Hz · GAME (gyro carrier)</text>
-        <text class="t-sm" x="12" y="161">~50 Hz · ROTATION (magnetic)</text>
-        <text class="t-sm" x="12" y="175">only the carrier is smoothed</text>
+        <rect class="f-ac" x="248" y="34" width="200" height="34"/>
+        <text class="t-lbl" x="258" y="55">Trajectory aligner</text>
+        <rect class="f-ac" x="248" y="80" width="200" height="34"/>
+        <text class="t-lbl" x="258" y="101">Heading fusion</text>
+        <rect class="f-ac" x="248" y="126" width="200" height="34"/>
+        <text class="t-lbl" x="258" y="147">Position stabiliser</text>
+        <rect class="f-card" x="248" y="172" width="200" height="34"/>
+        <text class="t-lbl" x="258" y="193">Pin at the access point</text>
+        <rect class="f-card" x="248" y="218" width="200" height="40"/>
+        <text class="t-lbl" x="258" y="235">Fallback only:</text>
+        <text class="t-sm" x="258" y="250">orientation smoother · PDR</text>
 
-        <rect class="f-ac" x="248" y="112" width="200" height="34"/>
-        <text class="t-lbl" x="258" y="133">Orientation smoother</text>
-        <rect class="f-ac" x="248" y="154" width="200" height="34"/>
-        <text class="t-lbl" x="258" y="175">Heading fusion</text>
+        <path class="s-ac" d="M200 52 H244" marker-end="url(#a4)"/>
+        <path class="s-ac" d="M200 80 C222 80 226 97 244 97" marker-end="url(#a4)"/>
+        <path class="s-ac" d="M200 92 C224 92 224 140 244 140" marker-end="url(#a4)"/>
+        <path class="s-ac" d="M200 140 C222 140 226 56 244 56" marker-end="url(#a4)"/>
+        <path class="s-ac" d="M200 150 H244" marker-end="url(#a4)"/>
+        <path class="s-ac" d="M200 230 H244" marker-end="url(#a4)"/>
+        <path class="s-ac" d="M348 68 V76" marker-end="url(#a4)"/>
+        <path class="s-ac" d="M348 172 V164" marker-end="url(#a4)"/>
 
-        <path class="s-ac" d="M200 132 H244" marker-end="url(#a4)"/>
-        <path class="s-ac" d="M200 160 C224 160 224 171 244 171" marker-end="url(#a4)"/>
-        <path class="s-ac" d="M348 60 V108" marker-end="url(#a4)"/>
-        <text class="t-ac" x="354" y="86">heading fix</text>
+        <rect class="f-card" x="500" y="34" width="220" height="56"/>
+        <text class="t-hd" x="512" y="54">World scene</text>
+        <text class="t-sm" x="512" y="71">plot + cells in its own metres</text>
+        <text class="t-sm" x="512" y="83">sent once per plot / layer</text>
 
-        <!-- camera row -->
-        <rect class="f-card" x="0" y="204" width="200" height="56"/>
-        <text class="t-hd" x="12" y="224">Camera characteristics</text>
-        <text class="t-sm" x="12" y="241">sensor size + focal length</text>
-        <text class="t-sm" x="12" y="253">→ true field of view</text>
+        <rect class="f-ac" x="500" y="104" width="220" height="56"/>
+        <text class="t-hd" x="512" y="124">Placement</text>
+        <text class="t-sm" x="512" y="141">yaw + offset into ARCore's world</text>
+        <text class="t-sm" x="512" y="153">sent only when it moves</text>
 
-        <rect class="f-card" x="248" y="204" width="200" height="34"/>
-        <text class="t-lbl" x="258" y="225">CameraIntrinsics</text>
-        <path class="s-ac" d="M200 226 H244" marker-end="url(#a4)"/>
+        <rect class="f-ac" x="500" y="174" width="220" height="70"/>
+        <text class="t-hd" x="512" y="194">Native renderer (GL)</text>
+        <text class="t-sm" x="512" y="211">camera image, then the plot,</text>
+        <text class="t-sm" x="512" y="223">same frame, same matrices</text>
+        <text class="t-sm" x="512" y="235">depth-tested against the scene</text>
 
-        <!-- geometry column -->
-        <rect class="f-ac" x="500" y="34" width="220" height="60"/>
-        <text class="t-hd" x="512" y="55">ENU frame</text>
-        <text class="t-sm" x="512" y="72">degrees → metres, once</text>
-        <text class="t-sm" x="512" y="85">re-anchored every 50 m</text>
+        <path class="s-ac" d="M448 97 C470 97 474 132 496 132" marker-end="url(#a4)"/>
+        <path class="s-ac" d="M448 143 C470 143 474 136 496 136" marker-end="url(#a4)"/>
+        <path class="s-ac" d="M610 90 V100" marker-end="url(#a4)"/>
+        <path class="s-ac" d="M610 160 V170" marker-end="url(#a4)"/>
 
-        <rect class="f-card" x="500" y="112" width="220" height="76"/>
-        <text class="t-hd" x="512" y="133">Overlay builders</text>
-        <text class="t-sm" x="512" y="150">boundary walls · rails · posts</text>
-        <text class="t-sm" x="512" y="163">accuracy bands · health patches</text>
-        <text class="t-sm" x="512" y="176">hotspot markers · distance label</text>
+        <line class="s-rule" x1="0" y1="282" x2="720" y2="282"/>
+        <rect class="f-card" x="0" y="298" width="440" height="56"/>
+        <text class="t-hd" x="12" y="318">sqflite cache</text>
+        <text class="t-sm" x="12" y="335">boundary ring + health snapshot, read once when the screen opens</text>
+        <path class="s-ac" d="M440 326 H496" marker-end="url(#a4)"/>
 
-        <rect class="f-card" x="500" y="204" width="220" height="56"/>
-        <text class="t-hd" x="512" y="224">Pinhole projection</text>
-        <text class="t-sm" x="512" y="241">translate → rotate → divide</text>
-        <text class="t-sm" x="512" y="253">near-plane clip</text>
+        <rect class="f-card" x="500" y="290" width="220" height="70"/>
+        <text class="t-hd" x="512" y="310">Flutter, on top</text>
+        <text class="t-sm" x="512" y="327">label · guide pill · minimap</text>
+        <text class="t-sm" x="512" y="339">loader · chip · one button</text>
+        <path class="s-ac" d="M610 244 V286" marker-end="url(#a4)"/>
 
-        <path class="s-ac" d="M448 60 H496" marker-end="url(#a4)"/>
-        <path class="s-ac" d="M448 150 H496" marker-end="url(#a4)"/>
-        <path class="s-ac" d="M448 226 H496" marker-end="url(#a4)"/>
-        <path class="s-ac" d="M610 94 V108" marker-end="url(#a4)"/>
-        <path class="s-ac" d="M610 188 V200" marker-end="url(#a4)"/>
-
-        <!-- output -->
-        <line class="s-rule" x1="0" y1="290" x2="720" y2="290"/>
-        <rect class="f-ac" x="500" y="306" width="220" height="54"/>
-        <text class="t-hd" x="512" y="327">Compose Canvas</text>
-        <text class="t-sm" x="512" y="344">drawn over the CameraX preview</text>
-        <path class="s-ac" d="M610 260 V302" marker-end="url(#a4)"/>
-
-        <rect class="f-card" x="0" y="306" width="440" height="54"/>
-        <text class="t-hd" x="12" y="327">Room cache</text>
-        <text class="t-sm" x="12" y="344">boundary ring + health snapshot, read once when the screen opens</text>
-        <path class="s-ac" d="M440 333 H496" marker-end="url(#a4)"/>
-
-        <text class="t-sm" x="0" y="386">Redraw is triggered by a new pose or a new fix — never by a timer, so a still phone does no work.</text>
+        <text class="t-sm" x="0" y="384">Without ARCore the same conditioning feeds the older path: rotation vectors and counted steps,</text>
+        <text class="t-sm" x="0" y="400">projected in Dart and painted on the Flutter canvas over the camera plugin's preview.</text>
       </svg>
     </div>
-    <figcaption><b>FIG 04</b><span>The whole app on one sheet. Everything in the middle column exists to stop the right column from twitching.</span></figcaption>
+    <figcaption><b>FIG 04</b><span>The whole app on one sheet. The middle column decides where the plot is; the right column makes sure it is drawn there in the same instant as the picture under it.</span></figcaption>
   </figure>
 
   <h3>The frame loop</h3>
-  <p>There is no render thread and no game loop. A new pose or a new fix updates a <code>StateFlow</code>, Compose recomposes, and the canvas redraws. The pose stream is published only on the carrier sensor tick, not on both rotation sensors, because every emission rebuilds the overlay — several hundred ground cells reprojected — and a magnetic sample changes the drawn attitude by nothing at all.</p>
+  <p>On the ARCore path there are two loops. The GL thread runs at camera rate: it draws the camera image, then draws the plot with that same frame's view and projection matrices, so the boundary cannot lag the picture — the sliding corner seen in the third field test was exactly that lag, when the plot was still painted by Flutter a frame or two late. Dart runs at sensor and fix rate: it updates the position and heading, and sends the renderer a new <em>placement</em> only when the plot's registration on the earth has actually moved (a pin, a heading lock, a GNSS drift correction). Walking does not move it, because the agent's position and ARCore's camera move together. Flutter repaints only what is text or furniture: the label, the guide pill, the minimap's arrow.</p>
+  <p>Without ARCore — an unsupported phone, or a session that fails to start — the screen falls back by itself to the original design: the camera plugin's preview, rotation vectors and counted steps, projected in Dart and painted on a Flutter canvas.</p>
 
-  <p>One thing worth being precise about, because it is the question the team will ask first: <strong>the camera does not detect anything.</strong> There is no image processing, no feature tracking, no plane detection, no SLAM. The camera is a backdrop. The app knows where it is from GNSS and which way it is pointing from the gyroscope, and it projects known coordinates onto the preview using the lens's real focal length. That is why it works in the dark, in fog, and facing a blank wall — and equally why it cannot correct itself by looking at the scene.</p>
+  <p>One thing worth being precise about, because it is the question the team will ask first: <strong>the camera does not recognise anything.</strong> ARCore tracks feature points in the image to measure how the phone moves, measures depth for occlusion, and finds the floor plane; nothing looks for fields, fences or crops. Where the plot is comes from its stored coordinates, GNSS and the access-point pin. That is why a crop row cannot move the boundary — and why the app cannot correct a wrong boundary by looking at the scene.</p>
 </section>
+
 
 <!-- ============================================ 05 LOGICS -->
 <section id="logics">
   <p class="eyebrow">Sheet 05</p>
   <h2>The logics, one by one</h2>
-  <p class="lede">Ten pieces of reasoning that between them account for nearly all of the code that is not UI. Each is here because a specific thing went wrong without it.</p>
+  <p class="lede">Eleven pieces of reasoning that between them account for nearly all of the code that is not UI. Each is here because a specific thing went wrong without it. File paths are the Flutter package's; the web's are unchanged.</p>
 
   <!-- L1 -->
   <div class="logic">
     <div class="logic-head">
       <h3>01 · Local metric frame (ENU)</h3>
-      <span class="logic-file">core/geo/Enu.kt · shared/src/constants.ts</span>
+      <span class="logic-file">lib/core/geo/enu.dart · shared/src/constants.ts</span>
     </div>
     <div class="logic-body">
       <div class="slot"><span>What it does</span>
@@ -708,7 +716,7 @@ footer{
   <div class="logic">
     <div class="logic-head">
       <h3>02 · Pinhole projection and near-plane clipping</h3>
-      <span class="logic-file">core/geo/Projection.kt</span>
+      <span class="logic-file">lib/core/geo/projection.dart · camera_geometry.dart · arcore_pose.dart</span>
     </div>
     <div class="logic-body">
       <div class="slot"><span>What it does</span>
@@ -716,6 +724,7 @@ footer{
       </div>
       <div class="slot"><span>Why it exists in this form</span>
         <p>The focal length is not guessed. <code>CameraCharacteristics</code> gives the physical sensor size and the lens focal length in millimetres, from which the true field of view follows; the app logs it on startup so it can be read off a real handset. Assuming a typical FOV instead scales the entire overlay by whatever the error is, which reads as the boundary being at the wrong distance.</p>
+        <p>On the ARCore path the question goes away: the plot is drawn by ARCore's own projection matrix, and the label's field of view is read back from it (<code>fov = 2·atan(1/P[0])</code>), so the overlay is drawn with exactly the lens geometry of the picture under it.</p>
         <p>Two details are load-bearing. <strong>The camera position is a required argument</strong> with no default — an earlier version took only the rotation and silently placed the camera at the frame origin, which welded the boundary to the anchor so it appeared to travel alongside the agent while the distance label counted honestly down. <strong>Points behind the camera must be culled</strong>, because a negative depth mirrors them into the frame in front: the field behind you renders on top of the field you are looking at.</p>
         <p>Culling alone is not enough for a polygon. If the agent stands inside the plot and you simply drop the two corners behind them, the remaining outline closes across the middle of the field. So the ring is clipped against the near plane instead, introducing new vertices on the plane — Sutherland–Hodgman, and the reason walls are wound as quads.</p>
       </div>
@@ -774,7 +783,7 @@ footer{
   <div class="logic">
     <div class="logic-head">
       <h3>03 · Position stabiliser</h3>
-      <span class="logic-file">core/geo/PositionStabilizer.kt</span>
+      <span class="logic-file">lib/core/geo/position_stabilizer.dart · lib/core/motion/</span>
     </div>
     <div class="logic-body">
       <div class="slot"><span>What it does</span>
@@ -788,6 +797,11 @@ footer{
         <p><strong>Accuracy floor.</strong> Android receivers routinely claim 1 m when the true error is several. No measurement is ever treated as sharper than 3 m, or the filter becomes over-confident and starts ignoring good fixes.</p>
         <p><strong>Outlier gate.</strong> An innovation beyond 3σ is rejected and the estimate held — but only for four consecutive fixes or five seconds, whichever comes first. A count alone is not a bound: four samples is four seconds at 1 Hz and forever at 0 Hz, which would strand the estimate on a stale position after one wild fix.</p>
         <p><strong>Slew limiter.</strong> The newest piece, and the one that closed out field testing. The Kalman estimate is built to be unbiased, which is right for an estimator and wrong for something a person is looking at: each fix nudges it a few centimetres and the overlay twitches with it. So the drawn position was separated from the estimate. The estimate tracks the receiver; the drawn position <em>chases</em> it at 8 cm/s while stationary, 2 m/s while walking, and snaps outright past 10 m so a genuine relocation is not hidden. The cap is on distance along the line to the estimate, not per axis — a per-axis cap lets a diagonal correction travel √2 times the intended rate and bends the path toward the axes, which is visible as the overlay sidling rather than sliding.</p>
+      </div>
+      <div class="slot"><span>What the field tests added</span>
+        <p><strong>Counted steps.</strong> The first indoor test walked 9 m towards a plot and the boundary walked away: under a roof the receiver reported near-zero Doppler speed, the filter took the agent for standing still, and froze. Steps are now detected from the accelerometer (peak-valley on its magnitude), sized by Weinberg's model with a gain calibrated against good GNSS, and each one moves the estimate <em>and</em> the drawn position at once. Steps, not Doppler, decide moving versus still.</p>
+        <p><strong>Camera tracking.</strong> Where ARCore runs, its frame-to-frame camera displacement replaces the steps entirely: measured, not modelled, to centimetres. While it flows, fixes count three times less and the drawn position absorbs GNSS corrections at no more than 5 cm/s, so a receiver drifting under a roof cannot slide the boundary sideways as the agent closes in.</p>
+        <p><strong>The pin.</strong> <em>I'm at the access point</em> replaces the estimate with the surveyed point outright, and fixes then count ten times less again. It is offered only within 50 m by GPS, so a tap from the next field cannot place the plot.</p>
       </div>
       <figure>
         <div class="frame">
@@ -834,7 +848,7 @@ footer{
   <div class="logic">
     <div class="logic-head">
       <h3>04 · Orientation smoother</h3>
-      <span class="logic-file">core/geo/OrientationSmoother.kt</span>
+      <span class="logic-file">lib/core/geo/orientation_smoother.dart · fallback path</span>
     </div>
     <div class="logic-body">
       <div class="slot"><span>What it does</span>
@@ -845,7 +859,7 @@ footer{
         <p>Interpolation is on quaternions, not matrices. Averaging rotation matrices element-wise does not produce a rotation: the result is not orthonormal and it shears the overlay rather than turning it. The matrix-to-quaternion conversion uses Shepperd's method, branching on the largest diagonal term — not an optimisation, but because the naive form divides by a value approaching zero for rotations near 180°, which is exactly a phone turned to face behind the agent.</p>
       </div>
       <div class="slot"><span>The one subtle decision</span>
-        <p>The filter adapts on <em>deviation from the current estimate</em>, not on frame-to-frame angular rate. Jitter of a degree and a half arriving every 20 ms is an instantaneous rate of 75 °/s, which looks exactly like a deliberate pan and defeats a rate-adaptive filter completely. Deviation separates them cleanly: jitter is bounded by its own amplitude however fast it arrives, because the estimate sits in the middle of it, while a genuine turn makes the estimate fall behind and the gap grows until the filter speeds up to close it.</p>
+        <p>The filter adapts on <em>deviation from the current estimate</em>, not on frame-to-frame angular rate. Jitter of a degree and a half arriving every 20 ms is an instantaneous rate of 75 °/s, which looks exactly like a deliberate pan and defeats a rate-adaptive filter completely. (On the ARCore path this filter is not needed: ARCore's attitude is visually tracked and already steady. It still runs on the sensor fallback.) Deviation separates them cleanly: jitter is bounded by its own amplitude however fast it arrives, because the estimate sits in the middle of it, while a genuine turn makes the estimate fall behind and the gap grows until the filter speeds up to close it.</p>
         <p>Field testing raised the deviation threshold from 10° to 25°. Walking is not a still phone with noise on top — each footfall pitches and rolls the handset several degrees and an arm swing adds more, so ordinary gait was reading as deliberate motion and the boundary jogged along with the walk. A deliberate pan is 60° or more and still clears the higher bar immediately.</p>
       </div>
       <figure>
@@ -898,7 +912,7 @@ footer{
   <div class="logic">
     <div class="logic-head">
       <h3>05 · Heading fusion</h3>
-      <span class="logic-file">core/heading/ · HeadingFusion.kt · CourseOverGroundDetector.kt</span>
+      <span class="logic-file">lib/core/heading/ · heading_fusion.dart · trajectory_aligner.dart · course_over_ground_detector.dart</span>
     </div>
     <div class="logic-body">
       <div class="slot"><span>What it does</span>
@@ -914,6 +928,10 @@ footer{
       </div>
       <div class="slot"><span>Two sensors, one job each</span>
         <p><code>TYPE_GAME_ROTATION_VECTOR</code> has no magnetometer input: smooth, disturbance-proof, and arbitrary in absolute yaw. That is the carrier. <code>TYPE_ROTATION_VECTOR</code> knows where north is and feeds only the trim. Only the carrier is smoothed and only the carrier publishes a pose — running both through one filter was a real bug that quietly disabled the smoother, because the two attitudes sit tens of degrees apart in yaw and the deviation measure saturated permanently.</p>
+      </div>
+      <div class="slot"><span>On the ARCore path</span>
+        <p>ARCore's yaw becomes the carrier instead of the game rotation vector. It is visually tracked and drifts well under a degree a minute, so two rules change: a lock lasts the whole visit rather than lapsing to the compass after three minutes, and the compass gets <strong>no</strong> authority over a lock — indoors and beside steel it rotated the plot about a standing agent. Before any lock the compass offset is smoothed over 3 s so a compass-placed plot does not shake.</p>
+        <p>The walk lock is replaced by the trajectory aligner (logic 11), which needs no straight walk. The landmark snap is no longer a main button: it sits in the expanded sheet as a fallback for weak GPS, takes its bearing from the same position the plot is drawn from (taken from the raw fix, repeated taps once walked the plot round the agent in a circle), and checks "too close to aim" before "position too uncertain".</p>
       </div>
       <figure>
         <div class="frame">
@@ -959,7 +977,7 @@ footer{
             <text class="t-sm" x="0" y="284">Whatever drift has accumulated is printed on the chip in degrees either way. Nothing is hidden by the relabel.</text>
           </svg>
         </div>
-        <figcaption><b>FIG 09</b><span>The overlay dims as confidence falls, and the health layer switches itself off entirely below a usable heading — a coloured patch on the wrong ground is worse than no patch.</span></figcaption>
+        <figcaption><b>FIG 09</b><span>The sensor path's states. The overlay dims as confidence falls, and the health layer switches itself off entirely below a usable heading — a coloured patch on the wrong ground is worse than no patch. On the ARCore path the lock does not expire and the plot keeps its own colour; the chip carries the confidence.</span></figcaption>
       </figure>
     </div>
   </div>
@@ -968,7 +986,7 @@ footer{
   <div class="logic">
     <div class="logic-head">
       <h3>06 · What gets drawn, and why it is a wall</h3>
-      <span class="logic-file">core/render/OverlayGeometry.kt · ui/ar/ArOverlay.kt</span>
+      <span class="logic-file">lib/core/render/overlay_geometry.dart · world_scene.dart · android/…/ArOverlayRenderer.kt</span>
     </div>
     <div class="logic-body">
       <div class="slot"><span>What it does</span>
@@ -985,6 +1003,12 @@ footer{
         <p><strong>Painter's ordering.</strong> Translucent panels composited in ring order let the far side of a plot paint over the near side, which looks like a crease. Walls are sorted far-to-near.</p>
         <p><strong>Fades with floors.</strong> A 2.6 m wall 3 m away subtends most of the frame, and a boundary you are standing against is the one you least need drawn over your view. Panels fade out below 8 m — but the rail never drops below 0.75 opacity, because the line <em>is</em> the boundary and losing it as you step up to the fence removes the answer at the moment you are trying to stand on it.</p>
         <p><strong>Dark backing strokes.</strong> Every rail, post and marker is drawn twice: a dark halo, then the colour over it. A single coloured line disappears wherever the background shares its luminance, and outdoor footage is mostly bright sky, pale soil and corrugated fencing. Road signs and map labels have been drawn this way for a century.</p>
+      </div>
+      <div class="slot"><span>Drawn in ARCore's frame, with occlusion</span>
+        <p><strong>No lag.</strong> On the ARCore path the walls, rails, posts, ground fill and health cells are drawn by a small native GL renderer, after the camera image and with that frame's own camera matrices. Dart sends the plot once, triangulated by ear clipping in its own metric frame, and a placement (a 2-D rotation and offset into ARCore's world) only when the registration moves.</p>
+        <p><strong>Real ground.</strong> The ground is the lowest horizontal plane ARCore finds at least 0.8 m below the phone, not an assumed 1.6 m below wherever the phone is — so raising or lowering the phone no longer moves the plot.</p>
+        <p><strong>Occlusion.</strong> Where the Depth API is available, each overlay fragment is compared with the measured depth at its pixel. Only something clearly in front hides it — nearer than 80% of the overlay's distance starts to, 60% fully does — so a person at 2 m hides a boundary at 16 m while the floor under the fill and the crop just inside the boundary do not. Hidden parts are not removed but ghosted ("X-ray" rendering): lines keep 60% opacity, surfaces 35%, because a boundary that vanished behind the crop it encloses would be no use. Depth reaches about 8 m; beyond it the plot is drawn normally. The badge says "occlusion on" when it is active.</p>
+        <p><strong>Colour kept.</strong> Under ARCore the plot keeps its identity colour at 85% strength or more whatever the heading confidence: a grey translucent wall was simply invisible in a white office and under a pale sky.</p>
       </div>
       <figure>
         <div class="frame">
@@ -1173,11 +1197,11 @@ footer{
   <div class="logic">
     <div class="logic-head">
       <h3>09 · One palette, two languages</h3>
-      <span class="logic-file">palette.json → tools/gen-palette.mjs → palette.ts + PlotPalette.kt</span>
+      <span class="logic-file">palette.json → tools/gen-palette.mjs → palette.ts · mirrored in lib/core/render/plot_palette.dart</span>
     </div>
     <div class="logic-body">
       <div class="slot"><span>What it does</span>
-        <p><code>palette.json</code> is the single source of truth for every colour and opacity in both codebases. A generator reads it and writes the TypeScript and the Kotlin. Neither generated file is edited by hand, and CI can run the generator with <code>--check</code> to fail a build that drifted.</p>
+        <p><code>palette.json</code> is the single source of truth for every colour and opacity in both codebases. A generator reads it and writes the TypeScript, and CI can run it with <code>--check</code> to fail a build that drifted. The Flutter app's <code>plot_palette.dart</code> mirrors the same values by hand and says so at the top of the file; keep the two in step when a colour changes.</p>
       </div>
       <div class="slot"><span>Why the colours are what they are</span>
         <p>Both backgrounds this app runs against — satellite imagery of farmland, and a phone camera pointed at a field — are dominated by green and brown. <strong>There is no green in the plot palette</strong>: a green boundary on a green crop is the one combination guaranteed to disappear. White is included because the first field test happened after dark, where it reads better than any hue.</p>
@@ -1229,7 +1253,7 @@ footer{
             <text class="t-sm" x="0" y="192">and the check that was supposed to catch it compared two artefacts that were stale in exactly the same way.</text>
           </svg>
         </div>
-        <figcaption><b>FIG 13</b><span>The gate is the only part of this diagram that was added after the fact, and it is the only part that would have caught the failure.</span></figcaption>
+        <figcaption><b>FIG 13</b><span>The gate is the only part of this diagram that was added after the fact, and it is the only part that would have caught the failure. The Kotlin output served the original Android app; the Flutter app's palette is a hand-kept mirror, which this gate does not check.</span></figcaption>
       </figure>
     </div>
   </div>
@@ -1238,11 +1262,11 @@ footer{
   <div class="logic">
     <div class="logic-head">
       <h3>10 · Offline-first cache and what sync actually costs</h3>
-      <span class="logic-file">data/PlotRepository.kt · data/db/AppDatabase.kt</span>
+      <span class="logic-file">lib/data/plot_repository.dart · lib/data/db/app_database.dart</span>
     </div>
     <div class="logic-body">
       <div class="slot"><span>What it does</span>
-        <p>Room is the source of truth. Every screen reads from it and nothing on screen ever waits for the network. Sync is an explicit action: fetch plots within 5 km of the agent, replace the cached set, then fetch each plot's health raster concurrently, tolerating individual failures.</p>
+        <p>The sqflite database is the source of truth. Every screen reads from it and nothing on screen ever waits for the network. Sync is an explicit action: fetch plots within 5 km of the agent, replace the cached set, then fetch each plot's health raster concurrently, tolerating individual failures.</p>
       </div>
       <div class="slot"><span>Design decisions worth defending</span>
         <p><strong>Rasters are a separate endpoint.</strong> A health snapshot is an order of magnitude larger than a boundary and has a different lifetime — a boundary is drawn once, a raster is re-derived whenever new imagery lands. Bundling them would force a re-download of every boundary to refresh one raster.</p>
@@ -1252,8 +1276,8 @@ footer{
       </div>
       <figure>
         <div class="frame">
-          <svg viewBox="0 0 720 220" role="img" aria-label="Bar chart of measured payload sizes: seven plot boundaries 1.1 kilobytes gzipped, one health raster of 221 cells 8.4 kilobytes gzipped, and the debug APK at 12.8 megabytes.">
-            <text class="t-sm" x="0" y="12">MEASURED ON THE LIVE API — gzip, as OkHttp requests it</text>
+          <svg viewBox="0 0 720 220" role="img" aria-label="Bar chart of measured payload sizes: seven plot boundaries 1.1 kilobytes gzipped, one health raster of 221 cells 8.4 kilobytes gzipped, and a full sync of about 25 kilobytes.">
+            <text class="t-sm" x="0" y="12">MEASURED ON THE LIVE API — gzip, as the app requests it</text>
             <line class="s-rule" x1="0" y1="20" x2="720" y2="20"/>
 
             <text class="t-lbl" x="0" y="52">all 7 boundaries</text>
@@ -1274,11 +1298,31 @@ footer{
 
             <line class="s-rule" x1="0" y1="182" x2="720" y2="182"/>
             <text class="t-sm" x="0" y="202">A full sync of this dataset is smaller than one photograph. Once cached, a plot visit transfers zero bytes —</text>
-            <text class="t-sm" x="0" y="216">the AR screen never touches the network, and one telemetry row per session is written locally, not uploaded.</text>
+            <text class="t-sm" x="0" y="216">the AR screen needs no network; one telemetry row per session is written locally and uploaded whenever there is signal.</text>
           </svg>
         </div>
         <figcaption><b>FIG 14</b><span>The numbers your team will want for a data-cost conversation. They are measured, not estimated.</span></figcaption>
       </figure>
+    </div>
+  </div>
+  <!-- L11 -->
+  <div class="logic">
+    <div class="logic-head">
+      <h3>11 · Direction from the walk</h3>
+      <span class="logic-file">lib/core/heading/trajectory_aligner.dart</span>
+    </div>
+    <div class="logic-body">
+      <div class="slot"><span>What it does</span>
+        <p>Finds true north without asking the agent to aim at anything. ARCore tracks the <em>shape</em> of the walk exactly, but in a frame whose north is arbitrary; GNSS knows where north is but places each point metres out. The rotation that best lays the tracked path over the GNSS fixes taken along it is the missing yaw — a weighted two-dimensional Procrustes fit, solved in closed form: centre both point sets on their weighted means, and the angle of Σ w·(truth)·conj(tracked), treating each east–north pair as a complex number, is the rotation.</p>
+      </div>
+      <div class="slot"><span>Why it replaced the walk lock</span>
+        <p>The sensor path's course-over-ground lock needs 20 m of <em>straight</em> walking, because GNSS bearing is only meaningful along a straight leg. A real approach winds between bunds. With the tracked path supplying the shape, any route counts in full, and accuracy grows with the lever arm: in the tests a winding 60 m approach with ±5 m fixes recovers the direction to within a few degrees.</p>
+        <p>Field agents were also clear that aiming at the access point and tapping, as a separate step, made no sense to them. The aligner makes direction a by-product of walking there.</p>
+      </div>
+      <div class="slot"><span>The pin as an anchor, and the guards</span>
+        <p>When the agent taps <em>I'm at the access point</em>, that point enters the fit as an anchor known to a metre. It pins the fit's centre, so every step away from it — in any direction — refines the yaw; about 35 m of walking into the plot is enough.</p>
+        <p>The fit reports its own error: the rotation's variance is the inverse of Σ w·r² (each fix's weight times its squared distance from the centre), inflated five-fold because successive fixes are correlated rather than independent, and widened further when the fixes scatter more than their claimed accuracy. A fit is offered as a lock only under 10°. Fixes worse than 15 m are ignored — indoors, at ±50–100 m, the aligner says nothing rather than lock a guess — and a loss of ARCore tracking discards everything measured before it, since the session's frame may have shifted.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -1313,24 +1357,21 @@ footer{
     <table>
       <thead><tr><th>Library</th><th class="mono">Version</th><th>What it is</th><th>What it does here</th></tr></thead>
       <tbody>
-        <tr><td>Kotlin</td><td class="mono">2.0.21</td><td>JVM language</td><td>All app code. JVM target 17, min SDK 26 (Android 8.0), target SDK 35.</td></tr>
-        <tr><td>Jetpack Compose</td><td class="mono">BOM 2024.10</td><td>Declarative UI toolkit</td><td>Every screen, and the AR overlay itself — the boundary is drawn on a Compose <code>Canvas</code> composited over the camera preview.</td></tr>
-        <tr><td>CameraX</td><td class="mono">1.4.0</td><td>Camera abstraction over Camera2</td><td>The preview stream, sized to the sensor's own aspect ratio so the projection is not stretched. Camera2 characteristics are read directly for the real focal length.</td></tr>
-        <tr><td>Play Services Location</td><td class="mono">21.3</td><td>Fused location provider</td><td>1 Hz high-accuracy fixes carrying accuracy, Doppler speed and GNSS bearing. The speed and bearing fields are what make the stabiliser and the heading lock possible.</td></tr>
-        <tr><td>Room</td><td class="mono">2.6.1</td><td>SQLite ORM with compile-time verification</td><td>The offline cache: plots, health snapshots, telemetry. Currently at schema version 3 with real migrations, not destructive fallback.</td></tr>
-        <tr><td>Retrofit</td><td class="mono">2.11</td><td>Typed HTTP client</td><td>Four endpoints, declared as an interface. The DTOs mirror the API response exactly.</td></tr>
-        <tr><td>OkHttp</td><td class="mono">4.12</td><td>HTTP engine</td><td>Transport under Retrofit. Requests and transparently decompresses gzip, which is the 9.7× saving in FIG 14.</td></tr>
-        <tr><td>kotlinx.serialization</td><td class="mono">1.7.3</td><td>Compile-time JSON</td><td>Parsing, with <code>ignoreUnknownKeys</code> so a server that adds a field cannot break a deployed app.</td></tr>
-        <tr><td>Coroutines</td><td class="mono">1.9.0</td><td>Async and structured concurrency</td><td>Sensor streams as <code>StateFlow</code>, concurrent raster fetches, and the view-model scope.</td></tr>
-        <tr><td>KSP</td><td class="mono">2.0.21-1.0.28</td><td>Kotlin symbol processing</td><td>Generates Room's DAOs at build time.</td></tr>
-        <tr><td>JUnit 4</td><td class="mono">4.13.2</td><td>Test framework</td><td>125 unit tests, all on pure JVM — every piece of geometry, filtering and heading logic is written to be testable without a device.</td></tr>
+        <tr><td>Flutter / Dart</td><td class="mono">≥3.22 / ≥3.4</td><td>Cross-platform UI toolkit and language</td><td>Every screen, and all of the maths under <code>lib/core</code>. Packaged as a plugin so the Cropin Grow app can embed it with one dependency; CI analyses and tests on 3.22.3 and on the current stable release.</td></tr>
+        <tr><td>ARCore</td><td class="mono">1.44.0</td><td>Google's on-device AR runtime</td><td>Motion tracking, horizontal planes (to find the floor) and depth (for occlusion). Declared <code>optional</code> in the manifest, so the app installs everywhere and falls back to sensors where it is missing. It is the plugin's only native dependency and the reason its minSdk is 24.</td></tr>
+        <tr><td>OpenGL ES 3</td><td class="mono">—</td><td>The phone's graphics API</td><td>A ~400-line renderer draws ARCore's camera image and then the plot in the same frame, with the depth texture for occlusion. No engine.</td></tr>
+        <tr><td>camera</td><td class="mono">0.10.5–0.11</td><td>Flutter's camera plugin</td><td>The preview on the sensor fallback only; under ARCore, ARCore owns the camera.</td></tr>
+        <tr><td>sqflite</td><td class="mono">2.x</td><td>SQLite for Flutter</td><td>The offline cache: plots, health snapshots, telemetry.</td></tr>
+        <tr><td>LocationManager</td><td class="mono">Android</td><td>The framework's own location service</td><td>1 Hz fixes (the fused provider on Android 12+, GNSS before), plus the last-known fix on open. Used instead of Play Services location so the plugin cannot force a clashing <code>play-services-location</code> version on the host app.</td></tr>
+        <tr><td>dart:io HttpClient</td><td class="mono">SDK</td><td>Dart's HTTP client</td><td>Four endpoints, 5 s connect and 8 s read timeouts, gzip requested and decompressed transparently.</td></tr>
+        <tr><td>flutter_test</td><td class="mono">SDK</td><td>Test framework</td><td>190 tests: geometry, filters, heading, step detection, the aligner, scene placement and widgets — all without a device.</td></tr>
       </tbody>
     </table>
   </div>
 
   <div class="note">
     <span class="note-k">Not used, on purpose</span>
-    <p><strong>ARCore</strong> — no Geospatial API, no plane detection, no anchors. <strong>OpenGL / Filament / Unity</strong> — the overlay is a few dozen polygons per frame and Compose draws them fine; a 3D engine would add tens of megabytes for nothing. <strong>Dagger / Hilt</strong> — one hand-written <code>AppContainer</code> covers the whole dependency graph. <strong>Google Maps SDK</strong> — the app has no map screen at all; the phone's job is the field, not the atlas.</p>
+    <p><strong>ARCore Geospatial, Cloud Anchors, Street View</strong> — they need coverage and a network that farmland lacks. <strong>Filament / Sceneform / Unity</strong> — the plot is a few dozen polygons; a 3D engine would add tens of megabytes to the host app for nothing. <strong>Play Services location, permission_handler</strong> — version clashes with a host app are the commonest way an embedded plugin breaks a build. <strong>A map SDK</strong> — the corner minimap is a hand-drawn north-up plan of one plot, which needs no tiles.</p>
   </div>
 </section>
 
@@ -1347,7 +1388,7 @@ footer{
     </div>
     <div>
       <h3>How does the camera know where it is?</h3>
-      <p>It does not. The camera is a backdrop with a known field of view and nothing more — no image processing, no feature tracking, no SLAM. Position comes from GNSS, filtered. Direction comes from the gyroscope, referenced to true north by a walked segment or a landmark tap. Those two plus the lens geometry are enough to project a known coordinate onto the right pixel. That is why it works at night and facing a blank wall, and why it cannot correct itself from what it sees.</p>
+      <p>On the earth, from GNSS — and exactly, once the agent taps <em>I'm at the access point</em>. From there ARCore tracks how the phone moves, to centimetres, from feature points in the image and the motion sensors. North comes from lining up that tracked walk with the GNSS fixes taken along it. The camera does not recognise fields or fences; it measures its own motion and the depth of what is in front of it. Without ARCore the camera is only a backdrop and the gyroscope and counted steps do the work.</p>
     </div>
     <div>
       <h3>How is distance computed?</h3>
@@ -1355,15 +1396,15 @@ footer{
     </div>
     <div>
       <h3>How accurate is it, honestly?</h3>
-      <p>Position: 3–5 m, the receiver's own accuracy, which the app displays. Heading: 2–3° after a landmark snap, 3–5° after a walked segment, 15–25° on the compass alone. Since sideways error is range × sin(heading error), expect roughly 1–2 m of lateral error at 30 m on a good lock. At the boundary itself the accuracy band is drawn to the receiver's live figure rather than a crisp line, so the drawing never claims more than it has.</p>
+      <p>Position: 3–5 m in the open, the receiver's own accuracy, which the app displays — about a metre after the access-point pin, then held by ARCore as the agent walks. Heading: a few degrees once the walk has set it, 2–3° after a landmark snap, 15–25° on the compass alone. Indoors GNSS is ±50–100 m and the app falls back to the compass for direction. Since sideways error is range × sin(heading error), expect roughly 1–2 m of lateral error at 30 m on a good lock. At the boundary itself the accuracy band is drawn to the receiver's live figure rather than a crisp line, so the drawing never claims more than it has.</p>
     </div>
     <div>
       <h3>How big is the app, and what does a visit cost in data?</h3>
-      <p>12.8 MB debug APK, roughly 13 MB installed; a release build with minification will be smaller. All seven boundaries are 1.1 kB gzipped. A health raster is 0.8–8.4 kB gzipped depending on plot size. A full sync of the current dataset is about 25 kB. <strong>A plot visit after sync transfers nothing at all</strong> — the AR screen never opens a socket.</p>
+      <p>The standalone release APK is 9.1 MB for arm64; embedded in Cropin Grow the plugin adds the ARCore client library and a few hundred kilobytes of its own. All seven boundaries are 1.1 kB gzipped. A health raster is 0.8–8.4 kB gzipped depending on plot size. A full sync of the current dataset is about 25 kB. <strong>A plot visit after sync transfers nothing at all</strong> — the AR screen never opens a socket.</p>
     </div>
     <div>
       <h3>Does it need internet? Does it need ARCore?</h3>
-      <p>Internet only to sync, and only until the cache is warm. ARCore is not used, not linked, and not required — the app runs on any Android 8.0 device with a gyroscope and GNSS, including handsets on Google's unsupported-for-ARCore list.</p>
+      <p>Internet only to sync, and only until the cache is warm. ARCore is used where Google Play Services for AR is installed — motion tracking, floor and depth, all on the device — and the app offers to install it where it is missing. It is not required: on handsets without it the AR screen falls back to rotation sensors and counted steps, on any Android 7.0 phone with a gyroscope and GNSS.</p>
     </div>
     <div>
       <h3>Is the crop-health data real?</h3>
@@ -1371,7 +1412,15 @@ footer{
     </div>
     <div>
       <h3>What happens when the heading is bad?</h3>
-      <p>The overlay dims to 45% and greys, the chip says why, and the crop-health layer switches itself off entirely — a coloured patch drawn on the wrong ground is worse than no patch. The app asks for twenty metres of straight walking, or a tap on the access point, and re-locks.</p>
+      <p>The chip says so and names the source. On the sensor path the overlay dims and greys and the crop-health layer switches off, because a coloured patch on the wrong ground is worse than no patch. On the ARCore path the plot keeps its colour and walking sets the direction by itself; where GPS is too weak for that, the expanded sheet offers the fallback: step 10 m from the access point, aim at it, and tap.</p>
+    </div>
+    <div>
+      <h3>Why is "I'm at the access point" greyed out?</h3>
+      <p>Because GPS puts you more than 50 m from it, and the button says how far. The rule stops a tap from the next field placing the plot in the wrong one. In the open, GPS error is a few metres and the button enables as you arrive; indoors it can read beyond 50 m while you stand on the spot.</p>
+    </div>
+    <div>
+      <h3>Why does the boundary disappear behind people?</h3>
+      <p>Occlusion, from ARCore's depth: anything clearly nearer than the boundary hides it, as a real fence would be hidden. It is only ghosted, never removed, so it stays findable through a crop row. It works to about 8 m and on phones that support depth.</p>
     </div>
     <div>
       <h3>Can the phone edit a boundary?</h3>
@@ -1393,28 +1442,30 @@ footer{
     <li><code>npm run test:api</code> for the 17 API tests. <code>node tools/gen-palette.mjs --check</code> fails the build if either generated palette has drifted from <code>palette.json</code>.</li>
   </ol>
 
-  <h3>Android</h3>
+  <h3>Android (Flutter)</h3>
   <ol class="steps">
-    <li>JDK 17 or 21. Gradle 8.11 cannot parse a JDK 26 version string, so set <code>JAVA_HOME</code> explicitly if a newer JDK is on the path.</li>
-    <li><code>./gradlew test</code> runs all 125 unit tests on the JVM — no emulator, no device.</li>
-    <li><code>./gradlew assembleDebug -PapiBase=https://your-api/</code>. The trailing slash is required by Retrofit. Without the flag the build points at <code>10.0.2.2</code>, which is the emulator's route to the host and unreachable from a real handset.</li>
-    <li>Debug builds include a simulation mode — a joystick and error sliders that drive the whole pipeline from synthetic sensors, so the overlay can be worked on at a desk. Release builds contain neither.</li>
+    <li>Flutter 3.22 or newer. <code>flutter pub get</code> at the repository root (the plugin) and in <code>example/</code> (the standalone app).</li>
+    <li><code>flutter analyze</code> — infos are fatal in CI — and <code>flutter test</code> for all 190 tests. No emulator, no device.</li>
+    <li><code>cd example &amp;&amp; flutter build apk --release --target-platform android-arm64</code>. The API defaults to the deployed service; override it with <code>--dart-define=PLOT_API_BASE_URL=https://your-api/</code>.</li>
+    <li>Every push to the <code>flutter</code> branch builds a debug APK and a release arm64 APK in GitHub Actions; download the <code>plot-finder-release-arm64-apk</code> artifact, unzip it, and install the APK from a file manager.</li>
+    <li>To embed in another app, follow <code>INTEGRATION.md</code>: one dependency, one <code>PlotFinderScreen</code> push.</li>
   </ol>
 
   <h3>In the field</h3>
   <ol class="steps">
     <li>Sync while you still have signal. Plots within 5 km, plus their health rasters.</li>
-    <li>Open the plot and walk twenty metres in a straight line. The chip goes green and names the source. If you cannot walk it, aim the crosshair at the plot's access point and tap.</li>
-    <li>Read the chip before believing the overlay. Green means a fresh fix; amber means it is being carried on the gyroscope and tells you for how long; grey means walk a few steps.</li>
-    <li>Cycle the health layer with the layer button: off → problem areas → all cells. Problem areas is the default, because a plot is mostly healthy and painting every cell buries the two that matter.</li>
-    <li>Walk to marker 1 first. Markers are ranked worst-first and the ranking is deterministic, so the same plot always numbers them the same way.</li>
+    <li>Open the plot and tap <em>Find this plot</em>. The loader ticks off camera, motion tracking and GPS; move the phone gently side to side if motion tracking is waiting.</li>
+    <li>Follow the arrow pill to the access point. On the way, the heading chip turns green ("from your walk") without any tap.</li>
+    <li>At the access point — the button enables within 50 m — tap <em>I'm at the access point</em>. Then walk into the plot; each step refines the direction.</li>
+    <li>Use the corner minimap to see where you are in the field and where the red patches lie; tap it to enlarge. Walk to hotspot 1 first — hotspots are ranked worst-first, deterministically.</li>
+    <li>Read the chip before trusting the overlay. If GPS is weak and direction stays on the compass, open the sheet and use <em>Direction off? Aim at the access point</em> from 10 m away.</li>
   </ol>
 
   <footer>
-    Plot Finder · builder's manual · revision of 27 August 2026<br>
-    Web tool and API: <code>plot-web/</code> — React 18, Express 4, Supabase PostGIS, deployed on Vercel.<br>
-    Mobile: <code>plot-ar-android/</code> — Kotlin 2.0.21, minSdk 26, no ARCore.<br>
-    All measurements in this document were taken from the deployed API and the current build on 27 August 2026.
+    Plot Finder · builder's manual · revision of 27 October 2026 (Flutter branch)<br>
+    Web tool and API: its own repository — React 18, Express 4, Supabase PostGIS, deployed on Vercel.<br>
+    Mobile: this repository's <code>flutter</code> branch — Flutter plugin <code>plot_finder</code> with an <code>example/</code> app, plugin minSdk 24, ARCore motion tracking (optional).<br>
+    API measurements were taken from the deployed API on 27 August 2026; mobile figures are from the October 2026 Flutter build. Field-test findings behind the October changes are in <code>docs/research/ar-positioning.md</code>.
   </footer>
 </section>
 
