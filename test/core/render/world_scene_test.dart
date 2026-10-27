@@ -156,5 +156,49 @@ void main() {
       expect(message['dropHeight'], dropPointHeightM);
       expect((message['plots']! as List).length, 1);
     });
+
+    test('moderate and critical cells of the chosen index lie on the ground; normal ones do not', () {
+      HealthCell cell(double e, double n, List<int> zones) {
+        final sw = offset(origin, e, n);
+        return HealthCell(
+          centroid: offset(origin, e + 1.5, n + 1.5),
+          ring: [sw, offset(origin, e + 3, n), offset(origin, e + 3, n + 3), offset(origin, e, n + 3), sw],
+          zones: zones,
+        );
+      }
+
+      final cells = [
+        cell(0, 0, [zoneCritical, zoneNormal, zoneNormal]),
+        cell(3, 0, [zoneNormal, zoneModerate, zoneNormal]),
+      ];
+      final ndvi = buildWorldScene(
+        plots: [plot('A', ring, 0)],
+        cells: cells,
+        index: HealthIndex.ndvi,
+        patches: const [],
+        origin: centre,
+        alpha: 1.0,
+      );
+      // One square, two triangles, six floats per vertex.
+      expect(ndvi.cells.length, 2 * 3 * 6);
+      final red = severityColour(zoneCritical);
+      expect(ndvi.cells[2], closeTo(((red.argb >> 16) & 0xFF) / 255.0, 1e-6));
+      expect(ndvi.cells[5], closeTo(red.fillAlpha, 1e-6));
+      final xs = [for (var i = 0; i < ndvi.cells.length; i += 6) ndvi.cells[i]];
+      expect(xs.reduce(math.min), closeTo(-5.0, 1e-3));
+      expect(xs.reduce(math.max), closeTo(-2.0, 1e-3));
+
+      final ndre = buildWorldScene(
+        plots: [plot('A', ring, 0)],
+        cells: cells,
+        index: HealthIndex.ndre,
+        patches: const [],
+        origin: centre,
+        alpha: 1.0,
+      );
+      expect(ndre.cells.length, 2 * 3 * 6, reason: 'only the second cell is graded on NDRE');
+      expect(ndre.cells[5], closeTo(severityColour(zoneModerate).fillAlpha, 1e-6));
+      expect(ndre.toMessage()['cells'], same(ndre.cells));
+    });
   });
 }

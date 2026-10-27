@@ -22,7 +22,8 @@ import 'plot_palette.dart';
 ///
 /// Two messages, deliberately separate:
 ///
-///  - a [WorldScene]: every nearby plot and every drop point, in one local
+///  - a [WorldScene]: every nearby plot, the moderate and critical ground
+///    cells of the chosen index, and every drop point, in one local
 ///    metric frame (east, north, up from a fixed origin). Sent when the set of
 ///    nearby plots, the crop-condition index or the snapshots change.
 ///  - a [WorldPlacement]: how that frame sits in ARCore's session. Sent only when
@@ -58,9 +59,13 @@ class ScenePlot {
 }
 
 class WorldScene {
-  const WorldScene({required this.plots, required this.drops, required this.alpha});
+  const WorldScene({required this.plots, required this.cells, required this.drops, required this.alpha});
 
   final List<ScenePlot> plots;
+
+  /// Moderate and critical ground cells, triangulated: (east, north, r, g, b, a)
+  /// per vertex, colour and opacity from the zone. Normal ground is not drawn.
+  final Float32List cells;
 
   /// Drop points: (east, north, r, g, b) per point, colour from the zone.
   final Float32List drops;
@@ -68,6 +73,7 @@ class WorldScene {
 
   Map<String, Object> toMessage() => {
         'plots': [for (final p in plots) p.toMessage()],
+        'cells': cells,
         'drops': drops,
         'wallHeight': boundaryWallHeightM,
         'postHeight': vertexPostHeightM,
@@ -79,10 +85,12 @@ class WorldScene {
       };
 }
 
-/// Builds the scene for [plots] and the drop points [patches], in the frame
-/// centred on [origin].
+/// Builds the scene for [plots], the ground [cells] graded on [index] and the
+/// drop points [patches], in the frame centred on [origin].
 WorldScene buildWorldScene({
   required List<Plot> plots,
+  Iterable<HealthCell> cells = const [],
+  HealthIndex index = HealthIndex.ndvi,
   required List<HealthPatch> patches,
   required LatLng origin,
   required double alpha,
@@ -107,6 +115,22 @@ WorldScene buildWorldScene({
     ));
   }
 
+  final cellVertices = <double>[];
+  for (final cell in cells) {
+    final zone = cell.zoneFor(index);
+    if (zone < zoneModerate) continue;
+    final ring = openRing([for (final p in cell.ring) frame.toEnu(p)]);
+    if (ring.length < 3) continue;
+    final colour = severityColour(zone);
+    final argb = colour.argb;
+    final r = ((argb >> 16) & 0xFF) / 255.0;
+    final g = ((argb >> 8) & 0xFF) / 255.0;
+    final b = (argb & 0xFF) / 255.0;
+    for (final i in triangulate(ring)) {
+      cellVertices.addAll([ring[i].east, ring[i].north, r, g, b, colour.fillAlpha]);
+    }
+  }
+
   final drops = <double>[];
   for (final patch in patches) {
     final at = frame.toEnu(patch.centroid);
@@ -120,7 +144,12 @@ WorldScene buildWorldScene({
     ]);
   }
 
-  return WorldScene(plots: scenePlots, drops: Float32List.fromList(drops), alpha: alpha);
+  return WorldScene(
+    plots: scenePlots,
+    cells: Float32List.fromList(cellVertices),
+    drops: Float32List.fromList(drops),
+    alpha: alpha,
+  );
 }
 
 /// How the plot's frame sits in ARCore's session: a rotation from true

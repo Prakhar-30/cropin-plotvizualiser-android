@@ -79,4 +79,47 @@ void main() {
     expect(HealthIndex.ndre.label, 'Crop vigour');
     expect(HealthIndex.lswi.label, 'Water stress');
   });
+
+  test('ground cells: moderate and critical ahead are drawn, below the horizon; others are not', () {
+    HealthCell cell(double e, double n, int zone) {
+      final sw = offset(e, n);
+      return HealthCell(
+        centroid: offset(e + 1.5, n + 1.5),
+        ring: [sw, offset(e + 3, n), offset(e + 3, n + 3), offset(e, n + 3), sw],
+        zones: [zone, zoneNormal, zoneNormal],
+      );
+    }
+
+    final polygons = buildCellPolygons(
+      cells: [
+        cell(-1.5, 10, zoneCritical),
+        cell(-1.5, 20, zoneModerate),
+        cell(-1.5, 30, zoneNormal),
+        cell(-1.5, -12, zoneCritical),
+        cell(-1.5, 200, zoneCritical),
+      ],
+      index: HealthIndex.ndvi,
+      frame: frame,
+      eye: frame.toEnu(agent),
+      enuToDevice: deviceToEnuFromOrientation(0.0, 0.0).transpose(),
+      intrinsics: intrinsics,
+    );
+    expect(polygons.length, 2, reason: 'normal, behind and out-of-range cells are skipped');
+    expect(polygons.first.zone, zoneModerate, reason: 'far to near');
+    expect(polygons.last.zone, zoneCritical);
+    for (final polygon in polygons) {
+      for (final p in polygon.points) {
+        expect(p.y, greaterThan(960), reason: 'ground ahead sits below the horizon line');
+      }
+    }
+    final ndre = buildCellPolygons(
+      cells: [cell(-1.5, 10, zoneCritical)],
+      index: HealthIndex.ndre,
+      frame: frame,
+      eye: frame.toEnu(agent),
+      enuToDevice: deviceToEnuFromOrientation(0.0, 0.0).transpose(),
+      intrinsics: intrinsics,
+    );
+    expect(ndre, isEmpty, reason: 'graded only on the chosen index');
+  });
 }

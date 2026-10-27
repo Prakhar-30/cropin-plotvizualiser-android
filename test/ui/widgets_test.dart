@@ -9,7 +9,8 @@ import 'package:plot_finder/ui/ar/ar_controller.dart';
 import 'package:plot_finder/ui/ar/heading_chip.dart';
 import 'package:plot_finder/ui/ar/minimap.dart';
 import 'package:plot_finder/ui/ar/startup_loader.dart';
-import 'package:plot_finder/ui/detail/plot_detail_screen.dart';
+import 'package:plot_finder/ui/home/home_screen.dart';
+import 'package:plot_finder/ui/plots/plot_list_controller.dart';
 import 'package:plot_finder/ui/theme.dart';
 
 void main() {
@@ -40,7 +41,7 @@ void main() {
     expect(find.text('gyro-carried  75s since fix'), findsOneWidget);
   });
 
-  testWidgets('the detail screen shows the plot and opens the finder', (tester) async {
+  testWidgets('home: with plots cached, Start AR view opens the camera directly', (tester) async {
     const plot = Plot(
       id: 'PLT-1',
       name: 'North field',
@@ -57,24 +58,43 @@ void main() {
       createdAt: '2026-08-01T10:00:00Z',
       syncedAtMs: 0,
     );
-    var opened = false;
+    var started = false;
+    var synced = false;
     await tester.pumpWidget(MaterialApp(
       theme: growTheme(),
-      home: PlotDetailScreen(
-        plot: plot,
-        distanceM: 1530,
-        onFindPlot: () => opened = true,
+      home: HomeScreen(
+        state: const PlotListState(
+          items: [PlotListItem(plot, 1530)],
+          hasFix: true,
+          lastSyncMessage: 'Cached 1 plot(s), 1 with crop condition',
+        ),
+        onSync: () => synced = true,
+        onStart: () => started = true,
       ),
     ));
-    expect(find.text('North field'), findsOneWidget);
-    expect(find.text('PLT-1 · 2.50 ha · 1.5 km away'), findsOneWidget);
-    expect(find.text('none recorded'), findsOneWidget);
-    expect(find.text('3'), findsOneWidget, reason: 'three corners, not counting the closing repeat');
-    expect(find.text('2026-08-01'), findsOneWidget);
+    expect(find.text('1 plot'), findsOneWidget);
+    expect(find.text('North field · 1.5 km'), findsOneWidget);
+    expect(find.text('Cached 1 plot(s), 1 with crop condition'), findsOneWidget);
+    await tester.tap(find.text('Sync now'));
+    expect(synced, isTrue);
+    await tester.tap(find.text('Start AR view'));
+    expect(started, isTrue);
+  });
 
-    expect(find.text('Simulate'), findsNothing);
-    await tester.tap(find.text('Open AR view'));
-    expect(opened, isTrue);
+  testWidgets('home: with nothing cached, the camera waits for a sync', (tester) async {
+    var started = false;
+    await tester.pumpWidget(MaterialApp(
+      theme: growTheme(),
+      home: HomeScreen(
+        state: const PlotListState(syncing: true),
+        onSync: () {},
+        onStart: () => started = true,
+      ),
+    ));
+    expect(find.text('Nothing synced yet'), findsOneWidget);
+    expect(find.text('Syncing…'), findsOneWidget);
+    await tester.tap(find.text('Syncing plots…'));
+    expect(started, isFalse, reason: 'no plots, nothing to show in the camera yet');
   });
 
   testWidgets('the minimap grows when tapped', (tester) async {

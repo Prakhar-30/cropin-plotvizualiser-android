@@ -43,17 +43,25 @@ class PlotListState {
       );
 }
 
-/// The cached plot list.
+/// Plots older than this are refreshed by themselves when the app opens.
+const Duration autoSyncAfter = Duration(hours: 1);
+
+/// The cached plots, and syncing them.
 ///
-/// Rows come from the database and appear whether or not there is signal;
-/// syncing is an explicit button, never a precondition for seeing anything.
+/// The cache comes from the database and is there whether or not there is
+/// signal. Opening the app syncs by itself when the phone has no plots or
+/// they are over [autoSyncAfter] old; the button is always there besides.
 class PlotListController extends ValueNotifier<PlotListState> {
-  PlotListController(this._container)
+  PlotListController(this._container, {bool autoSync = true})
       : _locationSource = _container.createLocationSource(),
         super(const PlotListState()) {
     _plotsSubscription = _container.plots.observePlots().listen((cached) {
       _plots = cached;
       _recompute();
+      if (autoSync && !_autoSyncChecked) {
+        _autoSyncChecked = true;
+        if (_isStale(cached)) unawaited(sync());
+      }
     });
     _locationSource.location.addListener(_onLocation);
     _locationSource.start();
@@ -65,6 +73,14 @@ class PlotListController extends ValueNotifier<PlotListState> {
 
   List<Plot> _plots = const [];
   LatLng? _here;
+  bool _autoSyncChecked = false;
+  bool _disposed = false;
+
+  static bool _isStale(List<Plot> cached) {
+    if (cached.isEmpty) return true;
+    final newest = cached.map((p) => p.syncedAtMs).reduce((a, b) => a > b ? a : b);
+    return DateTime.now().millisecondsSinceEpoch - newest > autoSyncAfter.inMilliseconds;
+  }
 
   void _onLocation() {
     final LocationSample? sample = _locationSource.location.value;
@@ -83,14 +99,17 @@ class PlotListController extends ValueNotifier<PlotListState> {
     value = value.copyWith(syncing: true, lastSyncMessage: () => null);
     final result = await _container.plots.sync(around: _here);
     final message = switch (result) {
-      SyncSuccess(widenedToEverything: true, :final plotCount) =>
-        'No plots within 5 km — cached all $plotCount instead',
-      SyncSuccess(:final plotCount) => 'Cached $plotCount plot(s)',
+      SyncSuccess(widenedToEverything: true, :final plotCount, :final healthCount) =>
+        'No plots within 5 km — cached all $plotCount instead, $healthCount with crop condition',
+      SyncSuccess(:final plotCount, :final healthCount) =>
+        'Cached $plotCount plot(s), $healthCount with crop condition',
       // Offline is the expected state at a rural site, so this reads as a
       // status line rather than an error.
       SyncFailed(:final reason) => 'No connection ($reason) — showing ${_plots.length} cached plot(s)',
     };
     await _container.telemetry.syncPending();
+    // The app can be closed while a sync started on opening is still running.
+    if (_disposed) return;
     value = value.copyWith(syncing: false, lastSyncMessage: () => message);
   }
 
@@ -100,15 +119,9 @@ class PlotListController extends ValueNotifier<PlotListState> {
 
   void resume() => _locationSource.start();
 
-  PlotListItem? itemFor(String plotId) {
-    for (final item in value.items) {
-      if (item.plot.id == plotId) return item;
-    }
-    return null;
-  }
-
   /// One notification per fix or cache change, never two.
   void _recompute({bool? hasFix}) {
+    if (_disposed) return;
     final from = _here;
     final items = [
       for (final plot in _plots) PlotListItem(plot, from == null ? null : distanceM(from, plot.centroid)),
@@ -118,6 +131,7 @@ class PlotListController extends ValueNotifier<PlotListState> {
 
   @override
   void dispose() {
+    _disposed = true;
     _plotsSubscription.cancel();
     _locationSource.location.removeListener(_onLocation);
     _locationSource.stop();

@@ -5,10 +5,9 @@ import '../app_container.dart';
 import '../config.dart';
 import '../platform/native_platform.dart';
 import 'ar/ar_screen.dart';
-import 'detail/plot_detail_screen.dart';
-import 'plots/plot_list_controller.dart';
+import 'home/home_screen.dart';
 import 'permission_screen.dart';
-import 'plots/plot_list_screen.dart';
+import 'plots/plot_list_controller.dart';
 import 'status_screen.dart';
 import 'theme.dart';
 
@@ -19,7 +18,7 @@ import 'theme.dart';
 /// host app would usually rather not offer the entry point at all.
 bool get plotFinderSupported => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
-/// The whole feature behind one widget: plot list, plot detail and AR view.
+/// The whole feature behind one widget: a home screen to sync, and the AR view.
 ///
 /// Push it from anywhere in a host app's navigator. It opens its own cache and
 /// HTTP client when shown and releases them when popped, and asks for camera
@@ -119,8 +118,8 @@ class _PermissionGateState extends State<PermissionGate> {
   }
 }
 
-/// Owns the plot list controller for as long as the feature is open, so the
-/// list - and its location fix - survive a trip into AR and back.
+/// Owns the cached plots and their sync for as long as the feature is open,
+/// so the location fix and any sync in flight survive a trip into AR and back.
 class _Home extends StatefulWidget {
   const _Home({required this.container});
 
@@ -131,55 +130,37 @@ class _Home extends StatefulWidget {
 }
 
 class _HomeState extends State<_Home> {
-  late final PlotListController _list = PlotListController(widget.container);
+  late final PlotListController _plots = PlotListController(widget.container);
   late final AppLifecycleListener _lifecycle;
 
   @override
   void initState() {
     super.initState();
-    _lifecycle = AppLifecycleListener(onHide: _list.pause, onShow: _list.resume);
+    _lifecycle = AppLifecycleListener(onHide: _plots.pause, onShow: _plots.resume);
   }
 
   @override
   void dispose() {
     _lifecycle.dispose();
-    _list.dispose();
+    _plots.dispose();
     super.dispose();
   }
 
-  /// Pages are pushed on the host's navigator, so system back behaves as the
-  /// host expects; each one carries its theme explicitly, because a pushed
-  /// route is built under the navigator, not under [PlotFinderScreen].
-  Route<void> _route(ThemeData theme, WidgetBuilder builder) => MaterialPageRoute<void>(
-        builder: (context) => Theme(data: theme, child: Builder(builder: builder)),
-      );
-
-  void _openPlot(String plotId) {
-    Navigator.of(context).push(_route(
-      growTheme(),
-      (context) => ValueListenableBuilder<PlotListState>(
-        valueListenable: _list,
-        builder: (context, _, __) {
-          final item = _list.itemFor(plotId);
-          return PlotDetailScreen(
-            plot: item?.plot,
-            distanceM: item?.distanceM,
-            onFindPlot: () => _openAr(plotId),
-          );
-        },
+  void _openAr() {
+    // Pushed on the host's navigator, so system back behaves as the host
+    // expects. The AR view stays dark whatever the rest of the app uses: light
+    // chrome over a daylight camera feed washes the overlay out.
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (context) => Theme(
+        data: plotFinderTheme(),
+        child: ArScreen(container: widget.container),
       ),
     ));
   }
 
-  void _openAr(String plotId) {
-    // The AR view stays dark whatever the rest of the app uses: light chrome
-    // over a daylight camera feed washes the overlay out.
-    Navigator.of(context).push(_route(
-      plotFinderTheme(),
-      (_) => ArScreen(container: widget.container, plotId: plotId),
-    ));
-  }
-
   @override
-  Widget build(BuildContext context) => PlotListScreen(controller: _list, onOpenPlot: _openPlot);
+  Widget build(BuildContext context) => ValueListenableBuilder<PlotListState>(
+        valueListenable: _plots,
+        builder: (context, state, _) => HomeScreen(state: state, onSync: _plots.sync, onStart: _openAr),
+      );
 }

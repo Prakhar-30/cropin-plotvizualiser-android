@@ -45,6 +45,7 @@ class ArFrame {
   const ArFrame({
     this.plots = const [],
     this.drops = const [],
+    this.cells = const [],
     this.guide,
     this.agent,
     this.headingDeg = 0.0,
@@ -56,6 +57,9 @@ class ArFrame {
 
   /// Drop points, projected - sensor path only; ARCore draws its own.
   final List<DropMarker> drops;
+
+  /// Moderate and critical ground cells, projected - sensor path only.
+  final List<CellPolygon> cells;
 
   /// The way to the nearest boundary, until the session has snapped to one.
   final BoundaryGuide? guide;
@@ -554,6 +558,10 @@ class ArController extends ValueNotifier<ArUiState> {
     final agent = _agentPosition ?? origin;
     final scene = buildWorldScene(
       plots: _nearby,
+      cells: [
+        for (final plot in _nearby) ...?state.health[plot.id]?.cells,
+      ],
+      index: state.index,
       patches: nearbyPatches(state.patches, agent, state.index),
       origin: origin,
       // Always the plots' own colours on the ARCore path: a grey translucent
@@ -616,9 +624,23 @@ class ArController extends ValueNotifier<ArUiState> {
               intrinsics: intrinsics,
               eyeHeight: eyeHeight,
             );
+      final cells = state.visual
+          ? const <CellPolygon>[]
+          : buildCellPolygons(
+              cells: [
+                for (final plot in _nearby) ...?state.health[plot.id]?.cells,
+              ],
+              index: state.index,
+              frame: frame,
+              eye: frame.toEnu(agent),
+              enuToDevice: _pose.deviceToEnu.transpose(),
+              intrinsics: intrinsics,
+              eyeHeight: eyeHeight,
+            );
       this.frame.value = ArFrame(
         plots: drawn,
         drops: drops,
+        cells: cells,
         guide: state.snapped ? null : _guide(agent),
         agent: agent,
         headingDeg: _pose.headingDeg,

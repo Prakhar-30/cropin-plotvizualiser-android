@@ -69,6 +69,13 @@ class ArOverlayPainter extends CustomPainter {
     final alpha = overlayConfidenceAlpha(confidence);
 
     if (drawGeometry) {
+      // Graded ground first: it lies under every wall.
+      for (final cell in current.cells) {
+        final path = _path(cell.points);
+        if (path == null) continue;
+        final colour = severityColour(cell.zone);
+        canvas.drawPath(path, _fill(Color(colour.argb), colour.fillAlpha * alpha));
+      }
       // Farthest plot first, so a near plot's walls paint over a far one's.
       for (final drawn in current.plots.reversed) {
         final tint = Color(overlayTintArgb(confidence, drawn.plot.colourIndex));

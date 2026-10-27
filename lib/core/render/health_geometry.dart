@@ -2,8 +2,10 @@ import 'dart:math' as math;
 
 import '../geo/enu.dart';
 import '../geo/linear.dart';
+import '../geo/polygon_geometry.dart';
 import '../geo/projection.dart';
 import '../math_util.dart';
+import 'overlay_geometry.dart';
 
 /// Crop condition, as the field app uses it.
 ///
@@ -12,10 +14,10 @@ import '../math_util.dart';
 /// each into the same three zones: normal, moderate, critical. It also groups
 /// touching moderate-or-critical cells into **patches**, one per problem area.
 ///
-/// In the field only the patches matter. Normal ground is not drawn at all; each
-/// moderate or critical patch becomes one **drop point** - a tall pin standing
-/// on the ground at the patch, yellow or red - visible across every nearby plot
-/// at once. The cells themselves are kept only for the minimap.
+/// In the field only the problem ground matters. Normal ground is not drawn at
+/// all; moderate and critical cells are painted on the ground in yellow and red,
+/// and each patch of them becomes one **drop point** - a tall pin standing on
+/// the ground at the patch - visible across every nearby plot at once.
 ///
 /// The zone edges and the patching live on the server, so the map and the phone
 /// cannot disagree about which ground is red.
@@ -161,4 +163,52 @@ List<HealthPatch> nearbyPatches(
   }
   scored.sort((a, b) => a.$2.compareTo(b.$2));
   return [for (final (patch, _) in scored.take(math.max(0, limit))) patch];
+}
+
+/// Ground cells beyond this are not drawn on the sensor path. A 3 m square
+/// further off is a sliver on the horizon; the drop point says it is there.
+const double cellMaxRangeM = 120.0;
+
+/// A moderate or critical ground cell projected for the sensor fallback path.
+class CellPolygon {
+  const CellPolygon(this.points, this.zone, this.distanceM);
+
+  final List<ScreenPoint> points;
+  final int zone;
+  final double distanceM;
+}
+
+/// Projects the moderate and critical cells of [index] for one frame, far to
+/// near, clipped to the near plane so a cell under the agent's feet still
+/// draws.
+///
+/// Used only without ARCore; with it, the native renderer draws the cells in
+/// the camera's own GL frame.
+List<CellPolygon> buildCellPolygons({
+  required Iterable<HealthCell> cells,
+  required HealthIndex index,
+  required EnuFrame frame,
+  required Enu eye,
+  required Mat3 enuToDevice,
+  required CameraIntrinsics intrinsics,
+  double eyeHeight = eyeHeightM,
+  double maxRangeM = cellMaxRangeM,
+}) {
+  final out = <CellPolygon>[];
+  for (final cell in cells) {
+    final zone = cell.zoneFor(index);
+    if (zone < zoneModerate) continue;
+    final centre = frame.toEnu(cell.centroid);
+    final distanceM = hypot(centre.east - eye.east, centre.north - eye.north);
+    if (distanceM > maxRangeM) continue;
+    final ring = openRing([for (final p in cell.ring) frame.toEnu(p, -eyeHeight)]);
+    if (ring.length < 3) continue;
+    final points = projectVisible(
+      clipToNearPlane([for (final p in ring) toDevice(p, eye, enuToDevice)]),
+      intrinsics,
+    );
+    if (points.length >= 3) out.add(CellPolygon(points, zone, distanceM));
+  }
+  out.sort((a, b) => b.distanceM.compareTo(a.distanceM));
+  return out;
 }
