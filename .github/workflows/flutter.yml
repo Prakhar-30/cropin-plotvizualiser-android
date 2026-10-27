@@ -5,9 +5,9 @@ name: flutter
 # promises, and the example app - standing in for a host app - is built.
 on:
   push:
-    branches: [flutter]
+    branches: [flutter, flutter_updated_flow]
   pull_request:
-    branches: [flutter]
+    branches: [flutter, flutter_updated_flow]
   workflow_dispatch:
 
 # A newer push makes an in-flight run on the same branch worthless.
