@@ -212,3 +212,34 @@ List<CellPolygon> buildCellPolygons({
   out.sort((a, b) => b.distanceM.compareTo(a.distanceM));
   return out;
 }
+
+/// How much of a plot is critical and how much moderate on one index, as
+/// fractions of its graded cells: the header of a far plot's marker.
+class ZoneShare {
+  const ZoneShare(this.critical, this.moderate);
+
+  final double critical;
+  final double moderate;
+}
+
+/// The [ZoneShare] of [cells] on [index], or null when there are none.
+///
+/// Counted per cell, not per square metre: cells trimmed at the boundary weigh
+/// as much as whole ones, which moves the figure by a point or two on a small
+/// plot and not at all on the scale it is read at.
+ZoneShare? zoneShare(Iterable<HealthCell> cells, HealthIndex index) {
+  var total = 0;
+  var critical = 0;
+  var moderate = 0;
+  for (final cell in cells) {
+    total++;
+    switch (cell.zoneFor(index)) {
+      case zoneCritical:
+        critical++;
+      case zoneModerate:
+        moderate++;
+    }
+  }
+  if (total == 0) return null;
+  return ZoneShare(critical / total, moderate / total);
+}

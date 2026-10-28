@@ -23,6 +23,31 @@ const double nearModeThresholdM = 30.0;
 /// line down its middle keeps it visible further out.
 const double boundaryRibbonWidthM = 0.6;
 
+/// Plots further than this from their nearest edge are drawn as one marker
+/// instead of their whole boundary.
+///
+/// From a distance a field of outlines is clutter: a dozen ribbons and their
+/// drop points crowd the frame while saying little more than "there is a plot
+/// over there, and this much of it needs attention". The marker says exactly
+/// that, and the full boundary comes in as the agent walks up to it.
+const double plotMarkerBeyondM = 50.0;
+
+/// Half the band around [plotMarkerBeyondM] in which a plot keeps whichever
+/// look it had, so walking along the 50 m line does not flicker between them.
+const double plotMarkerHysteresisM = 5.0;
+
+/// How tall a plot marker stands: above the crop drop points (4.5 m), so the
+/// two never read as the same kind of thing.
+const double plotMarkerHeightM = 6.0;
+
+/// Whether a plot [edgeDistanceM] from the agent is drawn as a marker, given
+/// whether it was last time.
+bool showsAsMarker(double edgeDistanceM, {required bool wasMarker}) {
+  if (edgeDistanceM >= plotMarkerBeyondM + plotMarkerHysteresisM) return true;
+  if (edgeDistanceM <= plotMarkerBeyondM - plotMarkerHysteresisM) return false;
+  return wasMarker;
+}
+
 enum RenderMode {
   /// Beyond 30 m from the nearest edge.
   far('FAR'),
@@ -57,6 +82,14 @@ class OverlayLine {
   final ScreenPoint to;
 }
 
+/// A far plot's marker: a stem up from a point in the plot, its header on top.
+class OverlayMarker {
+  const OverlayMarker(this.base, this.top);
+
+  final ScreenPoint base;
+  final ScreenPoint top;
+}
+
 class OverlayLabel {
   const OverlayLabel(this.at, this.distanceM);
 
@@ -71,6 +104,7 @@ class PlotOverlay {
     required this.centroidDistanceM,
     required this.ribbons,
     required this.lines,
+    this.marker,
     required this.label,
     required this.offscreenBearingDeg,
   });
@@ -84,6 +118,12 @@ class PlotOverlay {
 
   /// The line down the middle of each ribbon.
   final List<OverlayLine> lines;
+
+  /// The plot as one marker, when it is drawn as one; its ribbons are then empty.
+  final OverlayMarker? marker;
+
+  /// Where the label stands: on the ground inside the plot, or on top of the
+  /// marker.
   final OverlayLabel? label;
 
   /// Relative bearing to the plot when nothing of it is on screen, so the UI can
@@ -111,6 +151,7 @@ PlotOverlay buildPlotOverlay({
   required Mat3 deviceToEnu,
   required CameraIntrinsics intrinsics,
   double eyeHeight = eyeHeightM,
+  bool asMarker = false,
 }) {
   final enuToDevice = deviceToEnu.transpose();
   final groundUp = -eyeHeight;
@@ -135,16 +176,28 @@ PlotOverlay buildPlotOverlay({
 
   final mode = edgeDistanceM < nearModeThresholdM ? RenderMode.near : RenderMode.far;
 
-  final (ribbons, lines) = _buildRibbons(ringGround, eye, enuToDevice, intrinsics);
+  final (ribbons, lines) =
+      asMarker ? (const <OverlayRibbon>[], const <OverlayLine>[]) : _buildRibbons(ringGround, eye, enuToDevice, intrinsics);
 
-  final labelPoint = projectDevice(toDevice(centroidEnu, eye, enuToDevice), intrinsics);
+  OverlayMarker? marker;
+  if (asMarker) {
+    final base = projectDevice(toDevice(centroidEnu, eye, enuToDevice), intrinsics);
+    final top = projectDevice(
+      toDevice(Enu(centroidEnu.east, centroidEnu.north, centroidEnu.up + plotMarkerHeightM), eye, enuToDevice),
+      intrinsics,
+    );
+    if (base != null && top != null) marker = OverlayMarker(base, top);
+  }
+
+  final labelPoint = marker?.top ?? (asMarker ? null : projectDevice(toDevice(centroidEnu, eye, enuToDevice), intrinsics));
   final label = labelPoint == null ? null : OverlayLabel(labelPoint, centroidDistanceM);
 
   // Short-circuits on the first visible point instead of concatenating every
   // projected point of the plot into a throwaway list each frame.
   bool onScreen(ScreenPoint p) => p.isOnScreen(intrinsics);
-  final anythingVisible =
-      ribbons.any((r) => r.corners.any(onScreen)) || lines.any((l) => onScreen(l.from) || onScreen(l.to));
+  final anythingVisible = ribbons.any((r) => r.corners.any(onScreen)) ||
+      lines.any((l) => onScreen(l.from) || onScreen(l.to)) ||
+      (marker != null && (onScreen(marker.base) || onScreen(marker.top)));
 
   final offscreenBearingDeg = anythingVisible
       ? null
@@ -159,6 +212,7 @@ PlotOverlay buildPlotOverlay({
     centroidDistanceM: centroidDistanceM,
     ribbons: ribbons,
     lines: lines,
+    marker: marker,
     label: label,
     offscreenBearingDeg: offscreenBearingDeg,
   );

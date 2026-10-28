@@ -211,4 +211,35 @@ void main() {
       expect(ndre.toMessage()['cells'], same(ndre.cells));
     });
   });
+
+  test('far plots go to the renderer as one marker each, in the plot colour', () {
+    final ring = [
+      origin,
+      offset(origin, 10.0, 0.0),
+      offset(origin, 10.0, 10.0),
+      offset(origin, 0.0, 10.0),
+      origin,
+    ];
+    final far = Plot(
+      id: 'F',
+      name: 'F',
+      ring: ring,
+      centroid: offset(origin, 3.0, 4.0),
+      areaSqM: 100,
+      landmarkNote: '',
+      colourIndex: 2,
+      createdAt: '2026-10-01',
+      syncedAtMs: 0,
+    );
+    final scene = buildWorldScene(plots: const [], markerPlots: [far], patches: const [], origin: origin, alpha: 1.0);
+    expect(scene.plots, isEmpty, reason: 'a marker plot has no boundary in the scene');
+    expect(scene.markers.length, 5);
+    expect(scene.markers[0], closeTo(3.0, 1e-3));
+    expect(scene.markers[1], closeTo(4.0, 1e-3));
+    final argb = plotColour(2).argb;
+    expect(scene.markers[2], closeTo(((argb >> 16) & 0xFF) / 255.0, 1e-6));
+    final message = scene.toMessage();
+    expect(message['markerHeight'], plotMarkerHeightM);
+    expect((message['markers']! as List).length, 5);
+  });
 }

@@ -84,6 +84,13 @@ class ArOverlayPainter extends CustomPainter {
         _drawBoundary(canvas, drawn.overlay, Color(overlayTintArgb(confidence, drawn.plot.colourIndex)), alpha,
             primary: i == 0);
       }
+      // Far plots as one marker each, in the plot's colour.
+      for (final drawn in current.plots.reversed) {
+        final marker = drawn.overlay.marker;
+        if (marker == null) continue;
+        _drawPlotMarker(canvas, marker, Color(overlayTintArgb(confidence, drawn.plot.colourIndex)), alpha,
+            drawn.overlay.centroidDistanceM);
+      }
       // Drop points stand over every boundary: a walk-to target is the thing to
       // find on screen.
       for (final drop in current.drops) {
@@ -100,26 +107,67 @@ class ArOverlayPainter extends CustomPainter {
       }
     }
 
-    // A label per plot, pinned to a point on the ground inside it: which plot,
-    // how big, how far. Nearest first, and each later one is lifted clear of
-    // those already placed, so neighbouring plots never print over each other.
+    // A label per plot: on the ground inside a plot drawn up close, on top of a
+    // far plot's marker - which plot, how big, how far, and for a marker how
+    // much of it is critical and moderate. Nearest first, and each later one is
+    // lifted clear of those already placed, so labels never print over each other.
     final placed = <Rect>[];
     for (final (i, drawn) in current.plots.indexed) {
       final label = drawn.overlay.label;
       if (label == null) continue;
+      final isMarker = drawn.overlay.marker != null;
       final near = drawn.overlay.mode == RenderMode.near;
-      final text = '${drawn.plot.name}  ${drawn.plot.areaHectares.toStringAsFixed(2)} ha  '
+      final white = Colors.white.withAlpha(alpha8(alpha));
+      final title = '${drawn.plot.name}  ${drawn.plot.areaHectares.toStringAsFixed(2)} ha  '
           '${label.distanceM.toStringAsFixed(0)} m${near ? '  ±${accuracyM.toStringAsFixed(0)} m' : ''}';
+      final share = drawn.share;
       _drawLabel(
         canvas,
-        text,
+        TextSpan(
+          style: TextStyle(color: white, fontSize: _px(i == 0 ? 34 : 28)),
+          children: [
+            TextSpan(text: title),
+            if (share != null) ...[
+              const TextSpan(text: '\n'),
+              TextSpan(
+                text: '● ',
+                style: TextStyle(color: Color(severityColour(zoneCritical).argb).withAlpha(alpha8(alpha))),
+              ),
+              TextSpan(text: '${_percent(share.critical)} critical   ', style: const TextStyle(fontWeight: FontWeight.w600)),
+              TextSpan(
+                text: '● ',
+                style: TextStyle(color: Color(severityColour(zoneModerate).argb).withAlpha(alpha8(alpha))),
+              ),
+              TextSpan(text: '${_percent(share.moderate)} moderate', style: const TextStyle(fontWeight: FontWeight.w600)),
+            ],
+          ],
+        ),
         label.at,
         Color(overlayTintArgb(confidence, drawn.plot.colourIndex)),
         alpha,
         placed,
-        primary: i == 0,
+        groundDot: !isMarker,
       );
     }
+  }
+
+  /// A share as a whole percentage, with anything above zero shown as at
+  /// least 1%: "0%" over a red patch would read as "nothing to see".
+  static String _percent(double fraction) {
+    if (fraction <= 0) return '0%';
+    return '${math.max(1, (fraction * 100).round())}%';
+  }
+
+  /// A far plot's marker on the sensor path: a stem up from the plot and a disc
+  /// in the plot's colour on top, its header above that.
+  void _drawPlotMarker(Canvas canvas, OverlayMarker marker, Color tint, double alpha, double distanceM) {
+    final base = _o(marker.base);
+    final top = _o(marker.top);
+    canvas.drawLine(base, top, _stroke(_outlineBacking, 0.55 * alpha, 16));
+    canvas.drawLine(base, top, _stroke(tint, alpha, 10));
+    final radius = _px(30) * (40.0 / distanceM.clamp(20.0, 400.0)).clamp(0.45, 1.2);
+    canvas.drawCircle(top, radius + _px(4), _fill(_outlineBacking, 0.7 * alpha));
+    canvas.drawCircle(top, radius, _fill(tint, alpha));
   }
 
   /// A drop point on the sensor path: a stem from the ground to above the
@@ -201,25 +249,20 @@ class ArOverlayPainter extends CustomPainter {
     canvas.drawCircle(centre, _px(3), _fill(Colors.white, 0.75));
   }
 
-  /// A label standing on [at], a ground point inside its plot, with a stalk
-  /// down to a dot on that point. Lifted above any rectangle in [placed] it
-  /// would overlap, then added to it.
+  /// A label standing on [at] - a ground point inside its plot, with a dot on
+  /// it when [groundDot], or the top of a far plot's marker - with a stalk down
+  /// to it. Lifted above any rectangle in [placed] it would overlap, then added
+  /// to it.
   void _drawLabel(
     Canvas canvas,
-    String text,
+    InlineSpan text,
     ScreenPoint at,
     Color tint,
     double alpha,
     List<Rect> placed, {
-    required bool primary,
+    required bool groundDot,
   }) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(color: Colors.white.withAlpha(alpha8(alpha)), fontSize: _px(primary ? 34 : 28)),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
+    final painter = TextPainter(text: text, textDirection: TextDirection.ltr)..layout();
     final padding = _px(14);
     final height = painter.height + _px(14);
     var rect = Rect.fromLTWH(
@@ -235,8 +278,10 @@ class ArOverlayPainter extends CustomPainter {
 
     final ground = _o(at);
     canvas.drawLine(ground, Offset(ground.dx, rect.bottom), _stroke(tint, 0.9 * alpha, 3));
-    canvas.drawCircle(ground, _px(7), _fill(_outlineBacking, 0.6 * alpha));
-    canvas.drawCircle(ground, _px(5), _fill(tint, alpha));
+    if (groundDot) {
+      canvas.drawCircle(ground, _px(7), _fill(_outlineBacking, 0.6 * alpha));
+      canvas.drawCircle(ground, _px(5), _fill(tint, alpha));
+    }
     canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(_px(8))), _fill(_labelBackground, alpha * 0.8));
     // A strip of the plot's colour on the left says which outline it belongs to.
     canvas.drawRRect(

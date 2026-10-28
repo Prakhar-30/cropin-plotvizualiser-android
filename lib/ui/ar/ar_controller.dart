@@ -39,10 +39,15 @@ double zoomedFovDeg(double horizontalFovDeg, double zoom) =>
 
 /// One plot as drawn this frame.
 class DrawnPlot {
-  const DrawnPlot(this.plot, this.overlay);
+  const DrawnPlot(this.plot, this.overlay, {this.share});
 
   final Plot plot;
   final PlotOverlay overlay;
+
+  /// For a plot drawn as a marker, how much of it is critical and moderate on
+  /// the chosen index - its header. Null without crop data, or with crop
+  /// health switched off.
+  final ZoneShare? share;
 }
 
 /// What the overlay canvas draws for one pose sample.
@@ -107,6 +112,8 @@ class ArUiState {
     this.snappedTo,
     this.depthActive = false,
     this.loaded = false,
+    this.healthVisible = true,
+    this.shownDrops = 0,
   });
 
   /// Every cached plot. The view shows the nearby ones.
@@ -147,6 +154,13 @@ class ArUiState {
   /// The cache has been read.
   final bool loaded;
 
+  /// Crop health is shown: ground cells, drop points, marker headers, the
+  /// minimap's colouring. Off, only the plots themselves are drawn.
+  final bool healthVisible;
+
+  /// Drop points on screen now: those of the plots drawn up close.
+  final int shownDrops;
+
   bool get snapped => snappedTo != null;
 
   /// Every drop point of the current index, across all plots.
@@ -175,6 +189,8 @@ class ArUiState {
     String? Function()? snappedTo,
     bool? depthActive,
     bool? loaded,
+    bool? healthVisible,
+    int? shownDrops,
   }) =>
       ArUiState(
         plots: plots ?? this.plots,
@@ -193,6 +209,8 @@ class ArUiState {
         snappedTo: snappedTo == null ? this.snappedTo : snappedTo(),
         depthActive: depthActive ?? this.depthActive,
         loaded: loaded ?? this.loaded,
+        healthVisible: healthVisible ?? this.healthVisible,
+        shownDrops: shownDrops ?? this.shownDrops,
       );
 }
 
@@ -275,6 +293,44 @@ class ArController extends ValueNotifier<ArUiState> {
   /// Nearby plots, nearest first, recomputed on each fix.
   List<Plot> _nearby = const [];
 
+  /// Ids of the nearby plots drawn as one marker rather than their boundary.
+  Set<String> _markerIds = const {};
+
+  /// The nearby plots drawn up close, nearest first.
+  List<Plot> get _closePlots => [for (final p in _nearby) if (!_markerIds.contains(p.id)) p];
+
+  /// Marker headers, per plot, for the index and snapshots they were counted on.
+  final Map<String, ZoneShare?> _shares = {};
+  (HealthIndex, Object?)? _sharesKey;
+
+  ZoneShare? _shareFor(Plot plot, ArUiState state) {
+    final key = (state.index, state.health);
+    if (_sharesKey != key) {
+      _sharesKey = key;
+      _shares.clear();
+    }
+    return _shares.putIfAbsent(plot.id, () {
+      final cells = state.health[plot.id]?.cells;
+      return cells == null ? null : zoneShare(cells, state.index);
+    });
+  }
+
+  /// Drop points of the plots drawn up close, nearest within range. Far plots
+  /// show theirs as a header instead.
+  List<HealthPatch> _closePatches(ArUiState state, LatLng agent) => state.healthVisible
+      ? nearbyPatches(
+          [for (final p in _closePlots) ...?state.health[p.id]?.patchesFor(state.index)],
+          agent,
+          state.index,
+        )
+      : const [];
+
+  /// Ground cells of the plots drawn up close - once anchored, and with crop
+  /// health on.
+  List<HealthCell> _closeCells(ArUiState state) => state.healthVisible && state.snapped
+      ? [for (final p in _closePlots) ...?state.health[p.id]?.cells]
+      : const [];
+
   /// The scene's fixed origin on the ARCore path; set with the first nearby set.
   LatLng? _sceneOrigin;
 
@@ -345,6 +401,12 @@ class ArController extends ValueNotifier<ArUiState> {
   void setIndex(HealthIndex index) {
     if (index == value.index) return;
     _rebuildOverlay(value.copyWith(index: index));
+  }
+
+  /// Shows or hides crop health everywhere in the view.
+  void setHealthVisible(bool visible) {
+    if (visible == value.healthVisible) return;
+    _rebuildOverlay(value.copyWith(healthVisible: visible));
   }
 
   void dismissMessage() => value = value.copyWith(message: () => null);
@@ -561,7 +623,13 @@ class ArController extends ValueNotifier<ArUiState> {
       if (d <= plotViewRangeM) scored.add((plot, d));
     }
     scored.sort((a, b) => a.$2.compareTo(b.$2));
-    final next = [for (final (plot, _) in scored.take(maxDrawnPlots)) plot];
+    final kept = scored.take(maxDrawnPlots).toList();
+    final markers = {
+      for (final (plot, d) in kept)
+        if (showsAsMarker(d, wasMarker: _markerIds.contains(plot.id))) plot.id,
+    };
+    if (!setEquals(markers, _markerIds)) _markerIds = markers;
+    final next = [for (final (plot, _) in kept) plot];
     if (!listEquals([for (final p in next) p.id], [for (final p in _nearby) p.id])) {
       _nearby = next;
       _sceneOrigin ??= at;
@@ -596,22 +664,22 @@ class ArController extends ValueNotifier<ArUiState> {
       identityHashCode(state.health),
       confidence,
       state.snapped,
+      state.healthVisible,
+      Object.hashAllUnordered(_markerIds),
     );
     if (key == _sentSceneKey) return;
     _sentSceneKey = key;
     final agent = _agentPosition ?? origin;
     final scene = buildWorldScene(
-      plots: _nearby,
+      plots: _closePlots,
+      markerPlots: [for (final p in _nearby) if (_markerIds.contains(p.id)) p],
       // Ground cells only once anchored. Before that the scene is placed from
       // raw GPS and moves with it, and a 3 m square that wanders by several
       // metres paints the wrong ground; a drop point is a target, not a claim
       // about which square metre is red, so it is shown from the start.
-      cells: [
-        if (state.snapped)
-          for (final plot in _nearby) ...?state.health[plot.id]?.cells,
-      ],
+      cells: _closeCells(state),
       index: state.index,
-      patches: nearbyPatches(state.patches, agent, state.index),
+      patches: _closePatches(state, agent),
       origin: origin,
       // Always the plots' own colours on the ARCore path: a grey translucent
       // wall is invisible against a white wall or a pale sky. The heading chip
@@ -649,35 +717,49 @@ class ArController extends ValueNotifier<ArUiState> {
       final eyeHeight = _vio?.eyeHeightM ?? eyeHeightM;
       final drawn = <DrawnPlot>[
         for (final plot in _nearby)
-          DrawnPlot(
-            plot,
-            buildPlotOverlay(
-              ring: plot.ring,
-              centroid: plot.centroid,
-              agent: agent,
-              frame: frame,
-              deviceToEnu: _pose.deviceToEnu,
-              intrinsics: intrinsics,
-              eyeHeight: eyeHeight,
+          if (_markerIds.contains(plot.id))
+            DrawnPlot(
+              plot,
+              buildPlotOverlay(
+                ring: plot.ring,
+                centroid: plot.centroid,
+                agent: agent,
+                frame: frame,
+                deviceToEnu: _pose.deviceToEnu,
+                intrinsics: intrinsics,
+                eyeHeight: eyeHeight,
+                asMarker: true,
+              ),
+              share: state.healthVisible ? _shareFor(plot, state) : null,
+            )
+          else
+            DrawnPlot(
+              plot,
+              buildPlotOverlay(
+                ring: plot.ring,
+                centroid: plot.centroid,
+                agent: agent,
+                frame: frame,
+                deviceToEnu: _pose.deviceToEnu,
+                intrinsics: intrinsics,
+                eyeHeight: eyeHeight,
+              ),
             ),
-          ),
       ];
       final drops = state.visual
           ? const <DropMarker>[]
           : buildDropMarkers(
-              patches: nearbyPatches(state.patches, agent, state.index),
+              patches: _closePatches(state, agent),
               frame: frame,
               eye: frame.toEnu(agent),
               enuToDevice: _pose.deviceToEnu.transpose(),
               intrinsics: intrinsics,
               eyeHeight: eyeHeight,
             );
-      final cells = state.visual || !state.snapped
+      final cells = state.visual
           ? const <CellPolygon>[]
           : buildCellPolygons(
-              cells: [
-                for (final plot in _nearby) ...?state.health[plot.id]?.cells,
-              ],
+              cells: _closeCells(state),
               index: state.index,
               frame: frame,
               eye: frame.toEnu(agent),
@@ -693,6 +775,9 @@ class ArController extends ValueNotifier<ArUiState> {
         agent: agent,
         headingDeg: _pose.headingDeg,
       );
+
+      final shown = _closePatches(state, agent).length;
+      if (shown != state.shownDrops) state = state.copyWith(shownDrops: shown);
 
       if (drawn.isNotEmpty) {
         final nearest = drawn.first.overlay;

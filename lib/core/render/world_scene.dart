@@ -69,7 +69,13 @@ class ScenePlot {
 }
 
 class WorldScene {
-  const WorldScene({required this.plots, required this.cells, required this.drops, required this.alpha});
+  const WorldScene({
+    required this.plots,
+    required this.cells,
+    required this.drops,
+    this.markers = const [],
+    required this.alpha,
+  });
 
   final List<ScenePlot> plots;
 
@@ -79,6 +85,9 @@ class WorldScene {
 
   /// Drop points: (east, north, r, g, b) per point, colour from the zone.
   final Float32List drops;
+
+  /// Far plots, each as one marker: (east, north, r, g, b), the plot's colour.
+  final List<double> markers;
   final double alpha;
 
   Map<String, Object> toMessage() => {
@@ -86,6 +95,8 @@ class WorldScene {
         'cells': cells,
         'drops': drops,
         'dropHeight': dropPointHeightM,
+        'markers': Float32List.fromList(markers),
+        'markerHeight': plotMarkerHeightM,
         'alpha': alpha,
         'ribbonAlpha': PlotAlpha.ribbon,
         'lineAlpha': PlotAlpha.outline,
@@ -94,9 +105,11 @@ class WorldScene {
 
 /// Builds the scene for [plots], nearest first, the ground [cells] graded on
 /// [index] and the drop points [patches], in the frame centred on [origin].
-/// The first plot is the primary one.
+/// The first plot is the primary one. [markerPlots] are drawn as one marker
+/// each, at their centroid, instead of their boundary.
 WorldScene buildWorldScene({
   required List<Plot> plots,
+  List<Plot> markerPlots = const [],
   Iterable<HealthCell> cells = const [],
   HealthIndex index = HealthIndex.ndvi,
   required List<HealthPatch> patches,
@@ -149,8 +162,22 @@ WorldScene buildWorldScene({
     ]);
   }
 
+  final markers = <double>[];
+  for (final plot in markerPlots) {
+    final at = frame.toEnu(plot.centroid);
+    final argb = plotColour(plot.colourIndex).argb;
+    markers.addAll([
+      at.east,
+      at.north,
+      ((argb >> 16) & 0xFF) / 255.0,
+      ((argb >> 8) & 0xFF) / 255.0,
+      (argb & 0xFF) / 255.0,
+    ]);
+  }
+
   return WorldScene(
     plots: scenePlots,
+    markers: markers,
     cells: Float32List.fromList(cellVertices),
     drops: Float32List.fromList(drops),
     alpha: alpha,

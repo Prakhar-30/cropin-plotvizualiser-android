@@ -214,4 +214,38 @@ void main() {
     expect(displaced.label!.at.x, closeTo(onAgent.label!.at.x, 1.0));
     expect(displaced.label!.at.y, closeTo(onAgent.label!.at.y, 1.0));
   });
+
+  test('a plot past the marker range is one marker, its label on top', () {
+    final result = buildPlotOverlay(
+      ring: square(40.0, 120.0),
+      centroid: centroidOf(square(40.0, 120.0)),
+      agent: agent,
+      frame: frame,
+      deviceToEnu: deviceToEnuFromOrientation(0.0, 0.0),
+      intrinsics: intrinsics,
+      asMarker: true,
+    );
+    expect(result.ribbons, isEmpty, reason: 'no boundary when drawn as a marker');
+    expect(result.lines, isEmpty);
+    final marker = result.marker!;
+    expect(marker.top.y, lessThan(marker.base.y), reason: 'the marker stands up');
+    expect(marker.top.x, closeTo(marker.base.x, 1.0));
+    expect(marker.top.y, lessThan(intrinsics.centreYPx), reason: 'its head is above eye level');
+    expect(result.label!.at.y, closeTo(marker.top.y, 1e-9), reason: 'the header sits on the marker');
+    expect(result.offscreenBearingDeg, isNull);
+  });
+
+  test('markers switch at 50 m with a band that stops flicker', () {
+    expect(showsAsMarker(80, wasMarker: false), isTrue);
+    expect(showsAsMarker(20, wasMarker: true), isFalse);
+    // Inside the band the plot keeps the look it had.
+    expect(showsAsMarker(plotMarkerBeyondM, wasMarker: true), isTrue);
+    expect(showsAsMarker(plotMarkerBeyondM, wasMarker: false), isFalse);
+    expect(showsAsMarker(plotMarkerBeyondM + plotMarkerHysteresisM, wasMarker: false), isTrue);
+    expect(showsAsMarker(plotMarkerBeyondM - plotMarkerHysteresisM, wasMarker: true), isFalse);
+  });
+
+  test('a plot marker stands taller than a drop point', () {
+    expect(plotMarkerHeightM, greaterThan(4.5));
+  });
 }

@@ -121,4 +121,21 @@ void main() {
     );
     expect(ndre, isEmpty, reason: 'graded only on the chosen index');
   });
+
+  test('zone share counts critical and moderate cells of the chosen index', () {
+    HealthCell cell(List<int> zones) => HealthCell(centroid: agent, ring: const [], zones: zones);
+    final cells = [
+      cell([zoneCritical, zoneNormal, zoneNormal]),
+      cell([zoneModerate, zoneCritical, zoneNormal]),
+      cell([zoneModerate, zoneNormal, zoneNormal]),
+      cell([zoneNormal, zoneNormal, zoneNormal]),
+    ];
+    final ndvi = zoneShare(cells, HealthIndex.ndvi)!;
+    expect(ndvi.critical, closeTo(0.25, 1e-12));
+    expect(ndvi.moderate, closeTo(0.5, 1e-12));
+    final ndre = zoneShare(cells, HealthIndex.ndre)!;
+    expect(ndre.critical, closeTo(0.25, 1e-12));
+    expect(ndre.moderate, 0.0);
+    expect(zoneShare(const [], HealthIndex.ndvi), isNull);
+  });
 }

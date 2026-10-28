@@ -367,7 +367,7 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                           padding: const EdgeInsets.only(right: 12, bottom: 10),
                           child: PlotMinimap(
                             plots: state.plots,
-                            health: state.health,
+                            health: state.healthVisible ? state.health : const {},
                             index: state.index,
                             frame: controller.frame,
                           ),
@@ -380,6 +380,7 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                       state: state,
                       onDismissMessage: controller.dismissMessage,
                       onSelectIndex: controller.setIndex,
+                      onHealthVisible: controller.setHealthVisible,
                     ),
                   ),
                 ],
@@ -440,16 +441,22 @@ class _ArAppBar extends StatelessWidget {
 /// The sheet: which index the drop points show, what the colours mean, and
 /// where the session is anchored. No buttons to press - the anchor is automatic.
 class _BottomSheet extends StatelessWidget {
-  const _BottomSheet({required this.state, required this.onDismissMessage, required this.onSelectIndex});
+  const _BottomSheet({
+    required this.state,
+    required this.onDismissMessage,
+    required this.onSelectIndex,
+    required this.onHealthVisible,
+  });
 
   final ArUiState state;
   final VoidCallback onDismissMessage;
   final ValueChanged<HealthIndex> onSelectIndex;
+  final ValueChanged<bool> onHealthVisible;
 
   @override
   Widget build(BuildContext context) {
     final message = state.message;
-    final drops = state.patches.length;
+    final drops = state.shownDrops;
     return Container(
       decoration: const BoxDecoration(
         color: PlotFinderColors.sheet,
@@ -464,35 +471,77 @@ class _BottomSheet extends StatelessWidget {
             _MessageBanner(message: message, onDismiss: onDismissMessage),
             const SizedBox(height: 10),
           ],
-          _IndexSwitch(selected: state.index, onSelect: onSelectIndex),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const _ZoneDot(zone: zoneCritical),
-              const SizedBox(width: 6),
-              const Text('Critical', style: TextStyle(color: Colors.white, fontSize: 13)),
-              const SizedBox(width: 14),
-              const _ZoneDot(zone: zoneModerate),
-              const SizedBox(width: 6),
-              const Text('Moderate', style: TextStyle(color: Colors.white, fontSize: 13)),
-              const Spacer(),
-              Text(
-                state.health.isEmpty ? 'no crop data cached' : '$drops drop point${drops == 1 ? '' : 's'}',
-                style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            state.snapped
-                ? 'Anchored - crop condition shown on the ground'
-                : 'Drop points only - ground colouring starts once anchored within 10 m of a boundary',
-            style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
-          ),
+          _HealthToggle(visible: state.healthVisible, onChanged: onHealthVisible),
+          if (state.healthVisible) ...[
+            const SizedBox(height: 6),
+            _IndexSwitch(selected: state.index, onSelect: onSelectIndex),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const _ZoneDot(zone: zoneCritical),
+                const SizedBox(width: 6),
+                const Text('Critical', style: TextStyle(color: Colors.white, fontSize: 13)),
+                const SizedBox(width: 14),
+                const _ZoneDot(zone: zoneModerate),
+                const SizedBox(width: 6),
+                const Text('Moderate', style: TextStyle(color: Colors.white, fontSize: 13)),
+                const Spacer(),
+                Text(
+                  state.health.isEmpty ? 'no crop data cached' : '$drops drop point${drops == 1 ? '' : 's'}',
+                  style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              state.snapped
+                  ? 'Anchored - crop condition shown on the ground'
+                  : 'Drop points only - ground colouring starts once anchored within 10 m of a boundary',
+              style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
+            ),
+          ],
         ],
       ),
     );
   }
+}
+
+/// Crop health on or off, for the whole view: ground cells, drop points, the
+/// headers on far plots' markers and the minimap's colouring. Off, the view is
+/// plots only.
+class _HealthToggle extends StatelessWidget {
+  const _HealthToggle({required this.visible, required this.onChanged});
+
+  final bool visible;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        toggled: visible,
+        label: 'Show crop health',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => onChanged(!visible),
+          child: Row(
+            children: [
+              const Icon(Icons.eco_outlined, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Crop health',
+                  style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Text(
+                visible ? 'shown' : 'hidden - plots only',
+                style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
+              ),
+              const SizedBox(width: 6),
+              Switch(value: visible, onChanged: onChanged),
+            ],
+          ),
+        ),
+      );
 }
 
 /// Crop greenness, crop vigour, water stress - one at a time.

@@ -39,6 +39,9 @@ internal class OverlayScene(
     /** Drop points: (east, north, r, g, b) per point. */
     val drops: FloatArray,
     val dropHeight: Float,
+    /** Far plots, one marker each: (east, north, r, g, b), the plot's colour. */
+    val markers: FloatArray,
+    val markerHeight: Float,
     /** Overall opacity from heading confidence. */
     val alpha: Float,
     val ribbonAlpha: Float,
@@ -70,6 +73,8 @@ internal class OverlayScene(
                 cells = floats(map["cells"]),
                 drops = floats(map["drops"]),
                 dropHeight = number("dropHeight", 4.5f),
+                markers = floats(map["markers"]),
+                markerHeight = number("markerHeight", 6f),
                 alpha = number("alpha", 1f),
                 ribbonAlpha = number("ribbonAlpha", 0.55f),
                 lineAlpha = number("lineAlpha", 0.95f),
@@ -90,6 +95,15 @@ private class PlotBuffers(
     /** The line down the middle of the ribbon, as a loop. */
     val line: FloatBuffer,
     val lineCount: Int,
+)
+
+/** Upright pins - drop points, or far plots' markers - ready to draw. */
+private class Pins(
+    val stems: FloatBuffer,
+    val heads: FloatBuffer,
+    val headColors: FloatBuffer,
+    val stemColors: FloatBuffer,
+    val count: Int,
 )
 
 /**
@@ -140,11 +154,8 @@ internal class ArOverlayRenderer {
     private var cellPositions: FloatBuffer? = null
     private var cellColors: FloatBuffer? = null
     private var cellVertexCount = 0
-    private var dropStems: FloatBuffer? = null
-    private var dropHeads: FloatBuffer? = null
-    private var dropColors: FloatBuffer? = null
-    private var stemColors: FloatBuffer? = null
-    private var dropCount = 0
+    private var drops: Pins? = null
+    private var markers: Pins? = null
 
     private val model = FloatArray(16)
     private val modelView = FloatArray(16)
@@ -205,7 +216,8 @@ internal class ArOverlayRenderer {
         if (next == null) {
             plots = emptyList()
             cellVertexCount = 0
-            dropCount = 0
+            drops = null
+            markers = null
         } else if (program != 0) {
             build(next)
         }
@@ -334,30 +346,35 @@ internal class ArOverlayRenderer {
             drawArrays(p.line, null, GLES20.GL_LINE_LOOP, 0, p.lineCount)
         }
 
-        // Drop points last, over everything: a stem from the ground and a round
-        // head on top. A drop point is a walk-to target, the thing to find.
-        if (dropCount > 0) {
-            noFade()
-            GLES20.glUniform1f(uGhost, LINE_GHOST)
-            lineWidth(10f)
-            color(0.04f, 0.06f, 0.08f, 0.55f * s.alpha)
-            drawArrays(dropStems!!, null, GLES20.GL_LINES, 0, dropCount * 2)
-            lineWidth(6f)
-            GLES20.glUniform1f(uAlpha, s.alpha)
-            drawArrays(dropStems!!, stemColors, GLES20.GL_LINES, 0, dropCount * 2)
-
-            GLES20.glUniform1i(uRound, 1)
-            GLES20.glUniform1f(uPointSize, min(HEAD_SIZE_PX + 10f, pointSizeMax))
-            color(0.04f, 0.06f, 0.08f, 0.7f * s.alpha)
-            drawArrays(dropHeads!!, null, GLES20.GL_POINTS, 0, dropCount)
-            GLES20.glUniform1f(uPointSize, min(HEAD_SIZE_PX, pointSizeMax))
-            GLES20.glUniform1f(uAlpha, s.alpha)
-            drawArrays(dropHeads!!, dropColors, GLES20.GL_POINTS, 0, dropCount)
-            GLES20.glUniform1i(uRound, 0)
-        }
+        // Far plots' markers, then the drop points over everything: a stem from
+        // the ground and a round head on top. A drop point is a walk-to target,
+        // the thing to find; a marker stands in for a plot too far off to draw.
+        noFade()
+        GLES20.glUniform1f(uGhost, LINE_GHOST)
+        markers?.let { drawPins(it, s.alpha, stemPx = 8f, headPx = MARKER_HEAD_SIZE_PX) }
+        drops?.let { drawPins(it, s.alpha, stemPx = 6f, headPx = HEAD_SIZE_PX) }
 
         GLES20.glDisable(GLES20.GL_BLEND)
         GLES20.glDepthMask(true)
+    }
+
+    private fun drawPins(pins: Pins, alpha: Float, stemPx: Float, headPx: Float) {
+        if (pins.count == 0) return
+        lineWidth(stemPx + 4f)
+        color(0.04f, 0.06f, 0.08f, 0.55f * alpha)
+        drawArrays(pins.stems, null, GLES20.GL_LINES, 0, pins.count * 2)
+        lineWidth(stemPx)
+        GLES20.glUniform1f(uAlpha, alpha)
+        drawArrays(pins.stems, pins.stemColors, GLES20.GL_LINES, 0, pins.count * 2)
+
+        GLES20.glUniform1i(uRound, 1)
+        GLES20.glUniform1f(uPointSize, min(headPx + 10f, pointSizeMax))
+        color(0.04f, 0.06f, 0.08f, 0.7f * alpha)
+        drawArrays(pins.heads, null, GLES20.GL_POINTS, 0, pins.count)
+        GLES20.glUniform1f(uPointSize, min(headPx, pointSizeMax))
+        GLES20.glUniform1f(uAlpha, alpha)
+        drawArrays(pins.heads, pins.headColors, GLES20.GL_POINTS, 0, pins.count)
+        GLES20.glUniform1i(uRound, 0)
     }
 
     private fun fade(end: Float, start: Float, floor: Float) {
@@ -407,28 +424,32 @@ internal class ArOverlayRenderer {
         cellPositions = buffer(cellXyz)
         cellColors = buffer(cellRgba)
 
-        // Drop points: a stem as a line from the ground to the top, a head as
-        // one point at the top. Both coloured by the point's zone.
-        dropCount = s.drops.size / 5
-        val stems = FloatArray(dropCount * 6)
-        val heads = FloatArray(dropCount * 3)
-        val headColors = FloatArray(dropCount * 4)
-        val stemColorArray = FloatArray(dropCount * 8)
-        for (i in 0 until dropCount) {
-            val e = s.drops[i * 5]
-            val n = s.drops[i * 5 + 1]
-            val r = s.drops[i * 5 + 2]
-            val g = s.drops[i * 5 + 3]
-            val b = s.drops[i * 5 + 4]
-            System.arraycopy(floatArrayOf(e, n, 0f, e, n, s.dropHeight), 0, stems, i * 6, 6)
-            System.arraycopy(floatArrayOf(e, n, s.dropHeight), 0, heads, i * 3, 3)
+        drops = buildPins(s.drops, s.dropHeight)
+        markers = buildPins(s.markers, s.markerHeight)
+    }
+
+    /**
+     * Pins from (east, north, r, g, b) per pin: a stem as a line from the ground
+     * to [height], a head as one point at the top, both in the pin's colour.
+     */
+    private fun buildPins(data: FloatArray, height: Float): Pins {
+        val count = data.size / 5
+        val stems = FloatArray(count * 6)
+        val heads = FloatArray(count * 3)
+        val headColors = FloatArray(count * 4)
+        val stemColors = FloatArray(count * 8)
+        for (i in 0 until count) {
+            val e = data[i * 5]
+            val n = data[i * 5 + 1]
+            val r = data[i * 5 + 2]
+            val g = data[i * 5 + 3]
+            val b = data[i * 5 + 4]
+            System.arraycopy(floatArrayOf(e, n, 0f, e, n, height), 0, stems, i * 6, 6)
+            System.arraycopy(floatArrayOf(e, n, height), 0, heads, i * 3, 3)
             System.arraycopy(floatArrayOf(r, g, b, 1f), 0, headColors, i * 4, 4)
-            System.arraycopy(floatArrayOf(r, g, b, 0.95f, r, g, b, 0.95f), 0, stemColorArray, i * 8, 8)
+            System.arraycopy(floatArrayOf(r, g, b, 0.95f, r, g, b, 0.95f), 0, stemColors, i * 8, 8)
         }
-        dropStems = buffer(stems)
-        dropHeads = buffer(heads)
-        dropColors = buffer(headColors)
-        stemColors = buffer(stemColorArray)
+        return Pins(buffer(stems), buffer(heads), buffer(headColors), buffer(stemColors), count)
     }
 
     private fun buildPlot(p: ScenePlot): PlotBuffers {
@@ -487,6 +508,9 @@ internal class ArOverlayRenderer {
 
         /** A drop point's head at 10 m; it shrinks with distance in the shader. */
         const val HEAD_SIZE_PX = 44f
+
+        /** A far plot's marker head, a size up from a drop point's. */
+        const val MARKER_HEAD_SIZE_PX = 60f
 
         fun buffer(values: FloatArray): FloatBuffer =
             ByteBuffer.allocateDirect(max(4, values.size * 4)).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {

@@ -309,6 +309,19 @@ is the red and yellow of problem cells. Labels stand on a point inside each plot
 with a stalk to the ground and a strip of the plot's colour, and are lifted clear
 of one another.
 
+**Far plots are one marker.** A plot more than about **50 m** from its nearest
+edge is not outlined at all: it stands as a single **6 m marker** in the plot's
+colour, at its centroid, with a header giving its name, size, distance and how
+much of it is **critical** and **moderate** on the chosen index (share of its
+3 m cells). Its ground cells and drop points are left out until you are closer.
+A 5 m band either side of 50 m keeps a plot's look steady as you walk along the
+line. This keeps a distant field of plots from cluttering the screen.
+
+**Crop health on/off.** The *Crop health* switch at the top of the bottom sheet
+hides every health visual at once - ground cells, drop points, the marker
+headers' percentages, the minimap colouring and the index switch - leaving only
+the plots.
+
 The *NEAR / FAR* badge still switches at 30 m from the **nearest edge**, never the
 centroid - an elongated plot's centroid can be 60 m away while the agent stands
 on its boundary. In near mode the label carries the live GNSS accuracy. When no
