@@ -139,7 +139,7 @@ sizing CameraX to the sensor.
 flutter test
 ```
 
-**190 tests.** Every Kotlin test was ported, with the same hand-computed expected values —
+**181 tests.** Every Kotlin test was ported, with the same hand-computed expected values —
 derived from the documented model rather than by calling the code back on
 itself. They cover the ENU frame, projection and clipping, the position and
 orientation filters, heading fusion, the overlay builders, the health raster and

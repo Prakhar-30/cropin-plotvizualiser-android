@@ -319,6 +319,39 @@ changed nothing in a view that shows every plot. The app opens on a home
 screen with the cached plot count, its age and *Sync now* (automatic on opening
 when the cache is empty or over an hour old), and *Start AR view*.
 
+## Later rounds on the updated flow
+
+Field feedback after the first build of the updated flow, and what changed.
+
+**Plot colours read as crop condition.** Two adjoining plots, one drawn red
+and one yellow, looked exactly like a critical patch beside a moderate one,
+and their tinted floors washed the whole screen when the agent stood inside
+one. Plot colours are now blues, violets and white only, so red and yellow
+always mean the crop, and plots have no floor tint.
+
+**Walls of neighbouring plots overlapped.** With every plot within 400 m
+drawn at once, the 2.6 m walls stacked, and it was hard to say which fence
+was whose - even after pulling them 0.5 m inside each plot and giving full
+walls to the nearest plot only. Boundaries now lie flat: a 0.6 m ribbon from
+the boundary into its own plot with a fixed-width line down its middle.
+Ribbons never cross into a neighbour, so a shared edge shows two bands side
+by side. The near-mode accuracy bands went too, for the same reason; the
+label carries the accuracy instead.
+
+**Ground cells before the anchor painted the wrong ground.** Until the view
+is anchored, the scene moves with raw GPS, and a 3 m cell that wanders 4 m
+lands on its neighbour. Ground cells now wait for the anchor; drop points,
+which say "go roughly there", show from the start.
+
+**Distant plots were clutter.** Beyond about 50 m (with a 5 m band against
+flicker) a plot is one 6 m marker in its colour, with a header giving its
+critical and moderate share on the chosen index. A *Crop health* switch hides
+every health visual at once.
+
+**Looking closer.** Pinch zoom, up to 5x, is digital: the camera image is
+cropped about its centre and the projection narrowed by the same factor, so
+the overlay stays on its ground. Past about 3x the image is soft.
+
 ## Sources
 
 1. Azuma, *A Survey of Augmented Reality* (1997) — [PDF](https://sreal.ucf.edu/wp-content/uploads/2017/02/Azuma1998.pdf)

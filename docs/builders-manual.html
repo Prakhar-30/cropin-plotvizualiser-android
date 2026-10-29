@@ -252,7 +252,7 @@ footer{
       <div><dt>Web tool</dt><dd>React 18 · MapLibre 5</dd></div>
       <div><dt>API</dt><dd>Express 4 · PostGIS</dd></div>
       <div><dt>Mobile</dt><dd>Flutter plugin · ARCore motion</dd></div>
-      <div><dt>Tests</dt><dd>176 Flutter · 18 API</dd></div>
+      <div><dt>Tests</dt><dd>181 Flutter · 18 API</dd></div>
       <div><dt>Release APK</dt><dd>9.1 MB arm64</dd></div>
     </dl>
   </div>
@@ -506,7 +506,7 @@ footer{
 
   <div class="note">
     <span class="note-k">Migration policy</span>
-    <p>Everything lives in its own <code>fieldar</code> schema. Migrations 001 and 002 are additive only — <code>CREATE … IF NOT EXISTS</code> or <code>CREATE OR REPLACE</code>. Migration <code>003_updated_flow.sql</code> is the one deliberate exception: it starts the data fresh for the new flow, deleting every row in <code>fieldar.plots</code>, dropping the <code>access_point</code> column and narrowing severity to 0–2, in one transaction. It touches nothing outside the <code>fieldar</code> schema and its <code>public.fieldar_*</code> wrappers.</p>
+    <p>Everything lives in its own <code>fieldar</code> schema. Migrations 001 and 002 are additive only — <code>CREATE … IF NOT EXISTS</code> or <code>CREATE OR REPLACE</code>. Migration <code>003_updated_flow.sql</code> is the one deliberate exception: it starts the data fresh for the new flow, deleting every row in <code>fieldar.plots</code>, dropping the <code>access_point</code> column and narrowing severity to 0–2, in one transaction. It touches nothing outside the <code>fieldar</code> schema and its <code>public.fieldar_*</code> wrappers. Migration <code>004_delete_plot.sql</code> is additive again: one function, <code>public.fieldar_delete_plot</code>, behind the web tool's <em>Delete</em> buttons; a plot's health snapshots go with it.</p>
   </div>
 
   <h3>The crop-condition raster</h3>
@@ -1354,7 +1354,7 @@ footer{
         <tr><td>sqflite</td><td class="mono">2.x</td><td>SQLite for Flutter</td><td>The offline cache: plots, crop-condition snapshots, telemetry. Schema version 4 drops the access-point columns and the old snapshots on upgrade.</td></tr>
         <tr><td>LocationManager</td><td class="mono">Android</td><td>The framework's own location service</td><td>1 Hz fixes (the fused provider on Android 12+, GNSS before), plus the last-known fix on open. Used instead of Play Services location so the plugin cannot force a clashing <code>play-services-location</code> version on the host app.</td></tr>
         <tr><td>dart:io HttpClient</td><td class="mono">SDK</td><td>Dart's HTTP client</td><td>Four endpoints, 5 s connect and 8 s read timeouts, gzip requested and decompressed transparently.</td></tr>
-        <tr><td>flutter_test</td><td class="mono">SDK</td><td>Test framework</td><td>176 tests: geometry, filters, heading, step detection, the aligner, the boundary anchor, the multi-plot scene, drop points and widgets — all without a device.</td></tr>
+        <tr><td>flutter_test</td><td class="mono">SDK</td><td>Test framework</td><td>181 tests: geometry, filters, heading, step detection, the aligner, the boundary anchor, the multi-plot scene, ground ribbons, far-plot markers, drop points, zoom and widgets — all without a device.</td></tr>
       </tbody>
     </table>
   </div>
@@ -1433,14 +1433,14 @@ footer{
     <li><code>npm install</code> at <code>plot-web/</code> — one npm workspace root covering <code>shared</code>, <code>service</code> and <code>web</code>.</li>
     <li><code>npm run build:shared</code> first, always. The other two workspaces compile against its emitted types, not its source.</li>
     <li><code>npm run dev:api</code> and <code>npm run dev:web</code> in two terminals. With no Supabase credentials in the environment the API falls back to SQLite, so it runs with nothing to provision.</li>
-    <li>Run <code>service/sql/003_updated_flow.sql</code> once in the Supabase SQL editor before deploying this flow — it deletes every plot and drops the access-point column, so the data starts fresh. Then <code>npm run seed</code> for demo plots if wanted.</li>
+    <li>Run <code>service/sql/003_updated_flow.sql</code> once in the Supabase SQL editor before deploying this flow — it deletes every plot and drops the access-point column, so the data starts fresh — then <code>service/sql/004_delete_plot.sql</code>, which adds the function the <em>Delete</em> buttons on the Plots page and the map call (no data changes). Then <code>npm run seed</code> for demo plots if wanted.</li>
     <li><code>npm run test:api</code> for the API tests. <code>node tools/gen-palette.mjs --check</code> fails the build if either generated palette has drifted from <code>palette.json</code>.</li>
   </ol>
 
   <h3>Android (Flutter)</h3>
   <ol class="steps">
     <li>Flutter 3.22 or newer. <code>flutter pub get</code> at the repository root (the plugin) and in <code>example/</code> (the standalone app).</li>
-    <li><code>flutter analyze</code> — infos are fatal in CI — and <code>flutter test</code> for all 176 tests. No emulator, no device.</li>
+    <li><code>flutter analyze</code> — infos are fatal in CI — and <code>flutter test</code> for all 181 tests. No emulator, no device.</li>
     <li><code>cd example &amp;&amp; flutter build apk --release --target-platform android-arm64</code>. The API defaults to the deployed service; override it with <code>--dart-define=PLOT_API_BASE_URL=https://your-api/</code>.</li>
     <li>Every push to the <code>flutter</code> or <code>flutter_updated_flow</code> branch builds a debug APK and a release arm64 APK in GitHub Actions; download the <code>plot-finder-release-arm64-apk</code> artifact, unzip it, and install the APK from a file manager.</li>
     <li>To embed in another app, follow <code>INTEGRATION.md</code>: one dependency, one <code>PlotFinderScreen</code> push.</li>
@@ -1457,7 +1457,7 @@ footer{
   </ol>
 
   <footer>
-    Plot Finder · builder's manual · revision of 27 October 2026 (<code>flutter_updated_flow</code> branch: 3 m cells, three indices, drop points on every nearby plot, automatic boundary anchor)<br>
+    Plot Finder · builder's manual · revision of 29 October 2026 (<code>flutter_updated_flow</code> branch: 3 m cells, three indices, drop points and ground cells on every nearby plot, automatic boundary anchor, flat ground boundaries, far-plot markers, crop health switch, pinch zoom, home screen entry)<br>
     Web tool and API: its own repository — React 18, Express 4, Supabase PostGIS, deployed on Vercel.<br>
     Mobile: this repository's <code>flutter_updated_flow</code> branch — Flutter plugin <code>plot_finder</code> with an <code>example/</code> app, plugin minSdk 24, ARCore motion tracking (optional).<br>
     API measurements were taken from the deployed API on 27 August 2026; mobile figures are from the October 2026 Flutter build. Field-test findings behind the October changes are in <code>docs/research/ar-positioning.md</code>.
