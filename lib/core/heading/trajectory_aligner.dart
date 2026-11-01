@@ -28,6 +28,20 @@ const double maxAlignmentFixAccuracyM = 15.0;
 /// A fit worse than this is not offered as a lock.
 const double maxAlignmentErrorDeg = 10.0;
 
+/// Once the walk has locked a direction, a new fit replaces it only when its
+/// error is at most this fraction of the lock's - clearly better, not merely
+/// different.
+///
+/// The fit is redone on every GPS fix. Under a canopy each fix can be 5-15 m
+/// out, and taking whichever fit came last turned the view by several degrees
+/// a second: in a vineyard test the plot and its ground cells bounced metres
+/// back and forth. A lock now holds until something markedly better arrives.
+const double relockImprovementRatio = 0.7;
+
+/// A replacement lock glides in at this rate, degrees per second, instead of
+/// jumping: at 1 deg/s a point 25 m away moves under half a metre a second.
+const double relockEaseDegPerS = 1.0;
+
 /// GNSS errors are correlated over many seconds, so successive 1 Hz fixes are
 /// worth far less than independent ones. The variance is inflated by this
 /// factor - roughly, five fixes count as one.

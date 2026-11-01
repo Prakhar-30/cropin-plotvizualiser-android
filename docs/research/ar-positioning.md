@@ -352,6 +352,23 @@ every health visual at once.
 cropped about its centre and the projection narrowed by the same factor, so
 the overlay stays on its ground. Past about 3x the image is soft.
 
+**Vineyard test: the view bounced once anchored.** In a small grape plot the
+boundary and the ground cells held at first, then jumped metres back and forth
+from about the moment of anchoring. The position was not the cause: once
+anchored, GPS barely moves it. The direction was. The walk fit was redone on
+every GPS fix and applied at once; under the vines each fix was 5-15 m out,
+and anchoring made the anchor the fit's pivot, so fixes taken a few metres
+from it swung the angle by several degrees each second. Every degree turns the
+whole scene about the agent - 3 degrees is 1.3 m at 25 m. Now a lock is
+replaced only by a fit with at most 70% of its error, the replacement glides
+in at 1 degree a second, and ground cells wait for the direction to reach
+6 degrees. The anchor itself now waits for five seconds of fixes better than
+8 m that agree within 4 m (each carried forward by the motion ARCore measured
+since), averages them, and fires within 5 m of a boundary rather than 10. A
+tighter radius does not make GPS more accurate; it makes the anchor fire only
+when the fix puts the agent close to the boundary, and the steadiness test is
+what keeps a reflection from setting it.
+
 ## Sources
 
 1. Azuma, *A Survey of Augmented Reality* (1997) — [PDF](https://sreal.ucf.edu/wp-content/uploads/2017/02/Azuma1998.pdf)

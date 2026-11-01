@@ -137,4 +137,32 @@ void main() {
     fusion.onFix(137.0, HeadingSource.courseOverGround, 0);
     expect(fusion.estimate(0).headingDeg, closeTo(137.0, 1e-9));
   });
+
+  test('a replacement lock glides in at the eased rate instead of jumping', () {
+    final fusion = HeadingFusion(config);
+    fusion.onCarrierHeading(0.0, 0);
+    fusion.onFix(30.0, HeadingSource.courseOverGround, 0, errorDeg: 9.0);
+    expect(fusion.estimate(0).headingDeg, closeTo(30.0, 1e-9), reason: 'a first lock applies at once');
+
+    fusion.onCarrierHeading(0.0, 1000);
+    fusion.onFix(40.0, HeadingSource.courseOverGround, 1000, errorDeg: 5.0, easeDegPerS: 1.0);
+    expect(fusion.estimate(1000).headingDeg, closeTo(30.0, 1e-9), reason: 'nothing has moved yet');
+
+    fusion.onCarrierHeading(0.0, 4000);
+    expect(fusion.estimate(4000).headingDeg, closeTo(33.0, 1e-9), reason: '3 s at 1 deg/s');
+
+    fusion.onCarrierHeading(0.0, 20000);
+    expect(fusion.estimate(20000).headingDeg, closeTo(40.0, 1e-9), reason: 'arrived, and stops there');
+    expect(fusion.estimate(20000).expectedErrorDeg, closeTo(5.0, 1e-9));
+  });
+
+  test('the glide is carried with the phone as it turns', () {
+    final fusion = HeadingFusion(config);
+    fusion.onCarrierHeading(0.0, 0);
+    fusion.onFix(30.0, HeadingSource.courseOverGround, 0);
+    fusion.onFix(36.0, HeadingSource.courseOverGround, 0, easeDegPerS: 1.0);
+    // Turn the phone 90 deg right, two seconds later.
+    fusion.onCarrierHeading(90.0, 2000);
+    expect(fusion.estimate(2000).headingDeg, closeTo(122.0, 1e-9));
+  });
 }

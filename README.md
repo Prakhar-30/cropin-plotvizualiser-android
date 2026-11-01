@@ -49,13 +49,18 @@ Boundaries are drawn there and only there; this app is a reader.
 3. **Walk towards the plots.** Every cached plot within 400 m is drawn - its
    boundary highlighted on the ground, its name and distance - and a pill points to the nearest
    boundary. No plot needs to be chosen.
-4. **No button to press.** Once GPS puts you within **10 m** of any plot's
+4. **No button to press.** Once GPS puts you within **5 m** of any plot's
    boundary, the session anchors itself to the nearest point on it - a corner, or
    a point computed on the edge between two corners. From then on ARCore carries
    every step and GPS only corrects slow drift, so the overlay stops moving with
    each fix. Standing on the boundary at that moment makes it exact. It re-anchors
    after you walk 60 m on, or if ARCore loses tracking. North is set from your
    walk, also automatically (`TrajectoryAligner`).
+   The anchor waits for a **steady** fix - five seconds of fixes, each better
+   than 8 m, agreeing within 4 m, averaged - so one reflection under trees
+   cannot set it. Once locked, the direction changes only for a clearly better
+   fit (error at most 70% of the lock's) and glides in at 1°/s; red and yellow
+   ground cells wait for the direction to reach ±6°.
 5. **Look for drop points**: tall pins (4.5 m, standing up from the ground) on every
    moderate (yellow) and critical (red) patch, across every nearby plot at once,
    from the start. **Once anchored**, the moderate and critical 3 m cells are

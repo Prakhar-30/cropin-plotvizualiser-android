@@ -42,9 +42,16 @@ class HeadingFusion {
   int _fixAtMs = 0;
   int _lastMagneticUpdateMs = 0;
 
+  /// Part of the last fix not yet shown: the heading glides onto a new fix
+  /// instead of jumping, and this is how far it still has to go, in degrees.
+  double _easeRemainingDeg = 0.0;
+  double _easeDegPerS = 0.0;
+  int _lastEaseMs = 0;
+
   /// Gyro-carried heading, from a rotation vector with no magnetic input.
   void onCarrierHeading(double headingDeg, int atMs) {
     _carrierDeg = normalizeDeg(headingDeg);
+    _ease(atMs);
     // Drift trimming is driven from the carrier tick so it runs at a known
     // rate even when magnetic samples arrive irregularly.
     _applyMagneticDrift(atMs);
@@ -57,10 +64,26 @@ class HeadingFusion {
   }
 
   /// A walk lock or a landmark snap. This is the only thing that sets a heading.
-  void onFix(double headingDeg, HeadingSource source, int atMs, {double? errorDeg}) {
-    _fixErrorDeg = errorDeg;
+  ///
+  /// With [easeDegPerS], a fix replacing an earlier one is not shown at once:
+  /// the heading turns onto it at no more than that rate. Every drawn object
+  /// swings about the agent when the heading changes - 3 degrees moves a point
+  /// 25 m away by 1.3 m - so a correction that glides reads as the view
+  /// settling, where one that jumps reads as the plot bouncing.
+  void onFix(double headingDeg, HeadingSource source, int atMs, {double? errorDeg, double? easeDegPerS}) {
     final carrier = _carrierDeg;
-    _offsetDeg = carrier == null ? 0.0 : angleDifferenceDeg(carrier, headingDeg);
+    final next = carrier == null ? 0.0 : angleDifferenceDeg(carrier, headingDeg);
+    if (easeDegPerS != null && easeDegPerS > 0 && _fixSource != null && carrier != null) {
+      // What is on screen now, which the glide starts from.
+      final shown = _offsetDeg - _easeRemainingDeg;
+      _easeRemainingDeg = angleDifferenceDeg(shown, next);
+      _easeDegPerS = easeDegPerS;
+      _lastEaseMs = atMs;
+    } else {
+      _easeRemainingDeg = 0.0;
+    }
+    _fixErrorDeg = errorDeg;
+    _offsetDeg = next;
     _offsetAtFixDeg = _offsetDeg;
     _fixSource = source;
     _fixAtMs = atMs;
@@ -91,6 +114,15 @@ class HeadingFusion {
     _offsetDeg = _offsetAtFixDeg + math.max(-ceiling, math.min(ceiling, drift));
   }
 
+  /// Walks the glide on by the time since the last step.
+  void _ease(int atMs) {
+    if (_easeRemainingDeg == 0.0) return;
+    final dtS = math.max(0, atMs - _lastEaseMs) / 1000.0;
+    _lastEaseMs = atMs;
+    final step = _easeDegPerS * dtS;
+    _easeRemainingDeg = _easeRemainingDeg.abs() <= step ? 0.0 : _easeRemainingDeg - step * _easeRemainingDeg.sign;
+  }
+
   HeadingEstimate estimate(int atMs) {
     final source = _fixSource;
     final ageMs = source == null ? 0 : math.max(0, atMs - _fixAtMs);
@@ -103,7 +135,7 @@ class HeadingFusion {
       // the compass has been allowed to introduce since.
       final drift = angleDifferenceDeg(_offsetAtFixDeg, _offsetDeg).abs();
       return HeadingEstimate(
-        headingDeg: normalizeDeg(carrier + _offsetDeg),
+        headingDeg: normalizeDeg(carrier + _offsetDeg - _easeRemainingDeg),
         source: source,
         confidence: confidence,
         ageMs: ageMs,

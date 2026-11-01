@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 
 import '../../app_container.dart';
 import '../../core/geo/arcore_pose.dart';
+import '../../core/geo/boundary_snap.dart';
 import '../../core/geo/camera_geometry.dart';
 import '../../core/heading/heading_model.dart';
 import '../../core/render/health_geometry.dart';
@@ -494,9 +495,14 @@ class _BottomSheet extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              state.snapped
-                  ? 'Anchored - crop condition shown on the ground'
-                  : 'Drop points only - ground colouring starts once anchored within 10 m of a boundary',
+              switch ((state.snapped, state.directionSettled)) {
+                (true, true) => 'Anchored - crop condition shown on the ground',
+                (true, false) => 'Direction settling'
+                    '${state.headingStatus == null ? '' : ' (±${state.headingStatus!.expectedErrorDeg.round()}°)'}'
+                    ' - keep walking; ground colours appear at ±${groundCellsMaxHeadingErrorDeg.round()}°',
+                (false, _) => 'Drop points only - ground colouring starts once anchored within '
+                    '${autoSnapDistanceM.round()} m of a boundary',
+              },
               style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
             ),
           ],

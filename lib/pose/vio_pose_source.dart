@@ -168,10 +168,14 @@ class VioPoseSource implements PoseSource {
 
   /// Sets the yaw that takes ARCore's session onto the earth directly, as the
   /// trajectory alignment measures it, rather than as a camera bearing.
-  void applyYawOffset(double yawOffsetDeg, HeadingSource source, {required double errorDeg}) {
+  ///
+  /// With [easeDegPerS], a correction to an existing lock glides in at that
+  /// rate rather than jumping; see [HeadingFusion.onFix].
+  void applyYawOffset(double yawOffsetDeg, HeadingSource source, {required double errorDeg, double? easeDegPerS}) {
     final carrier = _lastCarrierDeg;
     if (carrier == null) return;
-    _fusion.onFix(normalizeDeg(carrier + yawOffsetDeg), source, _clockMs(), errorDeg: errorDeg);
+    _fusion.onFix(normalizeDeg(carrier + yawOffsetDeg), source, _clockMs(),
+        errorDeg: errorDeg, easeDegPerS: easeDegPerS);
   }
 
   void _armWatchdog() {

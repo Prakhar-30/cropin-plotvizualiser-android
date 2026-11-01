@@ -426,7 +426,7 @@ footer{
     <li><strong>It shows a shape, not a point.</strong> An outline can be matched against the real hedge line, which means the agent can confirm the app is right — and catch it when it is wrong. A pin offers no such check.</li>
     <li><strong>It carries crop condition to the soil.</strong> Crop greenness (NDVI), crop vigour (NDRE) and water stress (LSWI) are each graded into normal, moderate and critical zones. Every moderate or critical patch in every nearby plot stands up as a 4.5 m drop point — the only thing standing up, since boundaries lie flat on the ground — so a problem two fields away is visible over the crop.</li>
     <li><strong>It is honest about its own error.</strong> Every reading carries where the heading came from, how old it is, and the expected error in degrees. Near a boundary the drawn edge widens to the live GNSS accuracy rather than pretending to a crisp line.</li>
-    <li><strong>It asks the agent for nothing.</strong> There is no access point and no button. Open the camera, walk; within 10 m of any plot's boundary the view anchors itself to the nearest point on that boundary, and direction is worked out from the walk.</li>
+    <li><strong>It asks the agent for nothing.</strong> There is no access point and no button. Open the camera, walk; within 5 m of any plot's boundary the view anchors itself to the nearest point on that boundary, and direction is worked out from the walk.</li>
   </ul>
 
   <div class="note warn">
@@ -527,7 +527,7 @@ footer{
     <li><strong>Sync, then start.</strong> The app opens on a home screen: how many plots the phone holds, how fresh they are, <em>Sync now</em>, and <em>Start AR view</em>. It syncs by itself on opening when there are no plots or they are over an hour old. No plot is picked — every cached plot within 400 m is drawn, the nearest 24 at most.</li>
     <li><strong>Wait a few seconds, visibly.</strong> A card over the camera ticks off <em>Camera</em>, <em>Motion tracking</em> and <em>GPS</em>, with a seconds counter, and after 20 s says to step into the open. The location stream sends the phone's last-known fix the moment it opens if it is under 30 s old, so usually there is almost no wait.</li>
     <li><strong>Walk.</strong> Until the view is anchored, a pill points at the nearest boundary of the nearest plot and gives the distance. While the agent walks, the app silently works out where north is from the shape of the walk (logic 11). No button.</li>
-    <li><strong>Anchor, automatically.</strong> When GPS puts the agent within 10 m of any plot's boundary the app takes the nearest point on that boundary, whether a corner or a point computed along an edge, as where the agent is, and pins the position there (logic 12). The sheet says <em>Anchored to the X boundary</em>. It re-anchors after 60 m of walking or a loss of tracking.</li>
+    <li><strong>Anchor, automatically.</strong> When GPS puts the agent within 5 m of any plot's boundary the app takes the nearest point on that boundary, whether a corner or a point computed along an edge, as where the agent is, and pins the position there (logic 12). The sheet says <em>Anchored to the X boundary</em>. It re-anchors after 60 m of walking or a loss of tracking.</li>
     <li><strong>Look.</strong> Every nearby plot's boundary is highlighted flat on the ground; the moderate (yellow) and critical (red) 3 m cells of the chosen index are painted on the ground inside them; each patch of them stands up as a 4.5 m drop point; people and trees in front hide them; and a minimap in the corner shows all of it from above with the agent as a blue arrow. Normal ground is not drawn — only what needs a visit.</li>
     <li><strong>Switch the index.</strong> Crop greenness (NDVI), crop vigour (NDRE) or water stress (LSWI), from the bottom sheet. The drop points and minimap change together.</li>
   </ol>
@@ -797,7 +797,7 @@ footer{
       <div class="slot"><span>What the field tests added</span>
         <p><strong>Counted steps.</strong> The first indoor test walked 9 m towards a plot and the boundary walked away: under a roof the receiver reported near-zero Doppler speed, the filter took the agent for standing still, and froze. Steps are now detected from the accelerometer (peak-valley on its magnitude), sized by Weinberg's model with a gain calibrated against good GNSS, and each one moves the estimate <em>and</em> the drawn position at once. Steps, not Doppler, decide moving versus still.</p>
         <p><strong>Camera tracking.</strong> Where ARCore runs, its frame-to-frame camera displacement replaces the steps entirely: measured, not modelled, to centimetres. While it flows, fixes count three times less and the drawn position absorbs GNSS corrections at no more than 5 cm/s, so a receiver drifting under a roof cannot slide the boundary sideways as the agent closes in.</p>
-        <p><strong>The anchor.</strong> The boundary anchor (logic 12) replaces the estimate with the nearest point on the boundary outright, and fixes then count ten times less again. It used to be a button at a surveyed access point; it is now automatic and fires only within 10 m of a boundary by GPS, so it cannot place the agent in a field they are not beside.</p>
+        <p><strong>The anchor.</strong> The boundary anchor (logic 12) replaces the estimate with the nearest point on the boundary outright, and fixes then count ten times less again. It used to be a button at a surveyed access point; it is now automatic and fires only within 5 m of a boundary by GPS, so it cannot place the agent in a field they are not beside.</p>
       </div>
       <figure>
         <div class="frame">
@@ -1290,6 +1290,9 @@ footer{
         <p>The sensor path's course-over-ground lock needs 20 m of <em>straight</em> walking, because GNSS bearing is only meaningful along a straight leg. A real approach winds between bunds. With the tracked path supplying the shape, any route counts in full, and accuracy grows with the lever arm: in the tests a winding 60 m approach with ±5 m fixes recovers the direction to within a few degrees.</p>
         <p>Field agents were also clear that aiming at a point and tapping, as a separate step, made no sense to them. The aligner makes direction a by-product of walking.</p>
       </div>
+      <div class="slot"><span>Holding the lock</span>
+        <p>The fit is redone on every GPS fix. In the vineyard test the view took each new fit as it came: every fix was 5–15 m out under the vines, and with the anchor as the fit's pivot, the agent standing near it and fixes at short range, consecutive fits differed by several degrees. Each one turned the whole scene about the agent — 3° moves a point 25 m off by 1.3 m — so the boundary and the ground cells bounced. Now a locked direction is replaced only by a fit whose error is at most 70% of the lock's, and the replacement glides in at 1° per second instead of jumping. And ground cells, the one layer that claims a particular 3 m of ground, wait for the direction to reach ±6° (at the ±10° a lock may start at, a cell 25 m away can land on its neighbour); the sheet says <em>Direction settling — keep walking</em> until then.</p>
+      </div>
       <div class="slot"><span>The boundary anchor, and the guards</span>
         <p>When the app anchors to a boundary point (logic 12), that point enters the fit as an anchor. It pins the fit's centre, so every step away from it — in any direction — refines the yaw; about 35 m of walking is enough. The fit weights it as known to a metre, as it did the surveyed access point — but the point was chosen from a GPS fix, so its error is the fix's error, not a metre (see logic 12).</p>
         <p>The fit reports its own error: the rotation's variance is the inverse of Σ w·r² (each fix's weight times its squared distance from the centre), inflated five-fold because successive fixes are correlated rather than independent, and widened further when the fixes scatter more than their claimed accuracy. A fit is offered as a lock only under 10°. Fixes worse than 15 m are ignored — indoors, at ±50–100 m, the aligner says nothing rather than lock a guess — and a loss of ARCore tracking discards everything measured before it, since the session's frame may have shifted.</p>
@@ -1305,7 +1308,10 @@ footer{
     </div>
     <div class="logic-body">
       <div class="slot"><span>What it does</span>
-        <p>Replaces the access point. For every nearby plot it finds the nearest point on the boundary to the agent: for each edge, the foot of the perpendicular from the agent, clamped to the edge's ends — so it is a corner when a corner is nearest and a computed point along an edge otherwise. The nearest of those across all plots is the candidate. When GPS puts the agent within 10 m of it, the position is pinned there and the trajectory aligner takes it as its anchor. No button, no confirmation. Deep inside a large plot, more than 10 m from every edge, nothing fires until the agent nears an edge; the plots are still drawn from GPS meanwhile.</p>
+        <p>Replaces the access point. For every nearby plot it finds the nearest point on the boundary to the agent: for each edge, the foot of the perpendicular from the agent, clamped to the edge's ends — so it is a corner when a corner is nearest and a computed point along an edge otherwise. The nearest of those across all plots is the candidate. When GPS puts the agent within 5 m of it, the position is pinned there and the trajectory aligner takes it as its anchor. No button, no confirmation. Deep inside a large plot, more than 10 m from every edge, nothing fires until the agent nears an edge; the plots are still drawn from GPS meanwhile.</p>
+      </div>
+      <div class="slot"><span>A steady fix, not a single one</span>
+        <p>The first vineyard test anchored from whatever fix arrived when the agent came within range. Under a canopy that fix can be a reflection several metres out, and the anchor keeps that error for the rest of the session. Now the anchor waits for a <em>steady</em> fix: the last five seconds of fixes, at least four of them, each reporting better than 8 m, all within 4 m of their average once each is carried forward by the motion ARCore measured since it was taken (so a walking agent's fixes still agree). The average is what is snapped from, and the radius is 5 m rather than 10, so less of the distance between "where GPS says" and "the boundary" is taken on trust. When the fixes do not agree, the honest answer is to wait; the guide pill keeps pointing to the boundary meanwhile.</p>
       </div>
       <div class="slot"><span>When it fires again</span>
         <p>Once per approach. It re-anchors after 60 m of walking from the last anchor — a different plot, or the far side of the same one — and after ARCore loses tracking, because the session's frame may have moved. Between anchors, ARCore carries the position to centimetres.</p>
@@ -1378,7 +1384,7 @@ footer{
     </div>
     <div>
       <h3>How does the camera know where it is?</h3>
-      <p>On the earth, from GNSS — and held still once the agent comes within 10 m of a boundary, where the app anchors itself to the nearest point on it. From there ARCore tracks how the phone moves, to centimetres, from feature points in the image and the motion sensors. North comes from lining up that tracked walk with the GNSS fixes taken along it. The camera does not recognise fields or fences; it measures its own motion and the depth of what is in front of it. Without ARCore the camera is only a backdrop and the gyroscope and counted steps do the work.</p>
+      <p>On the earth, from GNSS — and held still once the agent comes within 5 m of a boundary, where the app anchors itself to the nearest point on it. From there ARCore tracks how the phone moves, to centimetres, from feature points in the image and the motion sensors. North comes from lining up that tracked walk with the GNSS fixes taken along it. The camera does not recognise fields or fences; it measures its own motion and the depth of what is in front of it. Without ARCore the camera is only a backdrop and the gyroscope and counted steps do the work.</p>
     </div>
     <div>
       <h3>How is distance computed?</h3>
@@ -1406,7 +1412,7 @@ footer{
     </div>
     <div>
       <h3>Where did the access point go?</h3>
-      <p>It was removed. The app needs one known point to hold the view still, and it now uses the nearest point on any plot's boundary, chosen automatically once GPS puts the agent within 10 m of it. There is no button to press and nothing to survey when drawing a plot. The cost is honesty about accuracy: see "How accurate is it".</p>
+      <p>It was removed. The app needs one known point to hold the view still, and it now uses the nearest point on any plot's boundary, chosen automatically once GPS puts the agent within 5 m of it. There is no button to press and nothing to survey when drawing a plot. The cost is honesty about accuracy: see "How accurate is it".</p>
     </div>
     <div>
       <h3>Why only red and yellow?</h3>

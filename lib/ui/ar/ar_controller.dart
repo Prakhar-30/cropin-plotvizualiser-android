@@ -30,6 +30,15 @@ const double plotViewRangeM = 400.0;
 /// At most this many plots are drawn at once, nearest first.
 const int maxDrawnPlots = 24;
 
+/// Ground cells are painted only once the direction is at least this good.
+///
+/// A 3 m cell is a claim about a particular patch of ground, and direction
+/// error moves it sideways in proportion to range: at the 10 deg the walk lock
+/// accepts, a cell 25 m away lands 4.4 m off - on its neighbour. At 6 deg it is
+/// 2.6 m, under a cell's width. Drop points and boundaries, which say "roughly
+/// there", are drawn from the first lock.
+const double groundCellsMaxHeadingErrorDeg = 6.0;
+
 /// The furthest the pinch zoom goes. Past this a phone camera's image is mush.
 const double maxZoom = 5.0;
 
@@ -162,6 +171,15 @@ class ArUiState {
   final int shownDrops;
 
   bool get snapped => snappedTo != null;
+
+  /// The direction is good enough for ground cells:
+  /// [groundCellsMaxHeadingErrorDeg] or better, from a lock.
+  bool get directionSettled {
+    final status = headingStatus;
+    return status != null &&
+        status.confidence != HeadingConfidence.unreliable &&
+        status.expectedErrorDeg <= groundCellsMaxHeadingErrorDeg;
+  }
 
   /// Every drop point of the current index, across all plots.
   Iterable<HealthPatch> get patches sync* {
@@ -325,9 +343,9 @@ class ArController extends ValueNotifier<ArUiState> {
         )
       : const [];
 
-  /// Ground cells of the plots drawn up close - once anchored, and with crop
-  /// health on.
-  List<HealthCell> _closeCells(ArUiState state) => state.healthVisible && state.snapped
+  /// Ground cells of the plots drawn up close - once anchored, with the
+  /// direction settled, and with crop health on.
+  List<HealthCell> _closeCells(ArUiState state) => state.healthVisible && state.snapped && state.directionSettled
       ? [for (final p in _closePlots) ...?state.health[p.id]?.cells]
       : const [];
 
@@ -481,6 +499,8 @@ class ArController extends ValueNotifier<ArUiState> {
 
   /// One frame of ARCore-measured camera motion, already in true east-north.
   void _onVisualMotion(double dEast, double dNorth, int timestampMs) {
+    _motionEast += dEast;
+    _motionNorth += dNorth;
     final moved = _stabilizer.onVisualMotion(dEast: dEast, dNorth: dNorth, timestampMs: timestampMs);
     if (moved == null) return;
     _moveAgent(moved.position);
@@ -497,6 +517,9 @@ class ArController extends ValueNotifier<ArUiState> {
       // laid against anything after, and the snap is no longer held by it.
       _aligner.reset();
       _snapPoint = null;
+      // Motion across the gap was not measured, so older fixes cannot be
+      // carried forward to the present.
+      _anchorFixes.clear();
       if (value.snapped) {
         // The anchor no longer holds, so the ground colouring goes with it until
         // the next one.
@@ -524,9 +547,14 @@ class ArController extends ValueNotifier<ArUiState> {
     }
   }
 
-  /// The automatic anchor: once GPS puts the agent within [autoSnapDistanceM]
-  /// of any nearby plot's boundary, the closest point of it - a corner, or a
-  /// point between two corners - is taken as where they stand.
+  /// The automatic anchor: once steady GPS puts the agent within
+  /// [autoSnapDistanceM] of any nearby plot's boundary, the closest point of it
+  /// - a corner, or a point between two corners - is taken as where they stand.
+  ///
+  /// "Steady" is [steadyFix]: five seconds of fixes, each claiming better than
+  /// 8 m, agreeing within 4 m once carried forward by the motion ARCore measured
+  /// since, averaged. One fix under a canopy can be a reflection several metres
+  /// out, and the anchor keeps whatever error it is taken with.
   ///
   /// Once per area: it happens again only after the agent has moved
   /// [resnapAfterM] from the last snap point (on to the next plot), or ARCore
@@ -537,7 +565,9 @@ class ArController extends ValueNotifier<ArUiState> {
     final agent = _agentPosition;
     if (last != null && agent != null && distanceM(last, agent) < resnapAfterM) return;
 
-    final hit = nearestBoundaryPoint([for (final p in _nearby) p.ring], sample.position);
+    final steady = steadyFix(_anchorFixesNow(), sample.timestampMs);
+    if (steady == null) return;
+    final hit = nearestBoundaryPoint([for (final p in _nearby) p.ring], steady);
     if (hit == null || hit.distanceM > autoSnapDistanceM) return;
 
     final plot = _nearby[hit.ringIndex];
@@ -556,8 +586,11 @@ class ArController extends ValueNotifier<ArUiState> {
     ));
   }
 
-  /// Offers the walk alignment to the heading, when it is good enough and
-  /// better than what the heading already has.
+  /// Offers the walk alignment to the heading: at once when there is no lock
+  /// yet; afterwards only when the fit is clearly better than the lock
+  /// ([relockImprovementRatio]), and then gliding in ([relockEaseDegPerS])
+  /// rather than jumping. Taking every new fit as it came turned the whole view
+  /// about the agent by several degrees a second under trees.
   void _lockFromWalk() {
     final vio = _vio;
     if (vio == null) return;
@@ -565,9 +598,36 @@ class ArController extends ValueNotifier<ArUiState> {
     if (fit == null || fit.errorDeg > maxAlignmentErrorDeg) return;
     final current = vio.headingStatus.value;
     final unlocked = current.confidence == HeadingConfidence.unreliable;
-    if (!unlocked && fit.errorDeg > current.expectedErrorDeg + 0.5) return;
-    vio.applyYawOffset(fit.yawOffsetDeg, HeadingSource.courseOverGround, errorDeg: fit.errorDeg);
+    if (!unlocked && fit.errorDeg > current.expectedErrorDeg * relockImprovementRatio) return;
+    vio.applyYawOffset(
+      fit.yawOffsetDeg,
+      HeadingSource.courseOverGround,
+      errorDeg: fit.errorDeg,
+      easeDegPerS: unlocked ? null : relockEaseDegPerS,
+    );
   }
+
+  /// Recent fixes for the anchor, each with the motion measured since it was
+  /// taken, so a walking agent's fixes describe where they are now.
+  final List<(LatLng, double, int, double, double)> _anchorFixes = [];
+
+  /// ARCore-measured motion since the session began, true east and north.
+  double _motionEast = 0.0;
+  double _motionNorth = 0.0;
+
+  void _recordAnchorFix(LocationSample sample) {
+    _anchorFixes.add((sample.position, sample.accuracyM, sample.timestampMs, _motionEast, _motionNorth));
+    _anchorFixes.removeWhere((f) => sample.timestampMs - f.$3 > anchorWindowMs);
+  }
+
+  List<AnchorFix> _anchorFixesNow() => [
+        for (final (position, accuracyM, atMs, east, north) in _anchorFixes)
+          AnchorFix(
+            EnuFrame(position).toLatLng(Enu(_motionEast - east, _motionNorth - north)),
+            accuracyM,
+            atMs,
+          ),
+      ];
 
   void _onLocationChanged() {
     final sample = _sensors.location.location.value;
@@ -603,6 +663,7 @@ class ArController extends ValueNotifier<ArUiState> {
     }
 
     _updateNearby(stabilized.position);
+    _recordAnchorFix(sample);
     _maybeSnap(sample);
 
     final snapped = _stabilizer.pinned;
@@ -664,6 +725,7 @@ class ArController extends ValueNotifier<ArUiState> {
       identityHashCode(state.health),
       confidence,
       state.snapped,
+      state.directionSettled,
       state.healthVisible,
       Object.hashAllUnordered(_markerIds),
     );

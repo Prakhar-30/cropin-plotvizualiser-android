@@ -19,7 +19,71 @@ import 'enu.dart';
 /// the snap happens makes it exact.
 
 /// Snap once GPS puts the agent this close to any plot boundary.
-const double autoSnapDistanceM = 10.0;
+///
+/// Was 10 m. Closer means the anchor is taken nearer the boundary, so less of
+/// the GPS error between "where GPS says" and "the boundary point" is baked in;
+/// it also means a weak fix may not get close enough to anchor at all, which is
+/// why [steadyFix] below decides when a fix is good enough to try.
+const double autoSnapDistanceM = 5.0;
+
+/// Only fixes reporting at least this accuracy are used to anchor.
+const double anchorMaxAccuracyM = 8.0;
+
+/// The anchor averages the fixes of this long a window...
+const int anchorWindowMs = 5000;
+
+/// ...needs at least this many of them...
+const int anchorMinFixes = 4;
+
+/// ...and needs them to agree: none further than this from their average.
+const double anchorMaxSpreadM = 4.0;
+
+/// One GPS fix for the anchor, already carried forward to the present by the
+/// motion measured since it was taken, so a walking agent's fixes agree.
+class AnchorFix {
+  const AnchorFix(this.position, this.accuracyM, this.timestampMs);
+
+  final LatLng position;
+  final double accuracyM;
+  final int timestampMs;
+}
+
+/// Where to anchor from: the accuracy-weighted average of the recent [fixes],
+/// or null while they are too few, too inaccurate or disagree.
+///
+/// One fix is a sample of the error, not of the position. Under trees the
+/// receiver bounces between reflections, and a single fix taken at the wrong
+/// moment fixed the whole session several metres out. Five seconds of fixes
+/// that each claim better than [anchorMaxAccuracyM] and sit within
+/// [anchorMaxSpreadM] of their mean are much less likely to share one bad
+/// reflection - and when they do not agree, waiting is the honest answer.
+LatLng? steadyFix(List<AnchorFix> fixes, int nowMs) {
+  final recent = [
+    for (final f in fixes)
+      if (nowMs - f.timestampMs <= anchorWindowMs) f,
+  ];
+  if (recent.length < anchorMinFixes) return null;
+  if (recent.any((f) => f.accuracyM > anchorMaxAccuracyM)) return null;
+
+  final frame = EnuFrame(recent.last.position);
+  var sumE = 0.0;
+  var sumN = 0.0;
+  var sumW = 0.0;
+  final points = <Enu>[];
+  for (final f in recent) {
+    final p = frame.toEnu(f.position);
+    final w = 1.0 / (f.accuracyM * f.accuracyM);
+    points.add(p);
+    sumE += p.east * w;
+    sumN += p.north * w;
+    sumW += w;
+  }
+  final mean = Enu(sumE / sumW, sumN / sumW);
+  for (final p in points) {
+    if (hypot(p.east - mean.east, p.north - mean.north) > anchorMaxSpreadM) return null;
+  }
+  return frame.toLatLng(mean);
+}
 
 /// After moving this far from the last snap point, another boundary may snap
 /// the session again - the agent has walked on to the next plot.

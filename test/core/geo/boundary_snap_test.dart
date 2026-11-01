@@ -44,8 +44,41 @@ void main() {
     expect(hit.distanceM, closeTo(5.0, 0.01));
   });
 
-  test('the snap radius is the 5-10 m the field flow asked for', () {
-    expect(autoSnapDistanceM, 10.0);
+  test('the snap radius is 5 m, as the vineyard test asked for', () {
+    expect(autoSnapDistanceM, 5.0);
     expect(nearestBoundaryPoint([], origin), isNull);
+  });
+
+  group('steadyFix', () {
+    AnchorFix fix(double east, double north, int atMs, {double accuracyM = 5.0}) =>
+        AnchorFix(offset(east, north), accuracyM, atMs);
+
+    test('averages five seconds of agreeing fixes', () {
+      final steady = steadyFix([fix(0, 0, 0), fix(2, 0, 1000), fix(0, 2, 2000), fix(2, 2, 3000)], 3000)!;
+      final at = EnuFrame(origin).toEnu(steady);
+      expect(at.east, closeTo(1.0, 0.01));
+      expect(at.north, closeTo(1.0, 0.01));
+    });
+
+    test('waits for enough fixes', () {
+      expect(steadyFix([fix(0, 0, 0), fix(1, 0, 1000), fix(0, 1, 2000)], 2000), isNull);
+    });
+
+    test('waits while any fix claims worse than 8 m', () {
+      expect(
+        steadyFix([fix(0, 0, 0), fix(1, 0, 1000), fix(0, 1, 2000), fix(1, 1, 3000, accuracyM: 12)], 3000),
+        isNull,
+      );
+    });
+
+    test('waits while the fixes disagree - one reflection 9 m out', () {
+      expect(steadyFix([fix(0, 0, 0), fix(1, 0, 1000), fix(0, 1, 2000), fix(9, 0, 3000)], 3000), isNull);
+    });
+
+    test('only the last five seconds count', () {
+      final fixes = [fix(30, 30, 0), fix(0, 0, 6000), fix(1, 0, 7000), fix(0, 1, 8000), fix(1, 1, 9000)];
+      final at = EnuFrame(origin).toEnu(steadyFix(fixes, 9000)!);
+      expect(at.east, closeTo(0.5, 0.01), reason: 'the old fix 30 m away is out of the window');
+    });
   });
 }
