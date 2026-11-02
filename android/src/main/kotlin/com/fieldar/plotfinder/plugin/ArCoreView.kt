@@ -211,15 +211,25 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
     }
 
     /**
-     * Finds the floor: the lowest upward-facing plane a reasonable way below
-     * the phone. Tables and benches are planes too, which is why it is the
-     * lowest one and not the nearest. Checked twice a second - plane lists do
-     * not change faster than that.
+     * Finds the floor: of the upward-facing planes a reasonable way below the
+     * phone, the one nearest the height a hand-held phone is usually carried at.
+     * Checked twice a second - plane lists do not change faster than that.
+     *
+     * Not the lowest plane: in a vineyard or a field with irrigation furrows
+     * the lowest plane ARCore finds is often the bottom of a ditch, and taking
+     * it dropped every boundary and ground cell by half a metre at once, which
+     * read as the whole overlay jumping. Benches and tables are still excluded
+     * by the minimum drop below the phone.
+     *
+     * Once found, the floor moves towards a new estimate at no more than
+     * [FLOOR_STEP_M] per check: a refined plane glides the overlay rather than
+     * hopping it.
      */
     private fun updateFloor(s: Session, cameraY: Float) {
         if (floorY.isNaN()) floorY = cameraY - ASSUMED_EYE_HEIGHT_M
         if (frameCount++ % 15L != 0L) return
-        var lowest = Float.NaN
+        val expected = cameraY - ASSUMED_EYE_HEIGHT_M
+        var best = Float.NaN
         for (plane in s.getAllTrackables(Plane::class.java)) {
             if (plane.trackingState != TrackingState.TRACKING) continue
             if (plane.subsumedBy != null) continue
@@ -227,12 +237,15 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
             if (plane.extentX * plane.extentZ < MIN_FLOOR_AREA_M2) continue
             val y = plane.centerPose.ty()
             if (y > cameraY - MIN_FLOOR_DROP_M) continue
-            if (lowest.isNaN() || y < lowest) lowest = y
+            if (y < cameraY - MAX_FLOOR_DROP_M) continue
+            if (best.isNaN() || kotlin.math.abs(y - expected) < kotlin.math.abs(best - expected)) best = y
         }
-        if (lowest.isNaN()) return
-        // Eased in rather than jumped to, so a refined plane estimate does not
-        // make the whole plot hop.
-        floorY = if (floorDetected) floorY + 0.3f * (lowest - floorY) else lowest
+        if (best.isNaN()) return
+        floorY = if (floorDetected) {
+            floorY + (best - floorY).coerceIn(-FLOOR_STEP_M, FLOOR_STEP_M)
+        } else {
+            best
+        }
         floorDetected = true
     }
 
@@ -303,6 +316,12 @@ class ArCoreView(private val context: Context, private val plugin: PlotFinderPlu
         const val ASSUMED_EYE_HEIGHT_M = 1.6f
         const val MIN_FLOOR_DROP_M = 0.8f
         const val MIN_FLOOR_AREA_M2 = 0.25f
+
+        /** Planes this far below the phone are holes, not the floor it stands on. */
+        const val MAX_FLOOR_DROP_M = 2.6f
+
+        /** The most the floor estimate moves per check, twice a second. */
+        const val FLOOR_STEP_M = 0.03f
     }
 }
 

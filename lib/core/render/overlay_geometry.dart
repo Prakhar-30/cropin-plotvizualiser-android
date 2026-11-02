@@ -40,13 +40,31 @@ const double plotMarkerHysteresisM = 5.0;
 /// two never read as the same kind of thing.
 const double plotMarkerHeightM = 6.0;
 
+/// Before the view is anchored, boundaries are drawn only this close.
+///
+/// Until then the scene moves with raw GPS, a few metres at a time, and a
+/// field of outlines that all slide together is noise. A plot further off is
+/// its centre marker until the agent is within this of its edge - or anchored.
+const double preAnchorBoundaryM = 15.0;
+
 /// Whether a plot [edgeDistanceM] from the agent is drawn as a marker, given
-/// whether it was last time.
-bool showsAsMarker(double edgeDistanceM, {required bool wasMarker}) {
-  if (edgeDistanceM >= plotMarkerBeyondM + plotMarkerHysteresisM) return true;
-  if (edgeDistanceM <= plotMarkerBeyondM - plotMarkerHysteresisM) return false;
+/// whether it was last time. [beyondM] is the switch distance: [plotMarkerBeyondM]
+/// once anchored, [preAnchorBoundaryM] before. The band either side of it is a
+/// fifth of it, at most [plotMarkerHysteresisM].
+bool showsAsMarker(double edgeDistanceM, {required bool wasMarker, double beyondM = plotMarkerBeyondM}) {
+  final band = math.min(plotMarkerHysteresisM, beyondM * 0.2);
+  if (edgeDistanceM >= beyondM + band) return true;
+  if (edgeDistanceM <= beyondM - band) return false;
   return wasMarker;
 }
+
+/// How high the boundary of the plot the agent is in stands: knee height.
+///
+/// Every other plot's boundary lies flat. Raising the one you are in - only a
+/// little, so it never stands between you and the field - makes "this is my
+/// plot" readable at a glance without the stacked walls that full-height
+/// fences of several plots produced.
+const double raisedBoundaryHeightM = 0.5;
 
 enum RenderMode {
   /// Beyond 30 m from the nearest edge.
@@ -70,6 +88,15 @@ class OverlayRibbon {
   const OverlayRibbon(this.corners, this.nearestDistanceM);
 
   final List<ScreenPoint> corners;
+  final double nearestDistanceM;
+}
+
+/// One edge of the raised boundary of the plot the agent is in: a low panel,
+/// projected, with [nearestDistanceM] for drawing far ones first.
+class OverlayWall {
+  const OverlayWall(this.quad, this.nearestDistanceM);
+
+  final List<ScreenPoint> quad;
   final double nearestDistanceM;
 }
 
@@ -104,6 +131,8 @@ class PlotOverlay {
     required this.centroidDistanceM,
     required this.ribbons,
     required this.lines,
+    this.walls = const [],
+    this.rails = const [],
     this.marker,
     required this.label,
     required this.offscreenBearingDeg,
@@ -118,6 +147,11 @@ class PlotOverlay {
 
   /// The line down the middle of each ribbon.
   final List<OverlayLine> lines;
+
+  /// The raised boundary, when this is the plot the agent is in: knee-high
+  /// panels far to near, and the line along their tops.
+  final List<OverlayWall> walls;
+  final List<OverlayLine> rails;
 
   /// The plot as one marker, when it is drawn as one; its ribbons are then empty.
   final OverlayMarker? marker;
@@ -152,6 +186,7 @@ PlotOverlay buildPlotOverlay({
   required CameraIntrinsics intrinsics,
   double eyeHeight = eyeHeightM,
   bool asMarker = false,
+  bool raised = false,
 }) {
   final enuToDevice = deviceToEnu.transpose();
   final groundUp = -eyeHeight;
@@ -178,6 +213,10 @@ PlotOverlay buildPlotOverlay({
 
   final (ribbons, lines) =
       asMarker ? (const <OverlayRibbon>[], const <OverlayLine>[]) : _buildRibbons(ringGround, eye, enuToDevice, intrinsics);
+
+  final (walls, rails) = raised && !asMarker
+      ? _buildRaised(ringGround, eye, enuToDevice, intrinsics)
+      : (const <OverlayWall>[], const <OverlayLine>[]);
 
   OverlayMarker? marker;
   if (asMarker) {
@@ -212,6 +251,8 @@ PlotOverlay buildPlotOverlay({
     centroidDistanceM: centroidDistanceM,
     ribbons: ribbons,
     lines: lines,
+    walls: walls,
+    rails: rails,
     marker: marker,
     label: label,
     offscreenBearingDeg: offscreenBearingDeg,
@@ -262,4 +303,39 @@ PlotOverlay buildPlotOverlay({
   // paint over a near one.
   ribbons.sort((x, y) => y.nearestDistanceM.compareTo(x.nearestDistanceM));
   return (ribbons, lines);
+}
+
+/// Stands each edge of [ringGround] up to [raisedBoundaryHeightM]: a panel per
+/// edge, clipped to the near plane, and the line along its top.
+(List<OverlayWall>, List<OverlayLine>) _buildRaised(
+  List<Enu> ringGround,
+  Enu eye,
+  Mat3 enuToDevice,
+  CameraIntrinsics intrinsics,
+) {
+  final n = ringGround.length;
+  if (n < 3) return (const <OverlayWall>[], const <OverlayLine>[]);
+  final walls = <OverlayWall>[];
+  final rails = <OverlayLine>[];
+  for (var i = 0; i < n; i++) {
+    final a = ringGround[i];
+    final b = ringGround[(i + 1) % n];
+    final aTop = Enu(a.east, a.north, a.up + raisedBoundaryHeightM);
+    final bTop = Enu(b.east, b.north, b.up + raisedBoundaryHeightM);
+    final projected = projectVisible(
+      clipToNearPlane([for (final p in [a, b, bTop, aTop]) toDevice(p, eye, enuToDevice)]),
+      intrinsics,
+    );
+    if (projected.length >= 3) {
+      walls.add(OverlayWall(projected, projected.map((p) => p.distanceM).reduce(math.min)));
+    }
+    final top = clipSegmentToNearPlane(toDevice(aTop, eye, enuToDevice), toDevice(bTop, eye, enuToDevice));
+    if (top != null) {
+      final from = projectDevice(top.$1, intrinsics);
+      final to = projectDevice(top.$2, intrinsics);
+      if (from != null && to != null) rails.add(OverlayLine(from, to));
+    }
+  }
+  walls.sort((x, y) => y.nearestDistanceM.compareTo(x.nearestDistanceM));
+  return (walls, rails);
 }

@@ -248,4 +248,34 @@ void main() {
   test('a plot marker stands taller than a drop point', () {
     expect(plotMarkerHeightM, greaterThan(4.5));
   });
+
+  test('before anchoring, boundaries switch to markers at 15 m with a 3 m band', () {
+    expect(showsAsMarker(19, wasMarker: false, beyondM: preAnchorBoundaryM), isTrue);
+    expect(showsAsMarker(11, wasMarker: true, beyondM: preAnchorBoundaryM), isFalse);
+    expect(showsAsMarker(15, wasMarker: true, beyondM: preAnchorBoundaryM), isTrue);
+    expect(showsAsMarker(15, wasMarker: false, beyondM: preAnchorBoundaryM), isFalse);
+  });
+
+  test('only the plot the agent is in gets the knee-high raised boundary', () {
+    final ring = square(40.0, 10.0);
+    final flat = overlay(ring);
+    expect(flat.walls, isEmpty);
+    expect(flat.rails, isEmpty);
+    final raised = buildPlotOverlay(
+      ring: ring,
+      centroid: centroidOf(ring),
+      agent: agent,
+      frame: frame,
+      deviceToEnu: deviceToEnuFromOrientation(0.0, 0.0),
+      intrinsics: intrinsics,
+      raised: true,
+    );
+    expect(raised.walls, isNotEmpty);
+    expect(raised.rails, isNotEmpty);
+    // Knee height is below eye level: the tops still project below the horizon.
+    for (final rail in raised.rails) {
+      expect(rail.from.y, greaterThan(intrinsics.centreYPx));
+    }
+    expect(raisedBoundaryHeightM, lessThan(eyeHeightM / 2));
+  });
 }

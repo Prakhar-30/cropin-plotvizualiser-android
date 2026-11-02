@@ -81,4 +81,39 @@ void main() {
       expect(at.east, closeTo(0.5, 0.01), reason: 'the old fix 30 m away is out of the window');
     });
   });
+
+  group('confirmedInside', () {
+    // Two 20 m plots side by side, sharing the edge at east = 20.
+    final west = [offset(0, 0), offset(20, 0), offset(20, 20), offset(0, 20), offset(0, 0)];
+    final east = [offset(20, 0), offset(40, 0), offset(40, 20), offset(20, 20), offset(20, 0)];
+    final rings = {'W': west, 'E': east};
+
+    test('enters a plot only once well inside it', () {
+      expect(confirmedInside(rings, offset(19.5, 10), null), isNull, reason: 'half a metre in is not yet inside');
+      expect(confirmedInside(rings, offset(17, 10), null), 'W');
+    });
+
+    test('keeps the plot across the shared edge until clearly in the next', () {
+      expect(confirmedInside(rings, offset(21, 10), 'W'), 'W', reason: '1 m over the line: still W');
+      expect(confirmedInside(rings, offset(23, 10), 'W'), 'E', reason: '3 m into E: now E');
+      expect(confirmedInside(rings, offset(19, 10), 'E'), 'E', reason: 'and back 1 m: still E');
+    });
+
+    test('leaves when outside every plot', () {
+      expect(confirmedInside(rings, offset(10, 25), 'W'), isNull);
+    });
+  });
+
+  test('a concave plot puts its marker on its own ground, not on the gap', () {
+    // An L: 30 x 30 with the north-east 20 x 20 cut away. Its vertex average
+    // lies in the cut-out.
+    final l = [offset(0, 0), offset(30, 0), offset(30, 10), offset(10, 10), offset(10, 30), offset(0, 30), offset(0, 0)];
+    final average = offset(13.3, 13.3);
+    expect(insideRing(l, average), isFalse);
+    final p = interiorPoint(l, average);
+    expect(insideRing(l, p), isTrue);
+    expect(distanceToRingM(l, p), greaterThan(3.0), reason: 'well inside, not on the edge');
+    // A convex plot keeps its centroid.
+    expect(interiorPoint(square, offset(20, 20)), offset(20, 20));
+  });
 }

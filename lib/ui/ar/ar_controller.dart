@@ -48,10 +48,13 @@ double zoomedFovDeg(double horizontalFovDeg, double zoom) =>
 
 /// One plot as drawn this frame.
 class DrawnPlot {
-  const DrawnPlot(this.plot, this.overlay, {this.share});
+  const DrawnPlot(this.plot, this.overlay, {this.share, this.raised = false});
 
   final Plot plot;
   final PlotOverlay overlay;
+
+  /// The plot the agent is confirmed inside: raised boundary, bolder line.
+  final bool raised;
 
   /// For a plot drawn as a marker, how much of it is critical and moderate on
   /// the chosen index - its header. Null without crop data, or with crop
@@ -191,6 +194,17 @@ class ArUiState {
   /// True when any shown snapshot is demonstration data.
   bool get synthetic => health.values.any((h) => h.synthetic);
 
+  /// The newest satellite capture date among the snapshots, or null when none
+  /// is from imagery.
+  String? get latestCapture {
+    String? latest;
+    for (final h in health.values) {
+      if (h.synthetic) continue;
+      if (latest == null || h.capturedOn.compareTo(latest) > 0) latest = h.capturedOn;
+    }
+    return latest;
+  }
+
   ArUiState copyWith({
     List<Plot>? plots,
     Map<String, PlotHealth>? health,
@@ -313,6 +327,14 @@ class ArController extends ValueNotifier<ArUiState> {
 
   /// Ids of the nearby plots drawn as one marker rather than their boundary.
   Set<String> _markerIds = const {};
+
+  /// The plot the agent is confirmed inside, if any; see [confirmedInside].
+  String? _insideId;
+
+  /// A point inside each plot for its marker and label: the centroid unless
+  /// that falls outside a concave plot. See [interiorPoint].
+  final Map<String, LatLng> _interior = {};
+  LatLng _interiorOf(Plot plot) => _interior.putIfAbsent(plot.id, () => interiorPoint(plot.ring, plot.centroid));
 
   /// The nearby plots drawn up close, nearest first.
   List<Plot> get _closePlots => [for (final p in _nearby) if (!_markerIds.contains(p.id)) p];
@@ -685,9 +707,14 @@ class ArController extends ValueNotifier<ArUiState> {
     }
     scored.sort((a, b) => a.$2.compareTo(b.$2));
     final kept = scored.take(maxDrawnPlots).toList();
+    _insideId = confirmedInside({for (final (plot, _) in kept) plot.id: plot.ring}, at, _insideId);
+    // Before the anchor the scene slides with GPS, so only plots close enough
+    // to matter show their boundary; the rest are markers until then.
+    final beyondM = value.snapped ? plotMarkerBeyondM : preAnchorBoundaryM;
     final markers = {
       for (final (plot, d) in kept)
-        if (showsAsMarker(d, wasMarker: _markerIds.contains(plot.id))) plot.id,
+        if (plot.id != _insideId && showsAsMarker(d, wasMarker: _markerIds.contains(plot.id), beyondM: beyondM))
+          plot.id,
     };
     if (!setEquals(markers, _markerIds)) _markerIds = markers;
     final next = [for (final (plot, _) in kept) plot];
@@ -728,6 +755,7 @@ class ArController extends ValueNotifier<ArUiState> {
       state.directionSettled,
       state.healthVisible,
       Object.hashAllUnordered(_markerIds),
+      _insideId,
     );
     if (key == _sentSceneKey) return;
     _sentSceneKey = key;
@@ -735,6 +763,7 @@ class ArController extends ValueNotifier<ArUiState> {
     final scene = buildWorldScene(
       plots: _closePlots,
       markerPlots: [for (final p in _nearby) if (_markerIds.contains(p.id)) p],
+      raisedPlotId: _insideId,
       // Ground cells only once anchored. Before that the scene is placed from
       // raw GPS and moves with it, and a 3 m square that wanders by several
       // metres paints the wrong ground; a drop point is a target, not a claim
@@ -784,7 +813,7 @@ class ArController extends ValueNotifier<ArUiState> {
               plot,
               buildPlotOverlay(
                 ring: plot.ring,
-                centroid: plot.centroid,
+                centroid: _interiorOf(plot),
                 agent: agent,
                 frame: frame,
                 deviceToEnu: _pose.deviceToEnu,
@@ -799,13 +828,15 @@ class ArController extends ValueNotifier<ArUiState> {
               plot,
               buildPlotOverlay(
                 ring: plot.ring,
-                centroid: plot.centroid,
+                centroid: _interiorOf(plot),
                 agent: agent,
                 frame: frame,
                 deviceToEnu: _pose.deviceToEnu,
                 intrinsics: intrinsics,
                 eyeHeight: eyeHeight,
+                raised: plot.id == _insideId,
               ),
+              raised: plot.id == _insideId,
             ),
       ];
       final drops = state.visual

@@ -19,8 +19,8 @@ internal class ScenePlot(
     val inner: FloatArray,
     /** Plot colour, 0xAARRGGBB. */
     val tint: Int,
-    /** The plot the agent is in or nearest to: its line is drawn bolder. */
-    val primary: Boolean,
+    /** The plot the agent is confirmed inside: knee-high raised boundary, bolder line. */
+    val raised: Boolean,
 )
 
 /**
@@ -42,6 +42,8 @@ internal class OverlayScene(
     /** Far plots, one marker each: (east, north, r, g, b), the plot's colour. */
     val markers: FloatArray,
     val markerHeight: Float,
+    /** Height of the raised boundary of the plot the agent is in. */
+    val raisedHeight: Float,
     /** Overall opacity from heading confidence. */
     val alpha: Float,
     val ribbonAlpha: Float,
@@ -65,7 +67,7 @@ internal class OverlayScene(
                     ring = ring,
                     inner = floats(plot["inner"]).takeIf { it.size == ring.size } ?: ring,
                     tint = (plot["tint"] as? Number)?.toLong()?.toInt() ?: 0xFF0A84FF.toInt(),
-                    primary = plot["primary"] as? Boolean ?: true,
+                    raised = plot["raised"] as? Boolean ?: false,
                 )
             }
             return OverlayScene(
@@ -75,6 +77,7 @@ internal class OverlayScene(
                 dropHeight = number("dropHeight", 4.5f),
                 markers = floats(map["markers"]),
                 markerHeight = number("markerHeight", 6f),
+                raisedHeight = number("raisedHeight", 0.5f),
                 alpha = number("alpha", 1f),
                 ribbonAlpha = number("ribbonAlpha", 0.55f),
                 lineAlpha = number("lineAlpha", 0.95f),
@@ -88,13 +91,18 @@ private class PlotBuffers(
     val tintR: Float,
     val tintG: Float,
     val tintB: Float,
-    val primary: Boolean,
+    val raised: Boolean,
     /** The ribbon, two triangles per edge. */
     val ribbon: FloatBuffer,
     val ribbonCount: Int,
     /** The line down the middle of the ribbon, as a loop. */
     val line: FloatBuffer,
     val lineCount: Int,
+    /** The raised boundary: two triangles per edge, and the line along the tops. */
+    val walls: FloatBuffer,
+    val wallVertexCount: Int,
+    val rails: FloatBuffer,
+    val railVertexCount: Int,
 )
 
 /** Upright pins - drop points, or far plots' markers - ready to draw. */
@@ -338,12 +346,28 @@ internal class ArOverlayRenderer {
         GLES20.glUniform1f(uGhost, LINE_GHOST)
         for (p in plots) {
             if (p.lineCount < 2) continue
-            lineWidth(if (p.primary) 11f else 9f)
+            lineWidth(if (p.raised) 11f else 9f)
             color(0.04f, 0.06f, 0.08f, 0.5f * s.alpha)
             drawArrays(p.line, null, GLES20.GL_LINE_LOOP, 0, p.lineCount)
-            lineWidth(if (p.primary) 7f else 5f)
+            lineWidth(if (p.raised) 7f else 5f)
             color(p.tintR, p.tintG, p.tintB, s.lineAlpha * s.alpha)
             drawArrays(p.line, null, GLES20.GL_LINE_LOOP, 0, p.lineCount)
+        }
+
+        // The plot the agent is in stands up to knee height: translucent low
+        // panels on its boundary, and a solid line along their tops.
+        for (p in plots) {
+            if (p.wallVertexCount == 0) continue
+            GLES20.glUniform1f(uGhost, SURFACE_GHOST)
+            color(p.tintR, p.tintG, p.tintB, 0.35f * s.alpha)
+            drawArrays(p.walls, null, GLES20.GL_TRIANGLES, 0, p.wallVertexCount)
+            GLES20.glUniform1f(uGhost, LINE_GHOST)
+            lineWidth(10f)
+            color(0.04f, 0.06f, 0.08f, 0.5f * s.alpha)
+            drawArrays(p.rails, null, GLES20.GL_LINES, 0, p.railVertexCount)
+            lineWidth(6f)
+            color(p.tintR, p.tintG, p.tintB, s.alpha)
+            drawArrays(p.rails, null, GLES20.GL_LINES, 0, p.railVertexCount)
         }
 
         // Far plots' markers, then the drop points over everything: a stem from
@@ -409,7 +433,7 @@ internal class ArOverlayRenderer {
     }
 
     private fun build(s: OverlayScene) {
-        plots = s.plots.map { buildPlot(it) }
+        plots = s.plots.map { buildPlot(it, s.raisedHeight) }
 
         // Graded cells lie just above the floor, under the boundary lines.
         cellVertexCount = s.cells.size / 6
@@ -452,7 +476,7 @@ internal class ArOverlayRenderer {
         return Pins(buffer(stems), buffer(heads), buffer(headColors), buffer(stemColors), count)
     }
 
-    private fun buildPlot(p: ScenePlot): PlotBuffers {
+    private fun buildPlot(p: ScenePlot, raisedHeight: Float): PlotBuffers {
         // Just above the floor so nothing fights the measured floor in the depth
         // test, and above the graded cells.
         val n = p.ring.size / 2
@@ -476,15 +500,34 @@ internal class ArOverlayRenderer {
             line[i * 3 + 1] = (p.ring[i * 2 + 1] + p.inner[i * 2 + 1]) / 2f
             line[i * 3 + 2] = LINE_Z
         }
+        // The raised boundary stands on the boundary itself, not the ribbon.
+        val raisedEdges = if (p.raised) edges else 0
+        val walls = FloatArray(raisedEdges * 18)
+        val rails = FloatArray(raisedEdges * 6)
+        val h = raisedHeight
+        for (i in 0 until raisedEdges) {
+            val j = (i + 1) % n
+            val ae = p.ring[i * 2]; val an = p.ring[i * 2 + 1]
+            val be = p.ring[j * 2]; val bn = p.ring[j * 2 + 1]
+            System.arraycopy(
+                floatArrayOf(ae, an, 0f, be, bn, 0f, be, bn, h, ae, an, 0f, be, bn, h, ae, an, h),
+                0, walls, i * 18, 18,
+            )
+            System.arraycopy(floatArrayOf(ae, an, h, be, bn, h), 0, rails, i * 6, 6)
+        }
         return PlotBuffers(
             tintR = ((p.tint shr 16) and 0xFF) / 255f,
             tintG = ((p.tint shr 8) and 0xFF) / 255f,
             tintB = (p.tint and 0xFF) / 255f,
-            primary = p.primary,
+            raised = p.raised,
             ribbon = buffer(ribbon),
             ribbonCount = edges * 6,
             line = buffer(line),
             lineCount = n,
+            walls = buffer(walls),
+            wallVertexCount = raisedEdges * 6,
+            rails = buffer(rails),
+            railVertexCount = raisedEdges * 2,
         )
     }
 

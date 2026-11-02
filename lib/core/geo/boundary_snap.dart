@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../math_util.dart';
 import 'enu.dart';
 
@@ -148,4 +150,57 @@ bool insideRing(List<LatLng> ring, LatLng at) {
     }
   }
   return pts.length >= 3 && inside;
+}
+
+/// A plot becomes "the one you are in" once you are this far inside its edge...
+const double insideEnterM = 1.5;
+
+/// ...and stops being it only once you are this far outside its edge.
+///
+/// The band between the two is what keeps the raised boundary from flickering
+/// between two plots as you walk along the edge they share: GPS and the anchor
+/// put you a metre or two either side of it from one second to the next.
+const double insideLeaveM = 2.0;
+
+/// The plot the agent is confirmed inside: [current] while they have not left
+/// it by [insideLeaveM], otherwise the first plot of [rings] (by id) they are
+/// at least [insideEnterM] inside, otherwise none.
+String? confirmedInside(Map<String, List<LatLng>> rings, LatLng at, String? current) {
+  final held = current == null ? null : rings[current];
+  if (held != null && (insideRing(held, at) || distanceToRingM(held, at) < insideLeaveM)) return current;
+  for (final MapEntry(key: id, value: ring) in rings.entries) {
+    if (insideRing(ring, at) && distanceToRingM(ring, at) >= insideEnterM) return id;
+  }
+  return null;
+}
+
+/// A point inside [ring] to stand a plot's marker and label on: its [centroid]
+/// when that is inside, otherwise the inside point furthest from any edge.
+///
+/// The centroid of an L-shaped or crescent plot can fall outside it - in the
+/// neighbour's field, or on the track between them - and a marker there says
+/// the wrong plot needs attention.
+LatLng interiorPoint(List<LatLng> ring, LatLng centroid) {
+  if (ring.length < 3 || insideRing(ring, centroid)) return centroid;
+  final lats = [for (final p in ring) p.lat];
+  final lngs = [for (final p in ring) p.lng];
+  final south = lats.reduce(math.min);
+  final north = lats.reduce(math.max);
+  final west = lngs.reduce(math.min);
+  final east = lngs.reduce(math.max);
+  const steps = 16;
+  LatLng? best;
+  var bestDepth = -1.0;
+  for (var i = 0; i < steps; i++) {
+    for (var j = 0; j < steps; j++) {
+      final p = LatLng(south + (i + 0.5) / steps * (north - south), west + (j + 0.5) / steps * (east - west));
+      if (!insideRing(ring, p)) continue;
+      final depth = distanceToRingM(ring, p);
+      if (depth > bestDepth) {
+        bestDepth = depth;
+        best = p;
+      }
+    }
+  }
+  return best ?? centroid;
 }

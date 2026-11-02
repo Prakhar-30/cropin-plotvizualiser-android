@@ -82,7 +82,7 @@ class ArOverlayPainter extends CustomPainter {
       for (var i = plots.length - 1; i >= 0; i--) {
         final drawn = plots[i];
         _drawBoundary(canvas, drawn.overlay, Color(overlayTintArgb(confidence, drawn.plot.colourIndex)), alpha,
-            primary: i == 0);
+            primary: drawn.raised);
       }
       // Far plots as one marker each, in the plot's colour.
       for (final drawn in current.plots.reversed) {
@@ -112,7 +112,7 @@ class ArOverlayPainter extends CustomPainter {
     // much of it is critical and moderate. Nearest first, and each later one is
     // lifted clear of those already placed, so labels never print over each other.
     final placed = <Rect>[];
-    for (final (i, drawn) in current.plots.indexed) {
+    for (final drawn in current.plots) {
       final label = drawn.overlay.label;
       if (label == null) continue;
       final isMarker = drawn.overlay.marker != null;
@@ -124,7 +124,7 @@ class ArOverlayPainter extends CustomPainter {
       _drawLabel(
         canvas,
         TextSpan(
-          style: TextStyle(color: white, fontSize: _px(i == 0 ? 34 : 28)),
+          style: TextStyle(color: white, fontSize: _px(drawn.raised ? 34 : 28)),
           children: [
             TextSpan(text: title),
             if (share != null) ...[
@@ -216,6 +216,17 @@ class ArOverlayPainter extends CustomPainter {
       final to = _o(line.to);
       canvas.drawLine(from, to, _stroke(_outlineBacking, 0.5 * alpha, primary ? 11 : 9));
       canvas.drawLine(from, to, _stroke(tint, PlotAlpha.outline * alpha, primary ? 7 : 5));
+    }
+    // The plot the agent is in: knee-high panels, then the line along their tops.
+    for (final wall in overlay.walls) {
+      final path = _path(wall.quad);
+      if (path != null) canvas.drawPath(path, _fill(tint, 0.35 * alpha));
+    }
+    for (final rail in overlay.rails) {
+      final from = _o(rail.from);
+      final to = _o(rail.to);
+      canvas.drawLine(from, to, _stroke(_outlineBacking, 0.5 * alpha, 10));
+      canvas.drawLine(from, to, _stroke(tint, alpha, 6));
     }
   }
 

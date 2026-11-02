@@ -54,6 +54,11 @@ class HttpPlotApi implements PlotApi {
 
   static const Duration _readTimeout = Duration(seconds: 8);
 
+  /// Crop condition is read from Sentinel-2 imagery the first time a plot is
+  /// asked for, which takes the server a few seconds; after that it is cached
+  /// and as quick as anything else. It gets longer than the rest, once.
+  static const Duration _healthTimeout = Duration(seconds: 30);
+
   final Uri _base;
   final HttpClient _client;
 
@@ -66,7 +71,7 @@ class HttpPlotApi implements PlotApi {
 
   @override
   Future<HealthDto> health(String id) async =>
-      HealthDto.fromJson(await _get('api/plots/${Uri.encodeComponent(id)}/health') as Json);
+      HealthDto.fromJson(await _get('api/plots/${Uri.encodeComponent(id)}/health', null, _healthTimeout) as Json);
 
   @override
   Future<void> uploadTelemetry(List<TelemetryDto> rows) async {
@@ -82,17 +87,17 @@ class HttpPlotApi implements PlotApi {
 
   void close() => _client.close(force: true);
 
-  Future<Object?> _get(String path, [Map<String, String>? query]) async {
+  Future<Object?> _get(String path, [Map<String, String>? query, Duration timeout = _readTimeout]) async {
     var uri = _base.resolve(path);
     if (query != null) uri = uri.replace(queryParameters: query);
     final request = await _client.getUrl(uri);
     request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-    final text = await _read(await request.close().timeout(_readTimeout));
+    final text = await _read(await request.close().timeout(timeout), timeout);
     return jsonDecode(text);
   }
 
-  Future<String> _read(HttpClientResponse response) async {
-    final text = await response.transform(utf8.decoder).join().timeout(_readTimeout);
+  Future<String> _read(HttpClientResponse response, [Duration timeout = _readTimeout]) async {
+    final text = await response.transform(utf8.decoder).join().timeout(timeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw HttpException('HTTP ${response.statusCode}', uri: null);
     }

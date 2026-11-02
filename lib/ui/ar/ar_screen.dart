@@ -323,7 +323,7 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _ArAppBar(index: state.index, synthetic: state.synthetic),
+                  _ArAppBar(index: state.index, synthetic: state.synthetic, capturedOn: state.latestCapture),
                   Padding(
                     padding: const EdgeInsets.all(12),
                     child: Row(
@@ -396,10 +396,13 @@ class _ArScreenState extends State<ArScreen> with WidgetsBindingObserver {
 
 /// Grow's slate app bar, carried over the camera: what is being shown.
 class _ArAppBar extends StatelessWidget {
-  const _ArAppBar({required this.index, required this.synthetic});
+  const _ArAppBar({required this.index, required this.synthetic, this.capturedOn});
 
   final HealthIndex index;
   final bool synthetic;
+
+  /// Satellite capture date, when the values come from imagery.
+  final String? capturedOn;
 
   @override
   Widget build(BuildContext context) => Material(
@@ -426,7 +429,9 @@ class _ArAppBar extends StatelessWidget {
                         style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w500),
                       ),
                       Text(
-                        '${index.label} · ${index.code}${synthetic ? ' · demo values' : ''}',
+                        '${index.label} · ${index.code}'
+                        '${capturedOn != null ? ' · Sentinel-2 $capturedOn' : ''}'
+                        '${synthetic ? ' · ${capturedOn == null ? '' : 'some '}demo values' : ''}',
                         style: const TextStyle(color: GrowColors.onPrimaryMuted, fontSize: 12),
                       ),
                     ],

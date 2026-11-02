@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../../data/plot.dart';
+import '../geo/boundary_snap.dart';
 import '../geo/enu.dart';
 import '../geo/linear.dart';
 import '../geo/polygon_geometry.dart';
@@ -51,7 +52,7 @@ double overlayConfidenceAlpha(HeadingConfidence confidence) => switch (confidenc
 /// overlapped in the camera and made it hard to tell which fence was whose. No
 /// ground fill either: the only colour across the ground is crop condition.
 class ScenePlot {
-  const ScenePlot({required this.ring, required this.inner, required this.tintArgb, required this.primary});
+  const ScenePlot({required this.ring, required this.inner, required this.tintArgb, required this.raised});
 
   /// Boundary, open ring: (east, north) per vertex. The ribbon's outer edge.
   final Float32List ring;
@@ -62,10 +63,11 @@ class ScenePlot {
   final Float32List inner;
   final int tintArgb;
 
-  /// The plot the agent is in, or nearest to; its line is drawn a little bolder.
-  final bool primary;
+  /// The plot the agent is confirmed inside: its boundary stands up to knee
+  /// height ([raisedBoundaryHeightM]) and its line is drawn bolder.
+  final bool raised;
 
-  Map<String, Object> toMessage() => {'ring': ring, 'inner': inner, 'tint': tintArgb, 'primary': primary};
+  Map<String, Object> toMessage() => {'ring': ring, 'inner': inner, 'tint': tintArgb, 'raised': raised};
 }
 
 class WorldScene {
@@ -97,19 +99,22 @@ class WorldScene {
         'dropHeight': dropPointHeightM,
         'markers': Float32List.fromList(markers),
         'markerHeight': plotMarkerHeightM,
+        'raisedHeight': raisedBoundaryHeightM,
         'alpha': alpha,
         'ribbonAlpha': PlotAlpha.ribbon,
         'lineAlpha': PlotAlpha.outline,
       };
 }
 
-/// Builds the scene for [plots], nearest first, the ground [cells] graded on
-/// [index] and the drop points [patches], in the frame centred on [origin].
-/// The first plot is the primary one. [markerPlots] are drawn as one marker
-/// each, at their centroid, instead of their boundary.
+/// Builds the scene for [plots], the ground [cells] graded on [index] and the
+/// drop points [patches], in the frame centred on [origin]. The plot with
+/// [raisedPlotId] - the one the agent is in - gets the raised boundary.
+/// [markerPlots] are drawn as one marker each, on a point inside them, instead
+/// of their boundary.
 WorldScene buildWorldScene({
   required List<Plot> plots,
   List<Plot> markerPlots = const [],
+  String? raisedPlotId,
   Iterable<HealthCell> cells = const [],
   HealthIndex index = HealthIndex.ndvi,
   required List<HealthPatch> patches,
@@ -129,7 +134,7 @@ WorldScene buildWorldScene({
         for (final p in insetRing(boundary, boundaryRibbonWidthM)) ...[p.east, p.north],
       ]),
       tintArgb: plotColour(plot.colourIndex).argb,
-      primary: scenePlots.isEmpty,
+      raised: plot.id == raisedPlotId,
     ));
   }
 
@@ -164,7 +169,7 @@ WorldScene buildWorldScene({
 
   final markers = <double>[];
   for (final plot in markerPlots) {
-    final at = frame.toEnu(plot.centroid);
+    final at = frame.toEnu(interiorPoint(plot.ring, plot.centroid));
     final argb = plotColour(plot.colourIndex).argb;
     markers.addAll([
       at.east,
