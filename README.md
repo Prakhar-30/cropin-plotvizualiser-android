@@ -60,7 +60,8 @@ Boundaries are drawn there and only there; this app is a reader.
    than 8 m, agreeing within 4 m, averaged - so one reflection under trees
    cannot set it. Once locked, the direction changes only for a clearly better
    fit (error at most 70% of the lock's) and glides in at 1°/s. Red and yellow
-   ground cells appear once anchored.
+   ground cells show from the start for plots within 15 m, faint while they
+   still slide with GPS, full strength once anchored.
 5. **Look for drop points**: tall pins (4.5 m, standing up from the ground) on every
    moderate (yellow) and critical (red) patch, across every nearby plot at once,
    from the start. **Once anchored**, the moderate and critical 3 m cells are
@@ -365,8 +366,9 @@ cells or more), and the app draws **one drop point per patch**: a 4.5 m stem wit
 a round head, yellow or red, standing well above eye level so a target shows
 over the crop and the people in front of it. The moderate and critical cells
 themselves are painted on the ground under them, yellow and red, for every
-nearby plot at once - only once the view is anchored to a boundary, and dropped
-again if ARCore loses tracking. Normal ground is not drawn. Drop points show the nearest 60
+nearby plot drawn up close - faint (55%) until the view is anchored, since they
+still slide with GPS, full strength after; losing ARCore tracking drops the anchor
+and they go faint again. Normal ground is not drawn. Drop points show the nearest 60
 within 300 m; on the sensor path cells are drawn to 120 m; the sheet switches the
 index for all of it together. On ARCore they are drawn natively in the camera's GL frame,
 ghosted rather than hidden behind nearer objects; without ARCore they are

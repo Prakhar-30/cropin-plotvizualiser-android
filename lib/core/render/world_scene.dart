@@ -116,6 +116,7 @@ WorldScene buildWorldScene({
   List<Plot> markerPlots = const [],
   String? raisedPlotId,
   Iterable<HealthCell> cells = const [],
+  double cellOpacity = 1.0,
   HealthIndex index = HealthIndex.ndvi,
   required List<HealthPatch> patches,
   required LatLng origin,
@@ -150,7 +151,7 @@ WorldScene buildWorldScene({
     final g = ((argb >> 8) & 0xFF) / 255.0;
     final b = (argb & 0xFF) / 255.0;
     for (final i in triangulate(ring)) {
-      cellVertices.addAll([ring[i].east, ring[i].north, r, g, b, colour.fillAlpha]);
+      cellVertices.addAll([ring[i].east, ring[i].north, r, g, b, colour.fillAlpha * cellOpacity]);
     }
   }
 

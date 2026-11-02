@@ -30,6 +30,10 @@ const double plotViewRangeM = 400.0;
 /// At most this many plots are drawn at once, nearest first.
 const int maxDrawnPlots = 24;
 
+/// Ground cells before the view is anchored are drawn at this share of their
+/// opacity: present, but plainly provisional while they still slide with GPS.
+const double unanchoredCellOpacity = 0.55;
+
 /// The furthest the pinch zoom goes. Past this a phone camera's image is mush.
 const double maxZoom = 5.0;
 
@@ -62,6 +66,7 @@ class ArFrame {
     this.plots = const [],
     this.drops = const [],
     this.cells = const [],
+    this.cellOpacity = 1.0,
     this.guide,
     this.agent,
     this.headingDeg = 0.0,
@@ -76,6 +81,9 @@ class ArFrame {
 
   /// Moderate and critical ground cells, projected - sensor path only.
   final List<CellPolygon> cells;
+
+  /// Opacity factor for [cells]: lower before the view is anchored.
+  final double cellOpacity;
 
   /// The way to the nearest boundary, until the session has snapped to one.
   final BoundaryGuide? guide;
@@ -348,11 +356,13 @@ class ArController extends ValueNotifier<ArUiState> {
         )
       : const [];
 
-  /// Ground cells of the plots drawn up close - once anchored, and with crop
-  /// health on. (A wait for the direction to reach 6 degrees was tried and
-  /// dropped: on bare ground it could take minutes, and the field test saw
-  /// only drop points. The lock glides, so a correction no longer bounces.)
-  List<HealthCell> _closeCells(ArUiState state) => state.healthVisible && state.snapped
+  /// Ground cells of the plots drawn up close, with crop health on.
+  ///
+  /// Shown before the anchor too, at [unanchoredCellOpacity]: field tests
+  /// under a shed roof (GPS ±20 m) never anchored, and waiting meant no ground
+  /// colour at all. Until anchored they slide with GPS, so they are drawn
+  /// fainter and the sheet says so; anchored, they are full strength.
+  List<HealthCell> _closeCells(ArUiState state) => state.healthVisible
       ? [for (final p in _closePlots) ...?state.health[p.id]?.cells]
       : const [];
 
@@ -769,6 +779,7 @@ class ArController extends ValueNotifier<ArUiState> {
       // metres paints the wrong ground; a drop point is a target, not a claim
       // about which square metre is red, so it is shown from the start.
       cells: _closeCells(state),
+      cellOpacity: state.snapped ? 1.0 : unanchoredCellOpacity,
       index: state.index,
       patches: _closePatches(state, agent),
       origin: origin,
@@ -864,6 +875,7 @@ class ArController extends ValueNotifier<ArUiState> {
         plots: drawn,
         drops: drops,
         cells: cells,
+        cellOpacity: state.snapped ? 1.0 : unanchoredCellOpacity,
         guide: state.snapped ? null : _guide(agent),
         agent: agent,
         headingDeg: _pose.headingDeg,

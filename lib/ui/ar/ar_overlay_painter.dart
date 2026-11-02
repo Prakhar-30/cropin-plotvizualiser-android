@@ -74,7 +74,7 @@ class ArOverlayPainter extends CustomPainter {
         final path = _path(cell.points);
         if (path == null) continue;
         final colour = severityColour(cell.zone);
-        canvas.drawPath(path, _fill(Color(colour.argb), colour.fillAlpha * alpha));
+        canvas.drawPath(path, _fill(Color(colour.argb), colour.fillAlpha * current.cellOpacity * alpha));
       }
       // Farthest plot first, so a near plot's boundary paints over a far one's.
       // The nearest plot's line is drawn a little bolder.

@@ -501,9 +501,9 @@ class _BottomSheet extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               state.snapped
-                  ? 'Anchored - crop condition shown on the ground'
-                  : 'Drop points only - ground colouring starts once anchored within '
-                      '${autoSnapDistanceM.round()} m of a boundary',
+                  ? 'Anchored - crop condition steady on the ground'
+                  : 'Ground colours are approximate (GPS ±${state.accuracyM.round()} m) - they steady once '
+                      'anchored within ${autoSnapDistanceM.round()} m of a boundary',
               style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
             ),
           ],
