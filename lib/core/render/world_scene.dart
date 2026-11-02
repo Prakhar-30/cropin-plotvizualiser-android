@@ -63,8 +63,9 @@ class ScenePlot {
   final Float32List inner;
   final int tintArgb;
 
-  /// The plot the agent is confirmed inside: its boundary stands up to waist
-  /// height ([raisedBoundaryHeightM]) and its line is drawn bolder.
+  /// The plot the agent is confirmed inside: its boundary line is drawn bolder.
+  /// (A raised boundary, knee- then waist-high, was tried in the field and
+  /// dropped: it read as clutter, not as "your plot".)
   final bool raised;
 
   Map<String, Object> toMessage() => {'ring': ring, 'inner': inner, 'tint': tintArgb, 'raised': raised};
@@ -99,7 +100,6 @@ class WorldScene {
         'dropHeight': dropPointHeightM,
         'markers': Float32List.fromList(markers),
         'markerHeight': plotMarkerHeightM,
-        'raisedHeight': raisedBoundaryHeightM,
         'alpha': alpha,
         'ribbonAlpha': PlotAlpha.ribbon,
         'lineAlpha': PlotAlpha.outline,
@@ -108,7 +108,7 @@ class WorldScene {
 
 /// Builds the scene for [plots], the ground [cells] graded on [index] and the
 /// drop points [patches], in the frame centred on [origin]. The plot with
-/// [raisedPlotId] - the one the agent is in - gets the raised boundary.
+/// [raisedPlotId] - the one the agent is in - gets a bolder boundary line.
 /// [markerPlots] are drawn as one marker each, on a point inside them, instead
 /// of their boundary.
 WorldScene buildWorldScene({

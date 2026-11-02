@@ -315,11 +315,12 @@ is the red and yellow of problem cells. Labels stand on a point inside each plot
 with a stalk to the ground and a strip of the plot's colour, and are lifted clear
 of one another.
 
-**The plot you are in stands up.** Once you are confirmed inside a plot - 1.5 m
-in from its edge, and kept until you are 2 m out of it, so walking along a shared
-edge does not flicker, re-checked five times a second from ARCore's tracking -
-its boundary is raised to waist height (1.0 m) in its
-colour. Every other plot stays a flat line.
+**The plot you are in is drawn bolder.** Once you are confirmed inside a plot -
+1.5 m in from its edge, and kept until you are 2 m out of it, so walking along a
+shared edge does not flicker, re-checked five times a second from ARCore's
+tracking - its boundary line is drawn a little bolder and its label larger. All
+boundaries lie flat; a raised boundary (knee-, then waist-high) was tried in the
+field and dropped as clutter.
 
 **Before anchoring, only plots within 15 m show a boundary**; the rest are
 centre markers, because the scene still slides with GPS until the anchor. After

@@ -141,7 +141,6 @@ void main() {
       );
       expect(inB.plots[0].raised, isFalse);
       expect(inB.plots[1].raised, isTrue);
-      expect(inB.toMessage()['raisedHeight'], raisedBoundaryHeightM);
       final message = scene.toMessage();
       expect(message.containsKey('fillAlpha'), isFalse, reason: 'plots have no tinted floor');
       expect(message.containsKey('wallHeight'), isFalse, reason: 'nothing stands up but the drop points');

@@ -48,7 +48,7 @@ class DrawnPlot {
   final Plot plot;
   final PlotOverlay overlay;
 
-  /// The plot the agent is confirmed inside: raised boundary, bolder line.
+  /// The plot the agent is confirmed inside: a bolder boundary line.
   final bool raised;
 
   /// For a plot drawn as a marker, how much of it is critical and moderate on
@@ -845,7 +845,6 @@ class ArController extends ValueNotifier<ArUiState> {
                 deviceToEnu: _pose.deviceToEnu,
                 intrinsics: intrinsics,
                 eyeHeight: eyeHeight,
-                raised: plot.id == _insideId,
               ),
               raised: plot.id == _insideId,
             ),
