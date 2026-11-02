@@ -29,16 +29,16 @@ import 'enu.dart';
 const double autoSnapDistanceM = 5.0;
 
 /// Only fixes reporting at least this accuracy are used to anchor.
-const double anchorMaxAccuracyM = 8.0;
+const double anchorMaxAccuracyM = 10.0;
 
 /// The anchor averages the fixes of this long a window...
-const int anchorWindowMs = 5000;
+const int anchorWindowMs = 4000;
 
 /// ...needs at least this many of them...
-const int anchorMinFixes = 4;
+const int anchorMinFixes = 3;
 
 /// ...and needs them to agree: none further than this from their average.
-const double anchorMaxSpreadM = 4.0;
+const double anchorMaxSpreadM = 5.0;
 
 /// One GPS fix for the anchor, already carried forward to the present by the
 /// motion measured since it was taken, so a walking agent's fixes agree.
@@ -55,7 +55,7 @@ class AnchorFix {
 ///
 /// One fix is a sample of the error, not of the position. Under trees the
 /// receiver bounces between reflections, and a single fix taken at the wrong
-/// moment fixed the whole session several metres out. Five seconds of fixes
+/// moment fixed the whole session several metres out. Four seconds of fixes
 /// that each claim better than [anchorMaxAccuracyM] and sit within
 /// [anchorMaxSpreadM] of their mean are much less likely to share one bad
 /// reflection - and when they do not agree, waiting is the honest answer.

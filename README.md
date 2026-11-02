@@ -59,8 +59,8 @@ Boundaries are drawn there and only there; this app is a reader.
    The anchor waits for a **steady** fix - five seconds of fixes, each better
    than 8 m, agreeing within 4 m, averaged - so one reflection under trees
    cannot set it. Once locked, the direction changes only for a clearly better
-   fit (error at most 70% of the lock's) and glides in at 1°/s; red and yellow
-   ground cells wait for the direction to reach ±6°.
+   fit (error at most 70% of the lock's) and glides in at 1°/s. Red and yellow
+   ground cells appear once anchored.
 5. **Look for drop points**: tall pins (4.5 m, standing up from the ground) on every
    moderate (yellow) and critical (red) patch, across every nearby plot at once,
    from the start. **Once anchored**, the moderate and critical 3 m cells are
@@ -316,7 +316,8 @@ of one another.
 
 **The plot you are in stands up.** Once you are confirmed inside a plot - 1.5 m
 in from its edge, and kept until you are 2 m out of it, so walking along a shared
-edge does not flicker - its boundary is raised to knee height (0.5 m) in its
+edge does not flicker, re-checked five times a second from ARCore's tracking -
+its boundary is raised to waist height (1.0 m) in its
 colour. Every other plot stays a flat line.
 
 **Before anchoring, only plots within 15 m show a boundary**; the rest are

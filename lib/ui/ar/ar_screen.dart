@@ -500,14 +500,10 @@ class _BottomSheet extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              switch ((state.snapped, state.directionSettled)) {
-                (true, true) => 'Anchored - crop condition shown on the ground',
-                (true, false) => 'Direction settling'
-                    '${state.headingStatus == null ? '' : ' (±${state.headingStatus!.expectedErrorDeg.round()}°)'}'
-                    ' - keep walking; ground colours appear at ±${groundCellsMaxHeadingErrorDeg.round()}°',
-                (false, _) => 'Drop points only - ground colouring starts once anchored within '
-                    '${autoSnapDistanceM.round()} m of a boundary',
-              },
+              state.snapped
+                  ? 'Anchored - crop condition shown on the ground'
+                  : 'Drop points only - ground colouring starts once anchored within '
+                      '${autoSnapDistanceM.round()} m of a boundary',
               style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
             ),
           ],

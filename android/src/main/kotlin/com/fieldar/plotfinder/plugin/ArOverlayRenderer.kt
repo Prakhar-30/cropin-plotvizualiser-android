@@ -19,7 +19,7 @@ internal class ScenePlot(
     val inner: FloatArray,
     /** Plot colour, 0xAARRGGBB. */
     val tint: Int,
-    /** The plot the agent is confirmed inside: knee-high raised boundary, bolder line. */
+    /** The plot the agent is confirmed inside: waist-high raised boundary, bolder line. */
     val raised: Boolean,
 )
 
@@ -77,7 +77,7 @@ internal class OverlayScene(
                 dropHeight = number("dropHeight", 4.5f),
                 markers = floats(map["markers"]),
                 markerHeight = number("markerHeight", 6f),
-                raisedHeight = number("raisedHeight", 0.5f),
+                raisedHeight = number("raisedHeight", 1.0f),
                 alpha = number("alpha", 1f),
                 ribbonAlpha = number("ribbonAlpha", 0.55f),
                 lineAlpha = number("lineAlpha", 0.95f),
@@ -354,7 +354,7 @@ internal class ArOverlayRenderer {
             drawArrays(p.line, null, GLES20.GL_LINE_LOOP, 0, p.lineCount)
         }
 
-        // The plot the agent is in stands up to knee height: translucent low
+        // The plot the agent is in stands up to waist height: translucent low
         // panels on its boundary, and a solid line along their tops.
         for (p in plots) {
             if (p.wallVertexCount == 0) continue

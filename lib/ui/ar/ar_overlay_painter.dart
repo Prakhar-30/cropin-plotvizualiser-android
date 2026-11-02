@@ -217,7 +217,7 @@ class ArOverlayPainter extends CustomPainter {
       canvas.drawLine(from, to, _stroke(_outlineBacking, 0.5 * alpha, primary ? 11 : 9));
       canvas.drawLine(from, to, _stroke(tint, PlotAlpha.outline * alpha, primary ? 7 : 5));
     }
-    // The plot the agent is in: knee-high panels, then the line along their tops.
+    // The plot the agent is in: waist-high panels, then the line along their tops.
     for (final wall in overlay.walls) {
       final path = _path(wall.quad);
       if (path != null) canvas.drawPath(path, _fill(tint, 0.35 * alpha));

@@ -30,15 +30,6 @@ const double plotViewRangeM = 400.0;
 /// At most this many plots are drawn at once, nearest first.
 const int maxDrawnPlots = 24;
 
-/// Ground cells are painted only once the direction is at least this good.
-///
-/// A 3 m cell is a claim about a particular patch of ground, and direction
-/// error moves it sideways in proportion to range: at the 10 deg the walk lock
-/// accepts, a cell 25 m away lands 4.4 m off - on its neighbour. At 6 deg it is
-/// 2.6 m, under a cell's width. Drop points and boundaries, which say "roughly
-/// there", are drawn from the first lock.
-const double groundCellsMaxHeadingErrorDeg = 6.0;
-
 /// The furthest the pinch zoom goes. Past this a phone camera's image is mush.
 const double maxZoom = 5.0;
 
@@ -175,14 +166,6 @@ class ArUiState {
 
   bool get snapped => snappedTo != null;
 
-  /// The direction is good enough for ground cells:
-  /// [groundCellsMaxHeadingErrorDeg] or better, from a lock.
-  bool get directionSettled {
-    final status = headingStatus;
-    return status != null &&
-        status.confidence != HeadingConfidence.unreliable &&
-        status.expectedErrorDeg <= groundCellsMaxHeadingErrorDeg;
-  }
 
   /// Every drop point of the current index, across all plots.
   Iterable<HealthPatch> get patches sync* {
@@ -365,9 +348,11 @@ class ArController extends ValueNotifier<ArUiState> {
         )
       : const [];
 
-  /// Ground cells of the plots drawn up close - once anchored, with the
-  /// direction settled, and with crop health on.
-  List<HealthCell> _closeCells(ArUiState state) => state.healthVisible && state.snapped && state.directionSettled
+  /// Ground cells of the plots drawn up close - once anchored, and with crop
+  /// health on. (A wait for the direction to reach 6 degrees was tried and
+  /// dropped: on bare ground it could take minutes, and the field test saw
+  /// only drop points. The lock glides, so a correction no longer bounces.)
+  List<HealthCell> _closeCells(ArUiState state) => state.healthVisible && state.snapped
       ? [for (final p in _closePlots) ...?state.health[p.id]?.cells]
       : const [];
 
@@ -526,6 +511,22 @@ class ArController extends ValueNotifier<ArUiState> {
     final moved = _stabilizer.onVisualMotion(dEast: dEast, dNorth: dNorth, timestampMs: timestampMs);
     if (moved == null) return;
     _moveAgent(moved.position);
+    _checkInside(moved.position, timestampMs);
+  }
+
+  int _insideCheckedAtMs = 0;
+
+  /// Re-checks which plot the agent is in, five times a second, from the
+  /// position ARCore carries - not only on each GPS fix, once a second, which
+  /// left the raised boundary a few seconds behind the agent's steps.
+  void _checkInside(LatLng at, int timestampMs) {
+    if (timestampMs - _insideCheckedAtMs < 200) return;
+    _insideCheckedAtMs = timestampMs;
+    final next = confirmedInside({for (final p in _nearby) p.id: p.ring}, at, _insideId);
+    if (next == _insideId) return;
+    _insideId = next;
+    _markerIds = {..._markerIds}..remove(next);
+    _rebuildOverlay();
   }
 
   void _onVisualStatusChanged() {
@@ -573,8 +574,8 @@ class ArController extends ValueNotifier<ArUiState> {
   /// [autoSnapDistanceM] of any nearby plot's boundary, the closest point of it
   /// - a corner, or a point between two corners - is taken as where they stand.
   ///
-  /// "Steady" is [steadyFix]: five seconds of fixes, each claiming better than
-  /// 8 m, agreeing within 4 m once carried forward by the motion ARCore measured
+  /// "Steady" is [steadyFix]: four seconds of fixes, each claiming better than
+  /// 10 m, agreeing within 5 m once carried forward by the motion ARCore measured
   /// since, averaged. One fix under a canopy can be a reflection several metres
   /// out, and the anchor keeps whatever error it is taken with.
   ///
@@ -752,7 +753,6 @@ class ArController extends ValueNotifier<ArUiState> {
       identityHashCode(state.health),
       confidence,
       state.snapped,
-      state.directionSettled,
       state.healthVisible,
       Object.hashAllUnordered(_markerIds),
       _insideId,

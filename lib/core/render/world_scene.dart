@@ -63,7 +63,7 @@ class ScenePlot {
   final Float32List inner;
   final int tintArgb;
 
-  /// The plot the agent is confirmed inside: its boundary stands up to knee
+  /// The plot the agent is confirmed inside: its boundary stands up to waist
   /// height ([raisedBoundaryHeightM]) and its line is drawn bolder.
   final bool raised;
 

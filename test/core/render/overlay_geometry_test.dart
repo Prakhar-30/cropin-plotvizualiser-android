@@ -256,7 +256,7 @@ void main() {
     expect(showsAsMarker(15, wasMarker: false, beyondM: preAnchorBoundaryM), isFalse);
   });
 
-  test('only the plot the agent is in gets the knee-high raised boundary', () {
+  test('only the plot the agent is in gets the waist-high raised boundary', () {
     final ring = square(40.0, 10.0);
     final flat = overlay(ring);
     expect(flat.walls, isEmpty);
@@ -272,10 +272,10 @@ void main() {
     );
     expect(raised.walls, isNotEmpty);
     expect(raised.rails, isNotEmpty);
-    // Knee height is below eye level: the tops still project below the horizon.
+    // Waist height is below eye level: the tops still project below the horizon.
     for (final rail in raised.rails) {
       expect(rail.from.y, greaterThan(intrinsics.centreYPx));
     }
-    expect(raisedBoundaryHeightM, lessThan(eyeHeightM / 2));
+    expect(raisedBoundaryHeightM, lessThan(eyeHeightM));
   });
 }

@@ -58,13 +58,13 @@ bool showsAsMarker(double edgeDistanceM, {required bool wasMarker, double beyond
   return wasMarker;
 }
 
-/// How high the boundary of the plot the agent is in stands: knee height.
+/// How high the boundary of the plot the agent is in stands: waist height.
 ///
-/// Every other plot's boundary lies flat. Raising the one you are in - only a
-/// little, so it never stands between you and the field - makes "this is my
-/// plot" readable at a glance without the stacked walls that full-height
-/// fences of several plots produced.
-const double raisedBoundaryHeightM = 0.5;
+/// Every other plot's boundary lies flat. Raising the one you are in - to the
+/// waist, below eye level, so it never stands between you and the field -
+/// makes "this is my plot" readable at a glance without the stacked walls that
+/// full-height fences of several plots produced.
+const double raisedBoundaryHeightM = 1.0;
 
 enum RenderMode {
   /// Beyond 30 m from the nearest edge.
@@ -148,7 +148,7 @@ class PlotOverlay {
   /// The line down the middle of each ribbon.
   final List<OverlayLine> lines;
 
-  /// The raised boundary, when this is the plot the agent is in: knee-high
+  /// The raised boundary, when this is the plot the agent is in: waist-high
   /// panels far to near, and the line along their tops.
   final List<OverlayWall> walls;
   final List<OverlayLine> rails;
