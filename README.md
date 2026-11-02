@@ -314,6 +314,22 @@ is the red and yellow of problem cells. Labels stand on a point inside each plot
 with a stalk to the ground and a strip of the plot's colour, and are lifted clear
 of one another.
 
+**The plot you are in stands up.** Once you are confirmed inside a plot - 1.5 m
+in from its edge, and kept until you are 2 m out of it, so walking along a shared
+edge does not flicker - its boundary is raised to knee height (0.5 m) in its
+colour. Every other plot stays a flat line.
+
+**Before anchoring, only plots within 15 m show a boundary**; the rest are
+centre markers, because the scene still slides with GPS until the anchor. After
+anchoring the 50 m rule below applies. Markers and labels stand on a point
+inside each plot, which matters for concave plots whose centroid falls outside.
+
+**Paths and real crop data come from the web tool.** Walking paths drawn there
+are left out of crop condition on the server, so no ground colour or drop point
+lands on them. Crop condition is read from Sentinel-2 imagery (the app bar
+shows the scene date); the first read of a plot takes the server a few seconds,
+so the app allows 30 s for it.
+
 **Far plots are one marker.** A plot more than about **50 m** from its nearest
 edge is not outlined at all: it stands as a single **6 m marker** in the plot's
 colour, at its centroid, with a header giving its name, size, distance and how
