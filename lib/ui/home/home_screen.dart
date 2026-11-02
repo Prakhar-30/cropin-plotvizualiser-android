@@ -37,13 +37,23 @@ class HomeScreen extends StatelessWidget {
                 _Card(
                   icon: Icons.near_me_outlined,
                   title: 'Nearest plot',
-                  child: Text(
-                    switch ((nearest, state.hasFix)) {
-                      (null, _) => 'No plots on this phone yet',
-                      (_, false) => 'Waiting for GPS…',
-                      (final n?, true) => '${n.plot.name} · ${formatDistance(n.distanceM ?? double.infinity)}',
-                    },
-                    style: const TextStyle(fontSize: 14, color: GrowColors.text),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        switch ((nearest, state.hasFix)) {
+                          (null, _) => 'No plots on this phone yet',
+                          (_, false) => 'Waiting for precise GPS…',
+                          (final n?, true) => '${n.plot.name} · ${formatDistance(n.distanceM ?? double.infinity)}',
+                        },
+                        style: const TextStyle(fontSize: 14, color: GrowColors.text),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _gpsLine(state),
+                        style: const TextStyle(fontSize: 12, color: GrowColors.mutedText),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -61,6 +71,23 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What the phone's location is, in words: how precise, and where.
+///
+/// Shown so that a distance that looks wrong can be checked on the spot - a
+/// rough fix from cell towers reads kilometres out, and the agent can see
+/// that it is rough rather than trust it.
+String _gpsLine(PlotListState state) {
+  final accuracy = state.accuracyM;
+  final here = state.here;
+  if (accuracy == null) return 'No location yet - check that location is on';
+  if (accuracy > preciseFixAccuracyM) {
+    return 'Location rough (±${formatDistance(accuracy)}) - distances appear once GPS is within '
+        '${preciseFixAccuracyM.round()} m. Step into the open sky.';
+  }
+  final at = here == null ? '' : ' · ${here.lat.toStringAsFixed(5)}, ${here.lng.toStringAsFixed(5)}';
+  return 'Your GPS ±${accuracy.round()} m$at';
 }
 
 class _Header extends StatelessWidget {

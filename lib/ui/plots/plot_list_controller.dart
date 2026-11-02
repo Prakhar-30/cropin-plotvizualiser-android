@@ -22,26 +22,48 @@ class PlotListState {
     this.syncing = false,
     this.lastSyncMessage,
     this.hasFix = false,
+    this.accuracyM,
+    this.here,
   });
 
   final List<PlotListItem> items;
   final bool syncing;
   final String? lastSyncMessage;
+  /// A fix precise enough to measure distances and sync around: see [preciseFixAccuracyM].
   final bool hasFix;
+
+  /// The latest fix's reported accuracy, metres, whether or not it is precise.
+  final double? accuracyM;
+
+  /// The latest precise fix.
+  final LatLng? here;
 
   PlotListState copyWith({
     List<PlotListItem>? items,
     bool? syncing,
     String? Function()? lastSyncMessage,
     bool? hasFix,
+    double? Function()? accuracyM,
+    LatLng? Function()? here,
   }) =>
       PlotListState(
         items: items ?? this.items,
         syncing: syncing ?? this.syncing,
         lastSyncMessage: lastSyncMessage == null ? this.lastSyncMessage : lastSyncMessage(),
         hasFix: hasFix ?? this.hasFix,
+        accuracyM: accuracyM == null ? this.accuracyM : accuracyM(),
+        here: here == null ? this.here : here(),
       );
 }
+
+/// A fix is used for distances and for syncing around the agent only when it
+/// claims at least this accuracy.
+///
+/// A phone's first fix is often from cell towers or Wi-Fi, kilometres out,
+/// before satellite GPS arrives. Taken as the agent's position it showed a
+/// field agent standing on his plot as 4 km away, and a sync around it fetched
+/// the wrong 4 plots and dropped the rest.
+const double preciseFixAccuracyM = 100.0;
 
 /// Plots older than this are refreshed by themselves when the app opens.
 const Duration autoSyncAfter = Duration(hours: 1);
@@ -84,8 +106,10 @@ class PlotListController extends ValueNotifier<PlotListState> {
 
   void _onLocation() {
     final LocationSample? sample = _locationSource.location.value;
-    _here = sample?.position;
-    _recompute(hasFix: sample != null);
+    // A rough fix is shown as such but never measured from; a precise one
+    // that has since been followed by a rough one is kept.
+    if (sample != null && sample.accuracyM <= preciseFixAccuracyM) _here = sample.position;
+    _recompute(hasFix: _here != null, accuracyM: sample?.accuracyM);
   }
 
   // Plots are drawn in the web tool and only ever read here. Two places that
@@ -93,7 +117,8 @@ class PlotListController extends ValueNotifier<PlotListState> {
   // one on a phone - eyeballed, unverified, standing in the middle of the
   // field - is the one that would end up in a dispute.
 
-  /// Pulls fresh plots around the agent, or everything if there is no fix yet.
+  /// Pulls fresh plots around the agent, or everything if there is no precise
+  /// fix yet - never around a rough one, which can be kilometres out.
   Future<void> sync() async {
     if (value.syncing) return;
     value = value.copyWith(syncing: true, lastSyncMessage: () => null);
@@ -120,13 +145,18 @@ class PlotListController extends ValueNotifier<PlotListState> {
   void resume() => _locationSource.start();
 
   /// One notification per fix or cache change, never two.
-  void _recompute({bool? hasFix}) {
+  void _recompute({bool? hasFix, double? accuracyM}) {
     if (_disposed) return;
     final from = _here;
     final items = [
       for (final plot in _plots) PlotListItem(plot, from == null ? null : distanceM(from, plot.centroid)),
     ]..sort((a, b) => (a.distanceM ?? double.maxFinite).compareTo(b.distanceM ?? double.maxFinite));
-    value = value.copyWith(items: items, hasFix: hasFix);
+    value = value.copyWith(
+      items: items,
+      hasFix: hasFix,
+      accuracyM: accuracyM == null ? null : () => accuracyM,
+      here: () => from,
+    );
   }
 
   @override

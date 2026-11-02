@@ -24,11 +24,24 @@ android {
         versionName = flutter.versionName
     }
 
+    // One fixed key for field test builds, kept in the repository on purpose:
+    // a debug key is generated afresh on every CI runner, so each build was
+    // signed differently and Android refused to install one over another
+    // ("App not installed"). With this key a new build installs over the old.
+    // A test key, public with the repo - not for a Play Store release, which
+    // needs its own key kept out of source control.
+    signingConfigs {
+        create("field") {
+            storeFile = file("../field-build.keystore")
+            storePassword = "plotfinder"
+            keyAlias = "field"
+            keyPassword = "plotfinder"
+        }
+    }
+
     buildTypes {
         release {
-            // Signed with the debug key so `flutter run --release` works out of
-            // the box. Replace with a real signing config before distributing.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("field")
         }
     }
 }

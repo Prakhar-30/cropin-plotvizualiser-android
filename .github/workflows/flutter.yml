@@ -48,6 +48,9 @@ jobs:
   build-apk:
     runs-on: ubuntu-latest
     needs: analyze-and-test
+    # To publish the field-build release.
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: example
@@ -82,3 +85,19 @@ jobs:
           name: plot-finder-release-arm64-apk
           path: example/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14
+      # A link anyone can open from a phone, no GitHub account and no zip:
+      # every push to the field branch replaces plot-finder.apk on the
+      # field-build release, so the address below never changes.
+      #   https://github.com/Prakhar-30/cropin-plotvizualiser-android/releases/download/field-build/plot-finder.apk
+      - name: Publish the field build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/flutter_updated_flow'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk plot-finder.apk
+          if ! gh release view field-build >/dev/null 2>&1; then
+            gh release create field-build --prerelease --target "$GITHUB_SHA" \
+              --title "Plot Finder - field build" --notes "Latest field build."
+          fi
+          gh release upload field-build plot-finder.apk --clobber
+          gh release edit field-build --notes "Latest build of flutter_updated_flow, ${GITHUB_SHA::7}, built $(date -u '+%Y-%m-%d %H:%M') UTC. Install plot-finder.apk on the phone (allow installing from this source when Android asks).
