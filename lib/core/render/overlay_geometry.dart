@@ -21,7 +21,7 @@ const double nearModeThresholdM = 30.0;
 /// show two bands side by side - each in its own colour, neither covering the
 /// other. Wide enough to read in perspective a few tens of metres off; the
 /// line down its middle keeps it visible further out.
-const double boundaryRibbonWidthM = 0.6;
+const double boundaryRibbonWidthM = 0.25;
 
 /// Plots further than this from their nearest edge are drawn as one marker
 /// instead of their whole boundary.

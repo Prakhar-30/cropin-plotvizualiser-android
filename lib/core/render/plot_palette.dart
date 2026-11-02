@@ -38,7 +38,7 @@ abstract final class PlotAlpha {
 
   /// The app's boundary ribbon on the ground. App only: the web map has no
   /// ribbon, so this is not in palette.json.
-  static const double ribbon = 0.55;
+  static const double ribbon = 0.35;
 }
 
 /// One crop-health severity band.

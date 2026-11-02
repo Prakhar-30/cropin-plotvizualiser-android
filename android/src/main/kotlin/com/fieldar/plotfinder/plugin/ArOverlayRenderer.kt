@@ -346,10 +346,10 @@ internal class ArOverlayRenderer {
         GLES20.glUniform1f(uGhost, LINE_GHOST)
         for (p in plots) {
             if (p.lineCount < 2) continue
-            lineWidth(if (p.raised) 11f else 9f)
-            color(0.04f, 0.06f, 0.08f, 0.5f * s.alpha)
+            lineWidth(if (p.raised) 7f else 6f)
+            color(0.04f, 0.06f, 0.08f, 0.45f * s.alpha)
             drawArrays(p.line, null, GLES20.GL_LINE_LOOP, 0, p.lineCount)
-            lineWidth(if (p.raised) 7f else 5f)
+            lineWidth(if (p.raised) 4f else 3f)
             color(p.tintR, p.tintG, p.tintB, s.lineAlpha * s.alpha)
             drawArrays(p.line, null, GLES20.GL_LINE_LOOP, 0, p.lineCount)
         }
@@ -358,16 +358,21 @@ internal class ArOverlayRenderer {
         // panels on its boundary, and a solid line along their tops.
         for (p in plots) {
             if (p.wallVertexCount == 0) continue
+            // A light tint, fading out within a few metres so the panel you
+            // stand beside does not fill the view; the thin top line stays.
             GLES20.glUniform1f(uGhost, SURFACE_GHOST)
-            color(p.tintR, p.tintG, p.tintB, 0.35f * s.alpha)
+            fade(RAISED_FADE_END_M, RAISED_FADE_START_M, 0f)
+            color(p.tintR, p.tintG, p.tintB, 0.14f * s.alpha)
             drawArrays(p.walls, null, GLES20.GL_TRIANGLES, 0, p.wallVertexCount)
+            fade(RAISED_FADE_END_M, RAISED_FADE_START_M, 0.6f)
             GLES20.glUniform1f(uGhost, LINE_GHOST)
-            lineWidth(10f)
-            color(0.04f, 0.06f, 0.08f, 0.5f * s.alpha)
-            drawArrays(p.rails, null, GLES20.GL_LINES, 0, p.railVertexCount)
             lineWidth(6f)
+            color(0.04f, 0.06f, 0.08f, 0.45f * s.alpha)
+            drawArrays(p.rails, null, GLES20.GL_LINES, 0, p.railVertexCount)
+            lineWidth(3.5f)
             color(p.tintR, p.tintG, p.tintB, s.alpha)
             drawArrays(p.rails, null, GLES20.GL_LINES, 0, p.railVertexCount)
+            noFade()
         }
 
         // Far plots' markers, then the drop points over everything: a stem from
@@ -548,6 +553,10 @@ internal class ArOverlayRenderer {
         /** Heights above the floor: cells at 0.025, then the ribbon, then its line. */
         const val RIBBON_Z = 0.03f
         const val LINE_Z = 0.035f
+
+        /** The raised boundary's tint fades out between these distances. */
+        const val RAISED_FADE_START_M = 6f
+        const val RAISED_FADE_END_M = 1.5f
 
         /** A drop point's head at 10 m; it shrinks with distance in the shader. */
         const val HEAD_SIZE_PX = 44f

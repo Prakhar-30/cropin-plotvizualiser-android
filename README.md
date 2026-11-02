@@ -300,7 +300,7 @@ Every boundary is drawn **flat on the ground** - nothing stands up but the drop
 points. Standing walls of several neighbouring plots overlapped in the camera,
 and it was hard to tell which fence belonged to which plot.
 
-Each plot's boundary is a **ribbon 0.6 m wide** running from the boundary *into
+Each plot's boundary is a **ribbon 0.25 m wide** running from the boundary *into
 its own plot*, with a bold line down its middle on a dark backing. Because the
 ribbon lies only inside its own plot, two plots sharing an edge show two bands
 side by side, each in its own colour, neither covering the other. The line is a

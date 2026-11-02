@@ -214,19 +214,19 @@ class ArOverlayPainter extends CustomPainter {
     for (final line in overlay.lines) {
       final from = _o(line.from);
       final to = _o(line.to);
-      canvas.drawLine(from, to, _stroke(_outlineBacking, 0.5 * alpha, primary ? 11 : 9));
-      canvas.drawLine(from, to, _stroke(tint, PlotAlpha.outline * alpha, primary ? 7 : 5));
+      canvas.drawLine(from, to, _stroke(_outlineBacking, 0.45 * alpha, primary ? 7 : 6));
+      canvas.drawLine(from, to, _stroke(tint, PlotAlpha.outline * alpha, primary ? 4 : 3));
     }
     // The plot the agent is in: waist-high panels, then the line along their tops.
     for (final wall in overlay.walls) {
       final path = _path(wall.quad);
-      if (path != null) canvas.drawPath(path, _fill(tint, 0.35 * alpha));
+      if (path != null) canvas.drawPath(path, _fill(tint, 0.14 * alpha));
     }
     for (final rail in overlay.rails) {
       final from = _o(rail.from);
       final to = _o(rail.to);
-      canvas.drawLine(from, to, _stroke(_outlineBacking, 0.5 * alpha, 10));
-      canvas.drawLine(from, to, _stroke(tint, alpha, 6));
+      canvas.drawLine(from, to, _stroke(_outlineBacking, 0.45 * alpha, 6));
+      canvas.drawLine(from, to, _stroke(tint, alpha, 3.5));
     }
   }
 
