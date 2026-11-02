@@ -100,4 +100,4 @@ jobs:
               --title "Plot Finder - field build" --notes "Latest field build."
           fi
           gh release upload field-build plot-finder.apk --clobber
-          gh release edit field-build --notes "Latest build of flutter_updated_flow, ${GITHUB_SHA::7}, built $(date -u '+%Y-%m-%d %H:%M') UTC. Install plot-finder.apk on the phone (allow installing from this source when Android asks).
+          gh release edit field-build --notes "Latest build of flutter_updated_flow, ${GITHUB_SHA::7}, built $(date -u '+%Y-%m-%d %H:%M') UTC. Install plot-finder.apk on the phone (allow installing from this source when Android asks)."
