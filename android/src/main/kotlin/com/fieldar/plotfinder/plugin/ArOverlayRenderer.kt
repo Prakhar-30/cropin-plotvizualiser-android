@@ -76,8 +76,8 @@ internal class OverlayScene(
                 markers = floats(map["markers"]),
                 markerHeight = number("markerHeight", 6f),
                 alpha = number("alpha", 1f),
-                ribbonAlpha = number("ribbonAlpha", 0.55f),
-                lineAlpha = number("lineAlpha", 0.95f),
+                ribbonAlpha = number("ribbonAlpha", 0.6f),
+                lineAlpha = number("lineAlpha", 1f),
             )
         }
     }
@@ -320,7 +320,10 @@ internal class ArOverlayRenderer {
         // Ground first - the graded cells, then every plot's boundary line over
         // them - because everything else stands on it. No tinted plot floor: the
         // only colour on the ground is crop condition.
-        GLES20.glUniform1f(uGhost, SURFACE_GHOST)
+        // The ground is never ghosted by depth. Past a few metres ARCore's depth
+        // reads the crop canopy, not the soil the cells lie on, so the far half of
+        // a plot came out paler than the near half - one condition, two shades.
+        GLES20.glUniform1f(uGhost, GROUND_GHOST)
         noFade()
         if (cellVertexCount > 0) {
             GLES20.glUniform1f(uAlpha, s.alpha)
@@ -335,13 +338,15 @@ internal class ArOverlayRenderer {
             color(p.tintR, p.tintG, p.tintB, s.ribbonAlpha * s.alpha)
             drawArrays(p.ribbon, null, GLES20.GL_TRIANGLES, 0, p.ribbonCount)
         }
-        GLES20.glUniform1f(uGhost, LINE_GHOST)
+        // Bold enough for full sun: a wide near-black backing, the plot's colour
+        // on top at full strength.
+        GLES20.glUniform1f(uGhost, BOUNDARY_GHOST)
         for (p in plots) {
             if (p.lineCount < 2) continue
-            lineWidth(if (p.raised) 7f else 6f)
-            color(0.04f, 0.06f, 0.08f, 0.45f * s.alpha)
+            lineWidth(if (p.raised) 11f else 10f)
+            color(0.02f, 0.03f, 0.04f, 0.85f * s.alpha)
             drawArrays(p.line, null, GLES20.GL_LINE_LOOP, 0, p.lineCount)
-            lineWidth(if (p.raised) 4f else 3f)
+            lineWidth(if (p.raised) 6f else 5f)
             color(p.tintR, p.tintG, p.tintB, s.lineAlpha * s.alpha)
             drawArrays(p.line, null, GLES20.GL_LINE_LOOP, 0, p.lineCount)
         }
@@ -499,8 +504,13 @@ internal class ArOverlayRenderer {
          * keep more than surfaces: the boundary line and the drop points are how things
          * are found, and must stay findable through a crop row or a passer-by.
          */
-        const val SURFACE_GHOST = 0.35f
         const val LINE_GHOST = 0.6f
+
+        /** Cells and ribbons on the ground: not occluded at all - see draw(). */
+        const val GROUND_GHOST = 1.0f
+
+        /** The boundary line: barely dimmed, so it stays visible through the crop. */
+        const val BOUNDARY_GHOST = 0.85f
 
         /** Heights above the floor: cells at 0.025, then the ribbon, then its line. */
         const val RIBBON_Z = 0.03f

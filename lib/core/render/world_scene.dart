@@ -36,13 +36,14 @@ import 'plot_palette.dart';
 const int unreliableTintArgb = 0xFF9CA3AF;
 
 int overlayTintArgb(HeadingConfidence confidence, int colourIndex) =>
-    confidence == HeadingConfidence.unreliable ? unreliableTintArgb : plotColour(colourIndex).argb;
+    arBoundaryArgb(confidence == HeadingConfidence.unreliable ? unreliableTintArgb : plotColour(colourIndex).argb);
 
 /// Overall opacity for a heading-confidence tier.
 double overlayConfidenceAlpha(HeadingConfidence confidence) => switch (confidence) {
       HeadingConfidence.locked => 1.0,
       HeadingConfidence.holding => 0.85,
-      HeadingConfidence.unreliable => 0.45,
+      // Faint, not invisible: at 0.45 the boundary vanished in full sun.
+      HeadingConfidence.unreliable => 0.7,
     };
 
 /// One plot in the scene: its boundary and its colour.
@@ -102,7 +103,7 @@ class WorldScene {
         'markerHeight': plotMarkerHeightM,
         'alpha': alpha,
         'ribbonAlpha': PlotAlpha.ribbon,
-        'lineAlpha': PlotAlpha.outline,
+        'lineAlpha': PlotAlpha.arLine,
       };
 }
 
@@ -134,7 +135,7 @@ WorldScene buildWorldScene({
       inner: Float32List.fromList([
         for (final p in insetRing(boundary, boundaryRibbonWidthM)) ...[p.east, p.north],
       ]),
-      tintArgb: plotColour(plot.colourIndex).argb,
+      tintArgb: arBoundaryArgb(plotColour(plot.colourIndex).argb),
       raised: plot.id == raisedPlotId,
     ));
   }

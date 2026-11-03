@@ -145,8 +145,8 @@ void main() {
       expect(message.containsKey('fillAlpha'), isFalse, reason: 'plots have no tinted floor');
       expect(message.containsKey('wallHeight'), isFalse, reason: 'nothing stands up but the drop points');
       expect(scene.plots[1].ring[0], closeTo(15.0, 1e-3), reason: 'the second plot, 20 m east, same frame');
-      expect(scene.plots[0].tintArgb, plotColour(0).argb);
-      expect(scene.plots[1].tintArgb, plotColour(3).argb);
+      expect(scene.plots[0].tintArgb, arBoundaryArgb(plotColour(0).argb));
+      expect(scene.plots[1].tintArgb, arBoundaryArgb(plotColour(3).argb));
     });
 
     test('drop points carry their position and their zone colour', () {

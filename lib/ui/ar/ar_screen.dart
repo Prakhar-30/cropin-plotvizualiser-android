@@ -12,6 +12,7 @@ import '../../app_container.dart';
 import '../../core/geo/arcore_pose.dart';
 import '../../core/geo/boundary_snap.dart';
 import '../../core/geo/camera_geometry.dart';
+import '../../core/geo/position_stabilizer.dart';
 import '../../core/heading/heading_model.dart';
 import '../../core/render/health_geometry.dart';
 import '../../core/render/overlay_geometry.dart';
@@ -502,8 +503,11 @@ class _BottomSheet extends StatelessWidget {
             Text(
               state.snapped
                   ? 'Anchored - crop condition steady on the ground'
-                  : 'Ground colours are approximate (GPS ±${state.accuracyM.round()} m) - they steady once '
-                      'anchored within ${autoSnapDistanceM.round()} m of a boundary',
+                  : isRoughFix(state.accuracyM)
+                      ? 'GPS weak (±${state.accuracyM.round()} m) - the view is held by camera tracking and '
+                          'ignores it; plots may sit off by that much until GPS improves or you anchor'
+                      : 'Ground colours are approximate (GPS ±${state.accuracyM.round()} m) - they steady once '
+                          'anchored within ${autoSnapDistanceM.round()} m of a boundary',
               style: const TextStyle(color: PlotFinderColors.mutedText, fontSize: 12),
             ),
           ],

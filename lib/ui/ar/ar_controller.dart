@@ -32,7 +32,7 @@ const int maxDrawnPlots = 24;
 
 /// Ground cells before the view is anchored are drawn at this share of their
 /// opacity: present, but plainly provisional while they still slide with GPS.
-const double unanchoredCellOpacity = 0.55;
+const double unanchoredCellOpacity = 0.85;
 
 /// The furthest the pinch zoom goes. Past this a phone camera's image is mush.
 const double maxZoom = 5.0;

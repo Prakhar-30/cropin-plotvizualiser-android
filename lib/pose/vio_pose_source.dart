@@ -125,6 +125,10 @@ class VioPoseSource implements PoseSource {
   double? _smoothedMagneticOffsetDeg;
   int _lastSmoothingMs = 0;
 
+  /// When the compass offset began settling, and where it settled to.
+  int _compassSettleStartMs = 0;
+  double? _settledMagneticOffsetDeg;
+
   @override
   ValueListenable<DevicePose> get pose => _pose;
 
@@ -203,8 +207,11 @@ class VioPoseSource implements PoseSource {
     );
     if (!frame.tracking) {
       // Motion across a tracking gap is not measured, only guessed - and
-      // ARCore may resume in a shifted world frame. Start a fresh baseline.
+      // ARCore may resume in a shifted world frame. Start a fresh baseline -
+      // the compass offset against ARCore's yaw included.
       _lastPosition = null;
+      _smoothedMagneticOffsetDeg = null;
+      _settledMagneticOffsetDeg = null;
       return;
     }
 
@@ -244,10 +251,23 @@ class VioPoseSource implements PoseSource {
     if (magnetic == null) return fused;
     final target = angleDifferenceDeg(carrier, magnetic);
     final previous = _smoothedMagneticOffsetDeg;
-    final dtS = _lastSmoothingMs == 0 ? 0.0 : (now - _lastSmoothingMs) / 1000.0;
+    final dtS = previous == null || _lastSmoothingMs == 0 ? 0.0 : (now - _lastSmoothingMs) / 1000.0;
     _lastSmoothingMs = now;
-    final alpha = 1.0 - math.exp(-dtS / _compassSmoothingS);
-    final smoothed = previous == null ? target : normalizeDeg(previous + alpha * angleDifferenceDeg(previous, target));
+    if (previous == null) _compassSettleStartMs = now;
+    final settling = now - _compassSettleStartMs < _compassSettleMs;
+    final alpha = 1.0 - math.exp(-dtS / (settling ? _compassSmoothingS : _compassHoldS));
+    var smoothed = previous == null ? target : normalizeDeg(previous + alpha * angleDifferenceDeg(previous, target));
+    if (settling) {
+      _settledMagneticOffsetDeg = null;
+    } else {
+      // Settled: ARCore carries every turn, and the compass may only trim the
+      // offset slowly and within a few degrees of where it settled.
+      final settled = _settledMagneticOffsetDeg ??= smoothed;
+      final drift = angleDifferenceDeg(settled, smoothed)
+          .clamp(-_compassHoldCeilingDeg, _compassHoldCeilingDeg)
+          .toDouble();
+      smoothed = normalizeDeg(settled + drift);
+    }
     _smoothedMagneticOffsetDeg = smoothed;
     return HeadingEstimate(
       headingDeg: normalizeDeg(carrier + smoothed),
@@ -259,8 +279,24 @@ class VioPoseSource implements PoseSource {
   }
 }
 
-/// Time constant for the pre-lock compass offset, seconds.
+/// Time constant for the pre-lock compass offset while it settles, seconds.
 const double _compassSmoothingS = 3.0;
+
+/// How long the pre-lock compass offset settles before it is held, ms.
+///
+/// Field report, GMD Plot 1: with GPS too weak for a walk lock the direction
+/// came from the compass alone, followed with a 3 s lag - so every swing of the
+/// compass as the agent walked past a body, a phone case magnet or a wire
+/// fence turned the whole plot about them. ARCore already measures every turn
+/// of the hand to a fraction of a degree; the compass is needed only once, to
+/// say where north is. So it settles for this long, then is held.
+const int _compassSettleMs = 6000;
+
+/// Time constant of the slow trim once the compass offset is held, seconds.
+const double _compassHoldS = 90.0;
+
+/// The held compass offset may trim at most this far from where it settled.
+const double _compassHoldCeilingDeg = 8.0;
 
 /// Heading behaviour when ARCore carries the yaw.
 ///

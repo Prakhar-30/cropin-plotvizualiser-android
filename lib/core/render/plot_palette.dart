@@ -37,8 +37,24 @@ abstract final class PlotAlpha {
   static const double outline = 0.95;
 
   /// The app's boundary ribbon on the ground. App only: the web map has no
-  /// ribbon, so this is not in palette.json.
-  static const double ribbon = 0.35;
+  /// ribbon, so this is not in palette.json. Strong enough to read in full sun.
+  static const double ribbon = 0.6;
+
+  /// The app's boundary line in the camera: full strength, on a dark backing.
+  static const double arLine = 1.0;
+}
+
+/// How much the camera view darkens a plot's colour for its boundary.
+///
+/// The slots are light on purpose - they have to read on a satellite map - but
+/// in the camera under a bright sky the pale ones (white, lavender, cyan)
+/// vanished against sunlit soil. The same hue, a quarter darker, holds up.
+const double arBoundaryShade = 0.72;
+
+/// [argb] with its colour scaled by [arBoundaryShade], alpha kept.
+int arBoundaryArgb(int argb) {
+  int channel(int shift) => ((((argb >> shift) & 0xFF) * arBoundaryShade).round()) << shift;
+  return (argb & 0xFF000000) | channel(16) | channel(8) | channel(0);
 }
 
 /// One crop-health severity band.
@@ -61,7 +77,9 @@ class SeverityColour {
 /// condition, and swapping them would make a red-slot plot look like a dead one.
 const List<SeverityColour> severityColours = [
   SeverityColour(0, 'normal', 'Normal', 0xFF2FD44E, 0.25),
-  SeverityColour(1, 'moderate', 'Moderate', 0xFFFFD60A, 0.6),
+  // A deep yellow, strong enough to read as one even shade across a plot in
+  // full sun; the pale #FFD60A washed out to near white at a distance.
+  SeverityColour(1, 'moderate', 'Moderate', 0xFFE0A800, 0.75),
   SeverityColour(2, 'critical', 'Critical', 0xFFFF2118, 0.8),
 ];
 

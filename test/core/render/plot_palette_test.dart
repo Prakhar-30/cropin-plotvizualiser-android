@@ -62,4 +62,17 @@ void main() {
       expect(hue, inInclusiveRange(180, 320), reason: 'slot ${colour.index} (${colour.name}) has hue $hue');
     }
   });
+
+  test('the camera boundary is the same hue, darker, still opaque', () {
+    for (final colour in plotColours) {
+      final dark = arBoundaryArgb(colour.argb);
+      expect((dark >> 24) & 0xFF, 0xFF);
+      for (final shift in [16, 8, 0]) {
+        final from = (colour.argb >> shift) & 0xFF;
+        final to = (dark >> shift) & 0xFF;
+        expect(to, lessThanOrEqualTo(from));
+        expect(to, closeTo(from * arBoundaryShade, 1.0));
+      }
+    }
+  });
 }

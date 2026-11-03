@@ -393,6 +393,67 @@ void main() {
       expect(PositionStabilizer().onVisualMotion(dEast: 1.0, dNorth: 0.0, timestampMs: 1000), isNull);
     });
   });
+
+  group('rough fixes (field report, GMD Plot 1)', () {
+    test('wandering ±59 m fixes do not walk a tracked agent 50 m away', () {
+      // GPS at ±59 m, now and then ±400 m, under visual tracking. The fixes
+      // drift together to 50 m off over three minutes, as multipath does. The
+      // agent walks 20 m north; the drawn position must follow the walk, not
+      // the fixes - before the fix it jumped ~50 m once the pulls passed 10 m.
+      final stabilizer = PositionStabilizer();
+      var t = 1000;
+      stabilizer.update(position: origin, accuracyM: 59.0, speedMps: null, timestampMs: t);
+      var walked = 0.0;
+      var drawn = origin;
+      final track = <LatLng>[origin];
+      for (var i = 0; i < 180; i++) {
+        for (var f = 0; f < 10; f++) {
+          t += 100;
+          final step = i < 40 ? 0.05 : 0.0;
+          walked += step;
+          drawn = stabilizer.onVisualMotion(dEast: 0.0, dNorth: step, timestampMs: t)!.position;
+          track.add(drawn);
+        }
+        final drift = 50.0 * i / 180;
+        final accuracy = i % 15 == 0 ? 400.0 : 59.0;
+        final out = stabilizer.update(
+          position: offset(origin, drift, walked),
+          accuracyM: accuracy,
+          speedMps: null,
+          timestampMs: t,
+        );
+        expect(out.ignoredRough, isTrue);
+        drawn = out.position;
+        track.add(drawn);
+      }
+      expect(distanceM(drawn, offset(origin, 0.0, walked)), lessThan(0.5));
+      expect(maxStep(track), lessThan(0.2));
+    });
+
+    test('a rough fix that is a real improvement is still taken', () {
+      // A cell-tower guess first, then the first satellite fix: that one is
+      // used, rough or not, because it knows far more than the guess did.
+      final stabilizer = PositionStabilizer();
+      stabilizer.update(position: offset(origin, 300.0, 0.0), accuracyM: 400.0, speedMps: null, timestampMs: 1000);
+      final out = stabilizer.update(position: origin, accuracyM: 30.0, speedMps: null, timestampMs: 2000);
+      expect(out.ignoredRough, isFalse);
+      expect(distanceM(out.position, origin), lessThan(5.0));
+    });
+
+    test('a good fix after rough ones still corrects the position', () {
+      final stabilizer = PositionStabilizer();
+      var t = 1000;
+      stabilizer.update(position: offset(origin, 40.0, 0.0), accuracyM: 59.0, speedMps: null, timestampMs: t);
+      for (var i = 0; i < 5; i++) {
+        t += 1000;
+        stabilizer.update(position: offset(origin, 40.0, 0.0), accuracyM: 59.0, speedMps: null, timestampMs: t);
+      }
+      t += 1000;
+      final out = stabilizer.update(position: origin, accuracyM: 5.0, speedMps: null, timestampMs: t);
+      expect(out.ignoredRough, isFalse);
+      expect(distanceM(out.position, origin), lessThan(5.0));
+    });
+  });
 }
 
 double frameEast(LatLng from, LatLng to) =>

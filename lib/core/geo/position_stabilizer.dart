@@ -104,6 +104,24 @@ const int _stepStillnessMs = 1500;
 /// ignoring good fixes, so no measurement is ever treated as sharper than this.
 const double _minTrustedAccuracyM = 3.0;
 
+/// A fix claiming worse than this is rough: cell towers, Wi-Fi, or a receiver
+/// under a roof or a canopy that has lost most of its satellites.
+const double roughFixAccuracyM = 20.0;
+
+/// A rough fix is used only when it is this many times sharper than what the
+/// estimate already knows - a real improvement, such as the first satellite fix
+/// after a cell-tower guess.
+///
+/// Field report, GMD Plot 1: GPS reading ±59 m, now and then ±400 m, and the
+/// plot jumped about 50 m as the agent stepped into it. Each rough fix was
+/// taken as a measurement and moved the estimate a little; under trees the
+/// fixes wander together for minutes, so the little moves added up, and once
+/// they passed [_renderSnapM] the drawn position jumped there at once. A fix
+/// that knows no more than the estimate does cannot improve it - only move it -
+/// so it is not used. Visual tracking (or counted steps) carries the agent
+/// meanwhile, and the next good fix corrects whatever drift there is.
+const double _roughFixImprovement = 1.5;
+
 /// Innovation beyond this many sigma is treated as an outlier and held back.
 const double _outlierSigma = 3.0;
 
@@ -179,6 +197,7 @@ class StabilizedPosition {
     required this.stationary,
     required this.shiftM,
     required this.rejectedOutlier,
+    this.ignoredRough = false,
   });
 
   final LatLng position;
@@ -192,7 +211,14 @@ class StabilizedPosition {
 
   /// True when the fix was too far from the estimate to be believed.
   final bool rejectedOutlier;
+
+  /// True when the fix was rough and no sharper than the estimate, so it was
+  /// not used at all - see [roughFixAccuracyM].
+  final bool ignoredRough;
 }
+
+/// Whether a fix claiming [accuracyM] is rough; a fix with no accuracy is.
+bool isRoughFix(double accuracyM) => !accuracyM.isFinite || accuracyM > roughFixAccuracyM;
 
 class PositionStabilizer {
   PositionStabilizer({double stationarySpeedThresholdMps = stationarySpeedMps})
@@ -292,6 +318,11 @@ class PositionStabilizer {
     final growth = (processNoiseMps * dtS) * (processNoiseMps * dtS);
     _varEast += growth;
     _varNorth += growth;
+
+    // --- rough fixes -----------------------------------------------------
+    if (isRoughFix(accuracyM) && accuracyM * _roughFixImprovement > uncertaintyM) {
+      return _publish(active, rejectedOutlier: false, ignoredRough: true);
+    }
 
     // --- gate ----------------------------------------------------------
     final trusted = _trustedAccuracy(accuracyM) *
@@ -459,7 +490,7 @@ class PositionStabilizer {
 
   LatLng _estimateLatLng(EnuFrame against) => against.toLatLng(Enu(_east, _north));
 
-  StabilizedPosition _publish(EnuFrame active, {required bool rejectedOutlier, int? atMs}) {
+  StabilizedPosition _publish(EnuFrame active, {required bool rejectedOutlier, bool ignoredRough = false, int? atMs}) {
     _advanceRender(atMs ?? _lastFixMs);
 
     final here = active.toLatLng(Enu(_renderEast, _renderNorth));
@@ -472,6 +503,7 @@ class PositionStabilizer {
       stationary: _stationary,
       shiftM: shift,
       rejectedOutlier: rejectedOutlier,
+      ignoredRough: ignoredRough,
     );
   }
 

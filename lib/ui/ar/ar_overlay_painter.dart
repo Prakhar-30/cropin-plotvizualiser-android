@@ -214,8 +214,8 @@ class ArOverlayPainter extends CustomPainter {
     for (final line in overlay.lines) {
       final from = _o(line.from);
       final to = _o(line.to);
-      canvas.drawLine(from, to, _stroke(_outlineBacking, 0.45 * alpha, primary ? 7 : 6));
-      canvas.drawLine(from, to, _stroke(tint, PlotAlpha.outline * alpha, primary ? 4 : 3));
+      canvas.drawLine(from, to, _stroke(_outlineBacking, 0.85 * alpha, primary ? 11 : 10));
+      canvas.drawLine(from, to, _stroke(tint, PlotAlpha.arLine * alpha, primary ? 6 : 5));
     }
   }
 
